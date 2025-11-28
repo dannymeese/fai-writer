@@ -35,10 +35,10 @@ export async function POST(request: Request) {
   });
 
   const buffer = await Packer.toBuffer(doc);
+  const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   const filename = `${title.replace(/\s+/g, "_")}_${Date.now()}.docx`;
-  const bytes = new Uint8Array(buffer);
 
-  return new NextResponse(bytes, {
+  return new NextResponse(arrayBuffer, {
     headers: {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
