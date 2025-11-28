@@ -16,9 +16,10 @@ Respond with confident luxury copy that feels bespoke and human.`;
 export async function POST(request: Request) {
   const session = await auth();
   const isAuthenticated = Boolean(session?.user?.id);
-  const cookieStore = await cookies();
-  const guestCounter = Number(cookieStore.get("guest_outputs")?.value ?? "0");
-  if (!isAuthenticated && guestCounter >= 5) {
+  const enforceGuestLimit = process.env.ENFORCE_GUEST_LIMIT !== "false";
+  const cookieStore = enforceGuestLimit ? await cookies() : null;
+  const guestCounter = Number(cookieStore?.get("guest_outputs")?.value ?? "0");
+  if (enforceGuestLimit && !isAuthenticated && guestCounter >= 5) {
     return NextResponse.json(
       { error: "Guest limit reached", requireAuth: true },
       { status: 403 }
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
       settings
     });
 
-    if (!isAuthenticated) {
+    if (enforceGuestLimit && !isAuthenticated && cookieStore) {
       jsonResponse.cookies.set("guest_outputs", String(guestCounter + 1), {
         maxAge: 60 * 60 * 24,
         path: "/"

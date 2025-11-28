@@ -29,6 +29,7 @@ const defaultSettings: ComposerSettingsInput = {
 };
 
 export default function WriterWorkspace({ user, initialOutputs, isGuest = false }: WriterWorkspaceProps) {
+  const guestLimitEnabled = process.env.NEXT_PUBLIC_ENFORCE_GUEST_LIMIT === "true";
   const [composeValue, setComposeValue] = useState("");
   const [settings, setSettings] = useState<ComposerSettingsInput>({
     ...defaultSettings,
@@ -61,7 +62,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
 
   async function handleSubmit() {
     if (!composeValue.trim()) return;
-    if (isGuest && guestLimitReached) {
+    if (guestLimitEnabled && isGuest && guestLimitReached) {
       setToast("Create a free account to keep writing.");
       return;
     }
@@ -79,7 +80,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       if (!response.ok) {
         if (response.status === 403) {
           const errorData = await response.json().catch(() => null);
-          if (errorData?.requireAuth) {
+          if (guestLimitEnabled && errorData?.requireAuth) {
             setGuestLimitReached(true);
             setToast("You’ve unlocked 5 samples. Register to continue.");
             return;
@@ -99,7 +100,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       setOutputs((prev) => [newOutput, ...prev]);
       setComposeValue("");
       setToast("Draft ready with guardrails applied.");
-      if (isGuest && nextCount >= 5) {
+      if (guestLimitEnabled && isGuest && nextCount >= 5) {
         setGuestLimitReached(true);
       }
     } catch (error) {
@@ -146,7 +147,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }
 
   async function handleSaveStyle(output: WriterOutput) {
-    if (isGuest) {
+    if (guestLimitEnabled && isGuest) {
       setToast("Create an account to save writing styles.");
       return;
     }
@@ -174,7 +175,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Forgetaboutit Writer</p>
             <h1 className="font-display text-3xl text-charcoal">Hello {user.name}</h1>
             <p className="text-sm text-slate-500">{headline}</p>
-            {isGuest && (
+            {guestLimitEnabled && isGuest && (
               <p className="mt-2 text-sm text-slate-500">
                 First five outputs are on us. We’ll ask you to register after that.
               </p>
@@ -201,7 +202,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-6 py-10">
-        {isGuest && guestLimitReached && <RegisterGate />}
+        {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
         <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -223,14 +224,14 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           onCopy={handleCopy}
           onDownload={handleDownload}
           onSaveStyle={handleSaveStyle}
-          canSaveStyle={!isGuest}
+          canSaveStyle={!guestLimitEnabled || !isGuest}
         />
       </main>
       <ComposeBar
         value={composeValue}
         onChange={setComposeValue}
         onSubmit={handleSubmit}
-        disabled={loading || (isGuest && guestLimitReached)}
+        disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
         onOpenSettings={() => setSheetOpen(true)}
       />
       <SettingsSheet open={sheetOpen} onClose={() => setSheetOpen(false)} settings={settings} onChange={setSettings} />
