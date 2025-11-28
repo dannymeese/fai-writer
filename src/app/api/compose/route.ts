@@ -16,7 +16,7 @@ Respond with confident luxury copy that feels bespoke and human.`;
 export async function POST(request: Request) {
   const session = await auth();
   const isAuthenticated = Boolean(session?.user?.id);
-  const enforceGuestLimit = process.env.ENFORCE_GUEST_LIMIT !== "false";
+  const enforceGuestLimit = process.env.ENFORCE_GUEST_LIMIT === "true";
   const cookieStore = enforceGuestLimit ? await cookies() : null;
   const guestCounter = Number(cookieStore?.get("guest_outputs")?.value ?? "0");
   if (enforceGuestLimit && !isAuthenticated && guestCounter >= 5) {
