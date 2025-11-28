@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-inter), ui-sans-serif, system-ui;
+  background-color: #f6f7fb;
+  color: #0b1324;
+}
+
+button {
+  cursor: pointer;
+}
+

@@ -1,0 +1,94 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
+
+export default function RegisterForm() {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setPending(true);
+    const formData = new FormData(event.currentTarget);
+    const payload = {
+      name: formData.get("name"),
+      email: formData.get("email"),
+      password: formData.get("password")
+    };
+    try {
+      const response = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        setError(data?.message ?? "Please double check the details.");
+      } else {
+        router.push("/sign-in?registered=1");
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Something went wrong.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="text-sm text-slate-600">Full name</label>
+        <input
+          name="name"
+          required
+          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-brandblue focus:outline-none"
+        />
+      </div>
+      <div>
+        <label className="text-sm text-slate-600">Email</label>
+        <input
+          type="email"
+          name="email"
+          required
+          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-brandblue focus:outline-none"
+        />
+      </div>
+      <div>
+        <label className="text-sm text-slate-600">Password</label>
+        <input
+          type="password"
+          name="password"
+          required
+          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-brandblue focus:outline-none"
+        />
+        <p className="text-xs text-slate-500">Use at least 8 characters.</p>
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <button
+        type="submit"
+        disabled={pending}
+        className={cn("w-full rounded-full bg-brandblue px-4 py-2 font-semibold text-white transition", {
+          "opacity-70": pending
+        })}
+      >
+        {pending ? "Creating..." : "Create account"}
+      </button>
+      <p className="text-center text-sm text-slate-600">
+        Already onboard?{" "}
+        <button
+          type="button"
+          onClick={() => router.push("/sign-in")}
+          className="text-brandblue underline"
+        >
+          Sign in
+        </button>
+      </p>
+    </form>
+  );
+}
+
