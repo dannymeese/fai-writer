@@ -203,22 +203,6 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       </header>
       <main className="mx-auto max-w-5xl px-6 py-10">
         {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
-        <div className="mb-6 rounded-3xl border border-brand-stroke/60 bg-brand-panel/80 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm text-brand-muted">Conversation outputs</p>
-              <h2 className="font-display text-2xl text-brand-text">
-                Every draft honors the system prompt, no excuses.
-              </h2>
-            </div>
-            <button
-              onClick={() => setSheetOpen(true)}
-              className="rounded-full border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
-            >
-              Adjust brief
-            </button>
-          </div>
-        </div>
         <OutputPanel
           outputs={outputs}
           onCopy={handleCopy}
