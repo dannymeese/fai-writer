@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Manrope, Fira_Code } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/shared/Providers";
+import SiteHeader from "@/components/shared/SiteHeader";
+import SiteFooter from "@/components/shared/SiteFooter";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -25,7 +27,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${manrope.variable} ${firaCode.variable}`}>
       <body className="min-h-screen bg-brand-background font-sans text-brand-text antialiased">
         <Providers>
-          <div className="relative min-h-screen bg-brand-background text-brand-text">{children}</div>
+          <div className="flex min-h-screen flex-col bg-brand-background text-brand-text">
+            <SiteHeader />
+            <main className="flex-1">{children}</main>
+            <SiteFooter />
+          </div>
         </Providers>
       </body>
     </html>
