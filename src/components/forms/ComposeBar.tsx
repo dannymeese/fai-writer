@@ -13,13 +13,13 @@ type ComposeBarProps = {
 
 export default function ComposeBar({ value, onChange, onSubmit, disabled, onOpenSettings }: ComposeBarProps) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 border-t border-slate-200 bg-white/95 backdrop-blur">
+    <div className="fixed bottom-0 left-0 right-0 border-t border-brand-stroke/60 bg-brand-panel/90 backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-4 py-4">
         <button
           type="button"
           aria-label="Open settings"
           onClick={onOpenSettings}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
+          className="flex h-12 w-12 items-center justify-center rounded-full border border-brand-stroke/70 bg-transparent text-brand-muted transition hover:text-brand-blue"
         >
           <Cog6ToothIcon className="h-6 w-6" />
         </button>
@@ -27,13 +27,13 @@ export default function ComposeBar({ value, onChange, onSubmit, disabled, onOpen
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="What should I write or revise?"
-          className="h-12 flex-1 resize-none rounded-2xl border border-slate-200 px-4 py-3 text-base focus:border-brandblue focus:outline-none"
+          className="h-12 flex-1 resize-none rounded-2xl border border-brand-stroke/80 bg-brand-ink px-4 py-3 text-base text-brand-text placeholder:text-brand-muted focus:border-brand-blue focus:outline-none"
         />
         <button
           type="button"
           onClick={onSubmit}
           disabled={disabled || !value.trim()}
-          className={cn("flex h-12 min-w-[96px] items-center justify-center rounded-full bg-brandblue px-4 font-semibold text-white transition", {
+          className={cn("flex h-12 min-w-[120px] items-center justify-center rounded-full bg-brand-blue px-4 font-semibold text-white transition hover:bg-brand-blueHover", {
             "opacity-60": disabled || !value.trim()
           })}
         >

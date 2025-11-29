@@ -44,8 +44,8 @@
            leave="ease-in duration-150"
            leaveFrom="opacity-100"
            leaveTo="opacity-0"
-         >
-           <div className="fixed inset-0 bg-charcoal/40" aria-hidden="true" />
+        >
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" aria-hidden="true" />
          </Transition.Child>
          <div className="fixed inset-0 flex items-end justify-center p-4 sm:items-center">
            <Transition.Child
@@ -55,29 +55,29 @@
              enterTo="opacity-100 translate-y-0"
              leave="ease-in duration-150"
              leaveFrom="opacity-100 translate-y-0"
-             leaveTo="opacity-0 translate-y-6"
-           >
-             <Dialog.Panel className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+            leaveTo="opacity-0 translate-y-6"
+          >
+            <Dialog.Panel className="w-full max-w-lg rounded-3xl border border-brand-stroke/60 bg-brand-panel/95 p-6 text-brand-text shadow-[0_30px_80px_rgba(0,0,0,0.55)]">
                <header className="mb-4 flex items-center justify-between">
                  <div>
-                   <Dialog.Title className="font-display text-2xl text-charcoal">
+                  <Dialog.Title className="font-display text-2xl text-brand-text">
                      Brief controls
                    </Dialog.Title>
-                   <p className="text-sm text-slate-500">
+                  <p className="text-sm text-brand-muted">
                      Set tone, benchmarks, and what words to dodge.
                    </p>
                  </div>
-                 <button onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600">
+                <button onClick={onClose} className="rounded-full border border-brand-stroke/70 p-2 text-brand-text hover:text-brand-blue">
                    <XMarkIcon className="h-5 w-5" />
                  </button>
                </header>
                <div className="space-y-4">
                  <div>
-                   <label className="text-sm text-slate-600">Choose market</label>
+                  <label className="text-sm text-brand-muted">Choose market</label>
                    <select
                      value={settings.marketTier}
                      onChange={(e) => update("marketTier", e.target.value)}
-                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-brandblue focus:outline-none"
+                    className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
                    >
                      {marketTiers.map((tier) => (
                        <option key={tier} value={tier}>
@@ -122,10 +122,10 @@
                    textarea
                  />
                </div>
-               <div className="mt-6 flex justify-end gap-2">
+              <div className="mt-6 flex justify-end gap-2">
                  <button
                    onClick={onClose}
-                   className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
+                  className="rounded-full border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text hover:border-brand-blue hover:text-brand-blue"
                  >
                    Close
                  </button>
@@ -149,10 +149,10 @@ type FieldProps = {
 
 function Field({ label, value, onChange, placeholder, type = "text", textarea }: FieldProps) {
   const shared =
-    "mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-brandblue focus:outline-none";
+    "mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text placeholder:text-brand-muted focus:border-brand-blue focus:outline-none";
   return (
     <div>
-      <label className="text-sm text-slate-600">{label}</label>
+      <label className="text-sm text-brand-muted">{label}</label>
       {textarea ? (
         <textarea
           placeholder={placeholder}

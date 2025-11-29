@@ -3,17 +3,40 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 body {
   margin: 0;
-  font-family: var(--font-inter), ui-sans-serif, system-ui;
-  background-color: #f6f7fb;
-  color: #0b1324;
+  font-family: var(--font-manrope), ui-sans-serif, system-ui;
+  background-color: #050505;
+  color: #f8f7f2;
 }
 
 button {
   cursor: pointer;
+}
+
+::selection {
+  background: rgba(92, 100, 255, 0.3);
+  color: #f8f7f2;
+}
+
+.glass-panel {
+  background: rgba(17, 17, 28, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+input,
+textarea,
+select {
+  background-color: transparent;
+  color: #f8f7f2;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(248, 247, 242, 0.6);
 }
 

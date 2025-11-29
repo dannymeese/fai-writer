@@ -168,15 +168,15 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }
 
   return (
-    <div className="min-h-screen bg-sand pb-32">
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
+    <div className="min-h-screen bg-brand-background pb-32 text-brand-text">
+      <header className="border-b border-brand-stroke/60 bg-brand-background/95 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Forgetaboutit Writer</p>
-            <h1 className="font-display text-3xl text-charcoal">Hello {user.name}</h1>
-            <p className="text-sm text-slate-500">{headline}</p>
+            <p className="text-xs uppercase tracking-[0.3em] text-brand-muted">Forgetaboutit Writer</p>
+            <h1 className="font-display text-4xl text-brand-text">Hello {user.name}</h1>
+            <p className="text-sm text-brand-muted">{headline}</p>
             {guestLimitEnabled && isGuest && (
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="mt-2 text-sm text-brand-muted">
                 First five outputs are on us. We’ll ask you to register after that.
               </p>
             )}
@@ -185,13 +185,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             <div className="flex gap-2">
               <Link
                 href="/register"
-                className="rounded-full bg-brandblue px-4 py-2 text-sm font-semibold text-white hover:bg-brandblue/90"
+                className="rounded-full bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-blueHover"
               >
                 Register free
               </Link>
               <Link
                 href="/sign-in"
-                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brandblue hover:text-brandblue"
+                className="rounded-full border border-brand-stroke/80 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
               >
                 Sign in
               </Link>
@@ -203,17 +203,17 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       </header>
       <main className="mx-auto max-w-5xl px-6 py-10">
         {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
-        <div className="mb-6 rounded-3xl border border-slate-200 bg-white p-4">
+        <div className="mb-6 rounded-3xl border border-brand-stroke/60 bg-brand-panel/80 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm text-slate-500">Conversation outputs</p>
-              <h2 className="font-display text-2xl text-charcoal">
+              <p className="text-sm text-brand-muted">Conversation outputs</p>
+              <h2 className="font-display text-2xl text-brand-text">
                 Every draft honors the system prompt, no excuses.
               </h2>
             </div>
             <button
               onClick={() => setSheetOpen(true)}
-              className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brandblue hover:text-brandblue"
+              className="rounded-full border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
             >
               Adjust brief
             </button>
@@ -244,7 +244,7 @@ function Toast({ message }: { message: string | null }) {
   return (
     <div
       className={cn(
-        "pointer-events-none fixed bottom-24 left-1/2 w-full max-w-md -translate-x-1/2 transform rounded-2xl bg-charcoal px-4 py-3 text-center text-sm text-white shadow-2xl transition-all duration-300",
+        "pointer-events-none fixed bottom-24 left-1/2 w-full max-w-md -translate-x-1/2 transform rounded-2xl bg-brand-panel px-4 py-3 text-center text-sm text-brand-text shadow-[0_20px_60px_rgba(0,0,0,0.45)] transition-all duration-300",
         {
           "opacity-100 translate-y-0": Boolean(message),
           "opacity-0 translate-y-4": !message
@@ -258,22 +258,22 @@ function Toast({ message }: { message: string | null }) {
 
 function RegisterGate() {
   return (
-    <div className="mb-6 rounded-3xl border border-dashed border-brandblue/40 bg-white/70 p-6 text-center shadow-sm">
-      <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Limit reached</p>
-      <h3 className="mt-2 font-display text-2xl text-charcoal">Ready for the full studio?</h3>
-      <p className="mt-2 text-sm text-slate-600">
+    <div className="mb-6 rounded-3xl border border-dashed border-brand-blue/50 bg-brand-panel/80 p-6 text-center shadow-[0_25px_80px_rgba(0,0,0,0.4)]">
+      <p className="text-xs uppercase tracking-[0.3em] text-brand-muted">Limit reached</p>
+      <h3 className="mt-2 font-display text-2xl text-brand-text">Ready for the full studio?</h3>
+      <p className="mt-2 text-sm text-brand-muted">
         You’ve enjoyed five complimentary outputs. Register or sign in to keep generating high-touch copy and save styles.
       </p>
       <div className="mt-4 flex flex-wrap justify-center gap-3">
         <Link
           href="/register"
-          className="rounded-full bg-brandblue px-5 py-2 text-sm font-semibold text-white hover:bg-brandblue/90"
+          className="rounded-full bg-brand-blue px-5 py-2 text-sm font-semibold text-white hover:bg-brand-blueHover"
         >
           Create account
         </Link>
         <Link
           href="/sign-in"
-          className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-700 hover:border-brandblue hover:text-brandblue"
+          className="rounded-full border border-brand-stroke/70 px-5 py-2 text-sm font-semibold text-brand-text hover:border-brand-blue hover:text-brand-blue"
         >
           Sign in
         </Link>

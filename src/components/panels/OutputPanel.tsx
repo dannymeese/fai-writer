@@ -16,7 +16,7 @@ type OutputPanelProps = {
 export default function OutputPanel({ outputs, onCopy, onDownload, onSaveStyle, canSaveStyle = true }: OutputPanelProps) {
   if (!outputs.length) {
     return (
-      <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
+      <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-brand-stroke/60 bg-brand-panel/60 p-8 text-center text-brand-muted">
         Your drafts will land here with instant copy, download, and style saves.
       </div>
     );
@@ -25,15 +25,15 @@ export default function OutputPanel({ outputs, onCopy, onDownload, onSaveStyle, 
   return (
     <div className="space-y-6">
       {outputs.map((output) => (
-        <article key={output.id} className="rounded-3xl bg-white p-6 shadow-sm shadow-slate-200/60">
+        <article key={output.id} className="rounded-3xl border border-brand-stroke/60 bg-brand-panel/90 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.35)]">
           <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Conversation output</p>
-              <h2 className="font-display text-2xl text-charcoal">{output.title}</h2>
+              <p className="text-xs uppercase tracking-[0.3em] text-brand-muted">Conversation output</p>
+              <h2 className="font-display text-2xl text-brand-text">{output.title}</h2>
             </div>
-            <p className="text-sm text-slate-500">{formatTimestamp(output.createdAt)}</p>
+            <p className="text-sm text-brand-muted">{formatTimestamp(output.createdAt)}</p>
           </header>
-          <div className="space-y-3 text-base leading-relaxed text-slate-800">
+          <div className="space-y-3 text-base leading-relaxed text-brand-text/90">
             {output.content.split("\n").map((line, idx) => (
               <p key={idx}>{line}</p>
             ))}
@@ -74,7 +74,7 @@ function ActionButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-brandblue hover:text-brandblue disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+      className="inline-flex items-center gap-2 rounded-full border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue disabled:cursor-not-allowed disabled:border-brand-stroke disabled:text-brand-muted"
     >
       {icon}
       {label}

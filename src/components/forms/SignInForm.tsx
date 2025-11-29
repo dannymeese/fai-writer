@@ -35,31 +35,31 @@ export default function SignInForm() {
 
   return (
     <div className="space-y-6">
-      {registered && <p className="rounded-lg bg-green-50 px-4 py-2 text-sm text-green-700">Account created. Please sign in.</p>}
+      {registered && <p className="rounded-lg border border-brand-stroke/60 bg-brand-panel/80 px-4 py-2 text-sm text-brand-text">Account created. Please sign in.</p>}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="text-sm text-slate-600">Email</label>
+          <label className="text-sm text-brand-muted">Email</label>
           <input
             type="email"
             name="email"
             required
-            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-brandblue focus:outline-none"
+            className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 focus:border-brand-blue focus:outline-none"
           />
         </div>
         <div>
-          <label className="text-sm text-slate-600">Password</label>
+          <label className="text-sm text-brand-muted">Password</label>
           <input
             type="password"
             name="password"
             required
-            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-brandblue focus:outline-none"
+            className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 focus:border-brand-blue focus:outline-none"
           />
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-red-400">{error}</p>}
         <button
           type="submit"
           disabled={pending}
-          className={cn("w-full rounded-full bg-brandblue px-4 py-2 font-semibold text-white transition", {
+          className={cn("w-full rounded-full bg-brand-blue px-4 py-2 font-semibold text-white transition hover:bg-brand-blueHover", {
             "opacity-70": pending
           })}
         >
@@ -67,15 +67,15 @@ export default function SignInForm() {
         </button>
       </form>
       <button
-        className="flex w-full items-center justify-center rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white"
+        className="flex w-full items-center justify-center rounded-full border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
         onClick={() => signIn("google", { callbackUrl: "/" })}
         type="button"
       >
         Continue with Google
       </button>
-      <p className="text-center text-sm text-slate-600">
+      <p className="text-center text-sm text-brand-muted">
         No account?{" "}
-        <Link className="text-brandblue underline" href="/register">
+        <Link className="text-brand-blue underline" href="/register">
           Register
         </Link>
       </p>

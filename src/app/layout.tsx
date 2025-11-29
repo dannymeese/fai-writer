@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
-import { Inter, DM_Sans } from "next/font/google";
+import { Manrope, Fira_Code } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/shared/Providers";
 
-const inter = Inter({
+const manrope = Manrope({
   subsets: ["latin"],
-  variable: "--font-inter"
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-manrope"
 });
 
-const dmSans = DM_Sans({
+const firaCode = Fira_Code({
   subsets: ["latin"],
-  variable: "--font-dm-sans"
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-fira-code"
 });
 
 export const metadata: Metadata = {
@@ -20,9 +22,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${dmSans.variable}`}>
-      <body className="bg-sand font-sans text-slate-900">
-        <Providers>{children}</Providers>
+    <html lang="en" className={`${manrope.variable} ${firaCode.variable}`}>
+      <body className="min-h-screen bg-brand-background font-sans text-brand-text antialiased">
+        <Providers>
+          <div className="relative min-h-screen bg-brand-background text-brand-text">{children}</div>
+        </Providers>
       </body>
     </html>
   );

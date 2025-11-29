@@ -9,20 +9,23 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        vibe: {
-          blue: "#1D4ED8",
-          charcoal: "#0B1324",
-          sand: "#F4F1EA",
-          slate: "#5F6B7A"
-        },
-        sand: "#F4F1EA",
-        charcoal: "#0B1324",
-        slate: "#5F6B7A",
-        brandblue: "#1D4ED8"
+        brand: {
+          background: "#050505",
+          ink: "#080810",
+          panel: "#11111C",
+          stroke: "#1E1E2A",
+          text: "#F8F7F2",
+          muted: "#B6B9C9",
+          blue: "#5C64FF",
+          blueHover: "#4A51E6",
+          lavender: "#C7C5FF",
+          bone: "#EDE9DE"
+        }
       },
       fontFamily: {
-        sans: ["var(--font-inter)", "Inter", "ui-sans-serif", "system-ui"],
-        display: ["var(--font-dm-sans)", "DM Sans", "ui-sans-serif", "system-ui"]
+        sans: ["var(--font-manrope)", "Manrope", "ui-sans-serif", "system-ui"],
+        display: ["var(--font-manrope)", "Manrope", "ui-sans-serif", "system-ui"],
+        mono: ["var(--font-fira-code)", "Fira Code", "monospace"]
       }
     }
   },
