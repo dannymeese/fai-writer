@@ -218,7 +218,12 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
         onOpenSettings={() => setSheetOpen(true)}
       />
-      <SettingsSheet open={sheetOpen} onClose={() => setSheetOpen(false)} settings={settings} onChange={setSettings} />
+      <SettingsSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        settings={settings}
+        onChange={setSettings}
+      />
       <Toast message={toast} />
     </div>
   );

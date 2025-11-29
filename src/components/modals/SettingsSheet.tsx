@@ -10,6 +10,7 @@
    onClose: () => void;
    settings: ComposerSettingsInput;
    onChange: (next: ComposerSettingsInput) => void;
+   anchor?: HTMLElement | null;
  };
  
  const marketLabels = {
@@ -19,10 +20,13 @@
    UHNW: "UHNW ($$$$$)"
  } as const;
  
- export default function SettingsSheet({ open, onClose, settings, onChange }: SettingsSheetProps) {
+export default function SettingsSheet({ open, onClose, settings, onChange }: SettingsSheetProps) {
   function update(field: keyof ComposerSettingsInput, value: string) {
     if (field === "marketTier") {
-      onChange({ ...settings, marketTier: value as ComposerSettingsInput["marketTier"] });
+      onChange({
+        ...settings,
+        marketTier: value ? (value as ComposerSettingsInput["marketTier"]) : null
+      });
       return;
     }
     if (field === "characterLength" || field === "wordLength") {
@@ -30,32 +34,22 @@
        onChange({ ...settings, [field]: Number.isNaN(parsed) ? null : parsed });
        return;
      }
-     onChange({ ...settings, [field]: value || null });
+    onChange({ ...settings, [field]: value || null });
    }
  
    return (
      <Transition show={open} as={Fragment}>
-       <Dialog onClose={onClose} className="relative z-50">
-         <Transition.Child
-           as={Fragment}
-           enter="ease-out duration-200"
-           enterFrom="opacity-0"
-           enterTo="opacity-100"
-           leave="ease-in duration-150"
-           leaveFrom="opacity-100"
-           leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" aria-hidden="true" />
-         </Transition.Child>
-         <div className="fixed inset-0 flex items-end justify-center p-4 sm:items-center">
-           <Transition.Child
-             as={Fragment}
-             enter="ease-out duration-200"
-             enterFrom="opacity-0 translate-y-6"
-             enterTo="opacity-100 translate-y-0"
-             leave="ease-in duration-150"
-             leaveFrom="opacity-100 translate-y-0"
-            leaveTo="opacity-0 translate-y-6"
+      <Dialog onClose={onClose} className="relative z-50">
+        <div className="fixed inset-0 pointer-events-none" aria-hidden="true" />
+        <div className="fixed inset-x-0 bottom-24 flex justify-center p-4 sm:justify-end sm:pr-10">
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-200"
+            enterFrom="opacity-0 translate-y-4"
+            enterTo="opacity-100 translate-y-0"
+            leave="ease-in duration-150"
+            leaveFrom="opacity-100 translate-y-0"
+            leaveTo="opacity-0 translate-y-4"
           >
             <Dialog.Panel className="w-full max-w-lg rounded-3xl border border-brand-stroke/60 bg-brand-panel/95 p-6 text-brand-text shadow-[0_30px_80px_rgba(0,0,0,0.55)]">
                <header className="mb-4 flex items-center justify-between">
@@ -73,12 +67,13 @@
                </header>
                <div className="space-y-4">
                  <div>
-                  <label className="text-sm text-brand-muted">Choose market</label>
+                   <label className="text-sm text-brand-muted">Choose market (optional)</label>
                    <select
-                     value={settings.marketTier}
+                     value={settings.marketTier ?? ""}
                      onChange={(e) => update("marketTier", e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
+                     className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
                    >
+                     <option value="">Let Forgetaboutit decide</option>
                      {marketTiers.map((tier) => (
                        <option key={tier} value={tier}>
                          {marketLabels[tier]}
@@ -102,12 +97,21 @@
                      onChange={(value) => update("wordLength", value)}
                    />
                  </div>
-                 <Field
-                   label="Choose grade level"
-                   placeholder="Grade 10"
-                   value={settings.gradeLevel ?? ""}
-                   onChange={(value) => update("gradeLevel", value)}
-                 />
+                 <div>
+                   <label className="text-sm text-brand-muted">Choose grade level (optional)</label>
+                   <select
+                     value={settings.gradeLevel ?? ""}
+                     onChange={(e) => update("gradeLevel", e.target.value)}
+                     className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
+                   >
+                     <option value="">Let Forgetaboutit decide</option>
+                     <option value="Grade 5">Grade 5</option>
+                     <option value="Grade 8">Grade 8</option>
+                     <option value="Grade 10">Grade 10</option>
+                     <option value="Grade 12">Grade 12</option>
+                     <option value="College">College</option>
+                   </select>
+                 </div>
                  <Field
                    label="Enter benchmark"
                    placeholder="Tom Ford"
