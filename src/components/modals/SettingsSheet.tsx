@@ -73,14 +73,9 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
               }
             >
                <header className="mb-4 flex items-center justify-between">
-                 <div>
-                  <Dialog.Title className="font-display text-2xl text-brand-text">
-                     Brief controls
-                   </Dialog.Title>
-                  <p className="text-sm text-brand-muted">
-                     Set tone, benchmarks, and what words to dodge.
-                   </p>
-                 </div>
+                <div>
+                  <Dialog.Title className="font-display text-2xl text-brand-text">Adjust Writing</Dialog.Title>
+                </div>
                 <button onClick={onClose} className="rounded-full border border-brand-stroke/70 p-2 text-brand-text hover:text-brand-blue" aria-label="Close brief controls">
                   <MinusSmallIcon className="h-5 w-5" />
                  </button>
@@ -88,14 +83,14 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
               <div className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field
-                    label="Character length (optional)"
+                    label="Character length"
                     placeholder="600"
                     type="number"
                     value={settings.characterLength ?? ""}
                     onChange={(value) => update("characterLength", value)}
                   />
                   <Field
-                    label="Word length (optional)"
+                    label="Word length"
                     placeholder="250"
                     type="number"
                     value={settings.wordLength ?? ""}
@@ -103,7 +98,7 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-brand-muted">Choose market (optional)</label>
+                  <label className="text-sm text-brand-muted">Choose market</label>
                   <select
                     value={settings.marketTier ?? ""}
                     onChange={(e) => update("marketTier", e.target.value)}
@@ -118,7 +113,7 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
                   </select>
                 </div>
                 <div>
-                  <label className="text-sm text-brand-muted">Choose grade level (optional)</label>
+                  <label className="text-sm text-brand-muted">Choose grade level</label>
                   <select
                     value={settings.gradeLevel ?? ""}
                     onChange={(e) => update("gradeLevel", e.target.value)}

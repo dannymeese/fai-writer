@@ -285,6 +285,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           setSheetAnchor(anchorRect);
           setSheetOpen((prev) => !prev);
         }}
+        showPromptLabel={outputs.length > 0}
       />
       <SettingsSheet
         open={sheetOpen}

@@ -43,7 +43,7 @@ export default function OutputPanel({
 
   if (!outputs.length) {
     return (
-      <div className="flex h-[50vh] items-center justify-center rounded-3xl border border-dashed border-brand-stroke/60 bg-brand-panel/60 p-8 text-center">
+      <div className="flex min-h-[60vh] w-full items-center justify-center text-center">
         <p className="text-4xl font-semibold text-white">What should I write?</p>
       </div>
     );
@@ -354,7 +354,7 @@ function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
       {value ? (
         <span className="text-[11px] font-bold text-white">EDIT</span>
       ) : (
-        <span className="text-2xl font-bold leading-none">+</span>
+        <span className="text-2xl font-bold leading-none text-brand-blue">+</span>
       )}
       <span
         className="pointer-events-none absolute left-0 right-0"

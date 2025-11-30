@@ -1,6 +1,6 @@
 "use client";
 
-import { PaperAirplaneIcon, WrenchIcon } from "@heroicons/react/24/solid";
+import { ArrowUpIcon, WrenchIcon } from "@heroicons/react/24/solid";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef } from "react";
 
@@ -10,9 +10,10 @@ type ComposeBarProps = {
   onSubmit: () => void;
   disabled?: boolean;
   onToggleSettings: (anchorRect: DOMRect | null) => void;
+  showPromptLabel?: boolean;
 };
 
-export default function ComposeBar({ value, onChange, onSubmit, disabled, onToggleSettings }: ComposeBarProps) {
+export default function ComposeBar({ value, onChange, onSubmit, disabled, onToggleSettings, showPromptLabel = false }: ComposeBarProps) {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -29,7 +30,9 @@ export default function ComposeBar({ value, onChange, onSubmit, disabled, onTogg
 
   return (
     <div className="fixed bottom-0 left-0 right-0 border-t border-brand-stroke/60 bg-brand-panel/90 backdrop-blur-xl">
-      <div className="mx-auto flex w-full max-w-5xl items-end gap-3 px-4 py-4">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-4 py-4">
+        {showPromptLabel && <p className="text-base font-semibold text-white">What should I write?</p>}
+        <div className="flex w-full items-end gap-3">
         <button
           type="button"
           aria-label="Open settings"
@@ -40,7 +43,6 @@ export default function ComposeBar({ value, onChange, onSubmit, disabled, onTogg
           <WrenchIcon className="h-6 w-6" />
         </button>
         <div className="flex flex-1 flex-col gap-2">
-          <p className="text-2xl font-semibold text-white">What should I write?</p>
           <textarea
             ref={textareaRef}
             value={value}
@@ -61,9 +63,10 @@ export default function ComposeBar({ value, onChange, onSubmit, disabled, onTogg
             }
           )}
         >
-          <PaperAirplaneIcon className="mr-2 h-4 w-4" />
+          <ArrowUpIcon className="mr-2 h-4 w-4" />
           Send
         </button>
+        </div>
       </div>
     </div>
   );
