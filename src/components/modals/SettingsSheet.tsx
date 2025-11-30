@@ -120,6 +120,7 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
                     className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
                   >
                     <option value="">Auto</option>
+                    <option value="ESL (English as Second Language)">ESL (English as Second Language)</option>
                     <option value="Grade 5">Grade 5</option>
                     <option value="Grade 9">Grade 9</option>
                     <option value="Grade 12">Grade 12</option>
