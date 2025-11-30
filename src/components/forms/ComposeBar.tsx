@@ -66,6 +66,7 @@ export default function ComposeBar({
     if (sendButton) {
       sendButton.style.height = `${nextHeight}px`;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   // Set initial height on mount
@@ -76,6 +77,7 @@ export default function ComposeBar({
       const height = textarea.offsetHeight || 48; // fallback to 48px (h-12)
       sendButton.style.height = `${height}px`;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const content = (

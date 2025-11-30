@@ -3,7 +3,7 @@
 import { cn, formatTimestamp } from "@/lib/utils";
 import { WriterOutput } from "@/types/writer";
 import { ClipboardDocumentIcon, ArrowDownTrayIcon, BookmarkIcon } from "@heroicons/react/24/outline";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { ComposerSettingsInput } from "@/lib/validators";
 
@@ -217,22 +217,26 @@ function OutputContent({ output, onPlaceholderUpdate }: OutputContentProps) {
   const lines = output.content.split("\n");
   const placeholderMeta = output.placeholderMeta ?? [];
   const values = output.placeholderValues ?? {};
-  let cursor = 0;
+  
+  const lineSegments = lines.reduce<Array<{ nodes: ReactNode[]; cursor: number }>>((acc, line, idx) => {
+    const prevCursor = acc.length > 0 ? acc[acc.length - 1].cursor : 0;
+    const { nodes, nextCursor } = buildLineSegments({
+      line,
+      outputId: output.id,
+      placeholderMeta,
+      cursor: prevCursor,
+      values,
+      onPlaceholderUpdate
+    });
+    acc.push({ nodes, cursor: nextCursor });
+    return acc;
+  }, []);
 
   return (
     <>
-      {lines.map((line, idx) => {
-        const { nodes, nextCursor } = buildLineSegments({
-          line,
-          outputId: output.id,
-          placeholderMeta,
-          cursor,
-          values,
-          onPlaceholderUpdate
-        });
-        cursor = nextCursor;
-        return <p key={idx}>{nodes}</p>;
-      })}
+      {lineSegments.map(({ nodes }, idx) => (
+        <p key={idx}>{nodes}</p>
+      ))}
     </>
   );
 }
@@ -299,13 +303,19 @@ type PlaceholderFieldProps = {
 function PlaceholderField({ outputId, placeholderId, label, value, onUpdate }: PlaceholderFieldProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  const prevValueRef = useRef(value);
 
+  // Sync draft when value changes externally, but only if not currently editing
   useEffect(() => {
-    setDraft(value);
-    if (!value) {
-      setEditing(false);
+    if (prevValueRef.current !== value && !editing) {
+      prevValueRef.current = value;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDraft(value);
+      if (!value) {
+        setEditing(false);
+      }
     }
-  }, [value]);
+  }, [value, editing]);
 
   const displayLabel = value || `Enter ${label}`;
 
