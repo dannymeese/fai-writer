@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SignOutButton } from "../shared/SignOutButton";
 import OutputPanel from "./OutputPanel";
@@ -8,7 +8,7 @@ import ComposeBar from "../forms/ComposeBar";
 import SettingsSheet from "../modals/SettingsSheet";
 import { ComposerSettingsInput } from "@/lib/validators";
 import { OutputPlaceholder, WriterOutput } from "@/types/writer";
-import { cn, smartTitleFromPrompt } from "@/lib/utils";
+import { cn, formatTimestamp, smartTitleFromPrompt } from "@/lib/utils";
 
 type WriterWorkspaceProps = {
   user: {
@@ -16,6 +16,16 @@ type WriterWorkspaceProps = {
   };
   initialOutputs?: WriterOutput[];
   isGuest?: boolean;
+};
+
+type SavedDraft = {
+  id: string;
+  title: string;
+  createdAt: string;
+  prompt: string;
+  content: string;
+  settings: ComposerSettingsInput;
+  writingStyle?: string | null;
 };
 
 const defaultSettings: ComposerSettingsInput = {
@@ -111,7 +121,41 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [guestLimitReached, setGuestLimitReached] = useState(false);
   const [hasBrand, setHasBrand] = useState(false);
   const [brandSummary, setBrandSummary] = useState<string | null>(null);
+  const [savedDrafts, setSavedDrafts] = useState<SavedDraft[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const composeInputRef = useRef<HTMLTextAreaElement>(null);
+  const isAuthenticated = !isGuest;
+
+  const fetchSavedDrafts = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const response = await fetch("/api/documents");
+      if (!response.ok) {
+        return;
+      }
+      const docs = await response.json();
+      const mapped: SavedDraft[] = (docs as any[]).map((doc) => ({
+        id: doc.id,
+        title: doc.title ?? "Untitled draft",
+        createdAt: doc.createdAt ?? new Date().toISOString(),
+        prompt: doc.prompt ?? "",
+        content: doc.content ?? "",
+        settings: normalizeSettings({
+          marketTier: doc.tone ?? null,
+          characterLength: doc.characterLength ?? null,
+          wordLength: doc.wordLength ?? null,
+          gradeLevel: doc.gradeLevel ?? null,
+          benchmark: doc.benchmark ?? null,
+          avoidWords: doc.avoidWords ?? null
+        }),
+        writingStyle: doc.writingStyle ?? null
+      }));
+      mapped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setSavedDrafts(mapped);
+    } catch (error) {
+      console.error("fetch conversations error", error);
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (composeInputRef.current) {
@@ -146,6 +190,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     }
     checkBrand();
   }, []);
+
+  useEffect(() => {
+    fetchSavedDrafts();
+  }, [fetchSavedDrafts]);
 
   async function handleSubmit() {
     if (!composeValue.trim()) return;
@@ -302,10 +350,27 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       setToast("Could not save style.");
       return;
     }
+    fetchSavedDrafts();
     setToast("Style saved for future prompts.");
   }
 
   const hasOutputs = outputs.length > 0;
+
+  function handleLoadConversation(draft: SavedDraft) {
+    const restored = ensurePlaceholderState({
+      id: draft.id,
+      title: draft.title,
+      content: draft.content,
+      createdAt: draft.createdAt,
+      settings: draft.settings,
+      prompt: draft.prompt,
+      writingStyle: draft.writingStyle ?? null,
+      placeholderValues: {}
+    });
+    setOutputs([restored]);
+    setComposeValue(draft.prompt ?? "");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   if (!hasOutputs) {
     return (
@@ -315,22 +380,32 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             <SignOutButton />
           </div>
         )}
-        <div className="flex flex-1 items-center justify-center px-4">
-          <div className="flex w-full max-w-4xl flex-col items-center gap-5 text-white">
-            <p className="pb-10 text-[2rem] font-normal leading-none">What should I write?</p>
-            <ComposeBar
-              value={composeValue}
-              onChange={setComposeValue}
-              onSubmit={handleSubmit}
-              disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
-              onToggleSettings={(anchorRect) => {
-                setSheetAnchor(anchorRect);
-                setSheetOpen((prev) => !prev);
-              }}
-              compact
-              inputRef={composeInputRef}
-              hasCustomOptions={hasCustomOptions(settings) || hasBrand}
+        <div className="flex flex-1 overflow-hidden">
+          {isAuthenticated && (
+            <ConversationSidebar
+              open={sidebarOpen}
+              drafts={savedDrafts}
+              onToggle={() => setSidebarOpen((prev) => !prev)}
+              onSelect={handleLoadConversation}
             />
+          )}
+          <div className="flex flex-1 items-center justify-center px-4">
+            <div className="flex w-full max-w-4xl flex-col items-center gap-5 text-white">
+              <p className="pb-10 text-[2rem] font-normal leading-none">What should I write?</p>
+              <ComposeBar
+                value={composeValue}
+                onChange={setComposeValue}
+                onSubmit={handleSubmit}
+                disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
+                onToggleSettings={(anchorRect) => {
+                  setSheetAnchor(anchorRect);
+                  setSheetOpen((prev) => !prev);
+                }}
+                compact
+                inputRef={composeInputRef}
+                hasCustomOptions={hasCustomOptions(settings) || hasBrand}
+              />
+            </div>
           </div>
         </div>
         <SettingsSheet
@@ -354,32 +429,42 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             <SignOutButton />
         </div>
       )}
-      <main className="mx-auto max-w-5xl px-6 py-10">
-        {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
-        <OutputPanel
-          outputs={outputs}
-          onCopy={handleCopy}
-          onDownload={handleDownload}
-          onSaveStyle={handleSaveStyle}
-          onEdit={(output) => {
-            if (!output.prompt) {
-              return;
-            }
-            setComposeValue(output.prompt);
-            setSettings(normalizeSettings(output.settings));
-          requestAnimationFrame(() => {
-            if (composeInputRef.current) {
-              composeInputRef.current.focus();
-              const length = composeInputRef.current.value.length;
-              composeInputRef.current.setSelectionRange(length, length);
-            }
-          });
-          }}
-          canSaveStyle={!guestLimitEnabled || !isGuest}
-          onPlaceholderUpdate={updatePlaceholder}
-          showEmptyState={hasOutputs}
-          hasBrand={hasBrand}
-        />
+      <main className="mx-auto flex max-w-6xl gap-6 px-6 py-10">
+        {isAuthenticated && (
+          <ConversationSidebar
+            open={sidebarOpen}
+            drafts={savedDrafts}
+            onToggle={() => setSidebarOpen((prev) => !prev)}
+            onSelect={handleLoadConversation}
+          />
+        )}
+        <div className="flex-1">
+          {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
+          <OutputPanel
+            outputs={outputs}
+            onCopy={handleCopy}
+            onDownload={handleDownload}
+            onSaveStyle={handleSaveStyle}
+            onEdit={(output) => {
+              if (!output.prompt) {
+                return;
+              }
+              setComposeValue(output.prompt);
+              setSettings(normalizeSettings(output.settings));
+              requestAnimationFrame(() => {
+                if (composeInputRef.current) {
+                  composeInputRef.current.focus();
+                  const length = composeInputRef.current.value.length;
+                  composeInputRef.current.setSelectionRange(length, length);
+                }
+              });
+            }}
+            canSaveStyle={!guestLimitEnabled || !isGuest}
+            onPlaceholderUpdate={updatePlaceholder}
+            showEmptyState={hasOutputs}
+            hasBrand={hasBrand}
+          />
+        </div>
       </main>
       <ComposeBar
         value={composeValue}
@@ -446,6 +531,65 @@ function RegisterGate() {
         </Link>
       </div>
     </div>
+  );
+}
+
+type ConversationSidebarProps = {
+  open: boolean;
+  drafts: SavedDraft[];
+  onToggle: () => void;
+  onSelect: (draft: SavedDraft) => void;
+};
+
+function ConversationSidebar({ open, drafts, onToggle, onSelect }: ConversationSidebarProps) {
+  return (
+    <aside
+      className={cn(
+        "relative hidden h-[calc(100vh-180px)] flex-shrink-0 rounded-3xl border border-brand-stroke/60 bg-brand-panel/60 p-4 transition-all duration-300 lg:block",
+        open ? "w-72" : "w-12"
+      )}
+    >
+      <button
+        type="button"
+        aria-label={open ? "Collapse conversation history" : "Expand conversation history"}
+        onClick={onToggle}
+        className="absolute -right-3 top-4 flex h-8 w-8 items-center justify-center rounded-full border border-brand-stroke/60 bg-brand-background text-sm font-semibold text-brand-text shadow"
+      >
+        {open ? "⟨" : "⟩"}
+      </button>
+      {open ? (
+        <div className="mt-6 flex h-full flex-col overflow-hidden">
+          <p className="text-sm font-semibold uppercase text-brand-muted tracking-[0.2em]">History</p>
+          <div className="mt-4 flex-1 overflow-y-auto pr-2">
+            {drafts.length === 0 ? (
+              <p className="text-sm text-brand-muted">No saved conversations yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {drafts.map((draft) => (
+                  <li key={draft.id}>
+                    <button
+                      type="button"
+                      onClick={() => onSelect(draft)}
+                      className="w-full rounded-2xl border border-brand-stroke/40 bg-brand-background/60 px-3 py-3 text-left transition hover:border-brand-blue"
+                    >
+                      <p className="text-sm font-semibold text-white">{draft.title || "Untitled draft"}</p>
+                      <p className="text-xs text-brand-muted">{formatTimestamp(draft.createdAt)}</p>
+                      {draft.prompt && (
+                        <p className="mt-1 line-clamp-2 text-xs text-brand-muted/80">{draft.prompt}</p>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex h-full items-center justify-center">
+          <span className="rotate-90 text-xs font-semibold uppercase tracking-[0.3em] text-brand-muted">History</span>
+        </div>
+      )}
+    </aside>
   );
 }
 
