@@ -36,6 +36,10 @@ export default function SettingsSheet({
   const [brandProcessing, setBrandProcessing] = useState(false);
   const [hasBrand, setHasBrand] = useState(initialBrandDefined);
 
+  useEffect(() => {
+    setHasBrand(initialBrandDefined);
+  }, [initialBrandDefined]);
+
   // Check if brand is defined on mount and when modal opens
   useEffect(() => {
     async function checkBrand() {
