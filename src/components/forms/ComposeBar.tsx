@@ -13,6 +13,7 @@ type ComposeBarProps = {
   onToggleSettings: (anchorRect: DOMRect | null) => void;
   inputRef?: React.RefObject<HTMLTextAreaElement>;
   compact?: boolean;
+  hasCustomOptions?: boolean;
 };
 
 export default function ComposeBar({
@@ -22,7 +23,8 @@ export default function ComposeBar({
   disabled,
   onToggleSettings,
   inputRef,
-  compact = false
+  compact = false,
+  hasCustomOptions = false
 }: ComposeBarProps) {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const sendButtonRef = useRef<HTMLButtonElement>(null);
@@ -89,9 +91,12 @@ export default function ComposeBar({
             aria-label="Open settings"
             ref={settingsButtonRef}
             onClick={() => onToggleSettings(settingsButtonRef.current?.getBoundingClientRect() ?? null)}
-            className="flex w-12 items-center justify-center border-r border-brand-stroke/80 text-brand-muted transition hover:text-brand-blue"
+            className="relative flex w-12 items-center justify-center border-r border-brand-stroke/80 text-brand-muted transition hover:text-brand-blue"
           >
             <WrenchIcon className="h-6 w-6" />
+            {hasCustomOptions && (
+              <span className="absolute top-1 right-1 h-1 w-1 rounded-full bg-[#00f]" />
+            )}
           </button>
           <textarea
             ref={textareaRef}

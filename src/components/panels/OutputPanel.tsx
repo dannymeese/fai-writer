@@ -16,6 +16,7 @@ type OutputPanelProps = {
   canSaveStyle?: boolean;
   onPlaceholderUpdate: (outputId: string, placeholderId: string, value: string | null) => void;
   showEmptyState?: boolean;
+  hasBrand?: boolean;
 };
 
 type PendingAction = {
@@ -40,7 +41,8 @@ export default function OutputPanel({
   onEdit,
   canSaveStyle = true,
   onPlaceholderUpdate,
-  showEmptyState = true
+  showEmptyState = true,
+  hasBrand = false
 }: OutputPanelProps) {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
@@ -61,7 +63,7 @@ export default function OutputPanel({
             <p className="text-[9px] font-semibold uppercase text-brand-muted">YOU</p>
             <div className="max-w-xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/80 px-4 py-3 text-sm text-brand-text shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
               <p className="text-brand-text/90">{output.prompt || "Prompt unavailable for this draft."}</p>
-              <SettingsTags settings={output.settings} />
+              <SettingsTags settings={output.settings} hasBrand={hasBrand} />
               {output.prompt && (
                 <div className="mt-3 flex justify-end">
                   <button
@@ -386,6 +388,7 @@ function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
 
 type SettingsTagsProps = {
   settings: ComposerSettingsInput;
+  hasBrand?: boolean;
 };
 
 const marketLabels: Record<string, string> = {
@@ -395,8 +398,12 @@ const marketLabels: Record<string, string> = {
   UHNW: "UHNW ($$$$$)"
 };
 
-function SettingsTags({ settings }: SettingsTagsProps) {
+function SettingsTags({ settings, hasBrand = false }: SettingsTagsProps) {
   const tags: string[] = [];
+
+  if (hasBrand) {
+    tags.push("Custom Brand");
+  }
 
   if (settings.marketTier) {
     tags.push(marketLabels[settings.marketTier] || settings.marketTier);

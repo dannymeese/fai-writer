@@ -1,7 +1,7 @@
  "use client";
  
  import { Dialog, Transition } from "@headlessui/react";
- import { Fragment, useState } from "react";
+ import { Fragment, useState, useEffect } from "react";
 import { MinusSmallIcon } from "@heroicons/react/24/outline";
  import { ComposerSettingsInput, marketTiers } from "@/lib/validators";
  
@@ -24,6 +24,25 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
   const [brandModalOpen, setBrandModalOpen] = useState(false);
   const [brandInput, setBrandInput] = useState("");
   const [brandProcessing, setBrandProcessing] = useState(false);
+  const [hasBrand, setHasBrand] = useState(false);
+
+  // Check if brand is defined on mount and when modal opens
+  useEffect(() => {
+    async function checkBrand() {
+      try {
+        const response = await fetch("/api/brand");
+        if (response.ok) {
+          const data = await response.json();
+          setHasBrand(!!data.brandInfo);
+        }
+      } catch (error) {
+        console.error("Failed to check brand info", error);
+      }
+    }
+    if (open) {
+      checkBrand();
+    }
+  }, [open]);
 
   async function handleDefineBrand() {
     if (!brandInput.trim()) {
@@ -39,6 +58,7 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
       if (response.ok) {
         setBrandInput("");
         setBrandModalOpen(false);
+        setHasBrand(true);
       }
     } catch (error) {
       console.error("Failed to save brand info", error);
@@ -167,12 +187,18 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
                   onChange={(value) => update("avoidWords", value)}
                 />
                 <div className="pt-2 border-t border-brand-stroke/60">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-brand-muted">Brand</span>
+                    {hasBrand && (
+                      <span className="text-xs text-brand-blue font-semibold">Custom Brand Defined</span>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={() => setBrandModalOpen(true)}
                     className="w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
                   >
-                    Define Brand
+                    {hasBrand ? "Update Brand" : "Define Brand"}
                   </button>
                 </div>
                </div>

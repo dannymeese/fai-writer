@@ -38,6 +38,17 @@ function normalizeSettings(next?: Partial<ComposerSettingsInput>): ComposerSetti
   };
 }
 
+function hasCustomOptions(settings: ComposerSettingsInput): boolean {
+  return !!(
+    settings.marketTier ||
+    settings.gradeLevel ||
+    settings.benchmark ||
+    settings.avoidWords ||
+    settings.characterLength ||
+    settings.wordLength
+  );
+}
+
 function derivePlaceholderMeta(content: string): OutputPlaceholder[] {
   const meta: OutputPlaceholder[] = [];
   const regex = /\[([^\]]+)]/g;
@@ -98,6 +109,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [guestLimitReached, setGuestLimitReached] = useState(false);
+  const [hasBrand, setHasBrand] = useState(false);
   const composeInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -105,6 +117,23 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     const id = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(id);
   }, [toast]);
+
+  // Check if brand is defined
+  useEffect(() => {
+    if (isGuest) return;
+    async function checkBrand() {
+      try {
+        const response = await fetch("/api/brand");
+        if (response.ok) {
+          const data = await response.json();
+          setHasBrand(!!data.brandInfo);
+        }
+      } catch (error) {
+        console.error("Failed to check brand info", error);
+      }
+    }
+    checkBrand();
+  }, [isGuest]);
 
   async function handleSubmit() {
     if (!composeValue.trim()) return;
@@ -287,6 +316,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               }}
               compact
               inputRef={composeInputRef}
+              hasCustomOptions={hasCustomOptions(settings)}
             />
           </div>
         </div>
@@ -333,6 +363,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           canSaveStyle={!guestLimitEnabled || !isGuest}
           onPlaceholderUpdate={updatePlaceholder}
           showEmptyState={hasOutputs}
+          hasBrand={hasBrand}
         />
       </main>
       <ComposeBar
@@ -345,6 +376,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           setSheetOpen((prev) => !prev);
         }}
         inputRef={composeInputRef}
+        hasCustomOptions={hasCustomOptions(settings)}
       />
       <SettingsSheet
         open={sheetOpen}
