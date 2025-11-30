@@ -7,9 +7,8 @@ export default function SiteHeader() {
     <header className="sticky top-0 z-40 border-b border-brand-stroke/60 bg-brand-background/95 px-4 py-4 backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4">
         <div className="font-display text-3xl leading-tight sm:text-[36px]">
-          <span style={{ color: "#ffffff" }}>Forgetaboutit</span>
-          <span style={{ color: "#0000ff" }}>.ai </span>
-          <span style={{ color: "#ffffff" }}>Writer Pro</span>
+          <span style={{ color: "#0000ff" }}>Forgetaboutit </span>
+          <span style={{ color: "#ffffff" }}>Writer</span>
         </div>
         <div className="flex items-center gap-3">
           <Link
