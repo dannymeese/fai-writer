@@ -252,6 +252,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     setToast("Style saved for future prompts.");
   }
 
+  const hasOutputs = outputs.length > 0;
+
   return (
     <div className="min-h-screen bg-brand-background pb-32 text-brand-text">
       {!isGuest && (
@@ -284,18 +286,38 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           onPlaceholderUpdate={updatePlaceholder}
         />
       </main>
-      <ComposeBar
-        value={composeValue}
-        onChange={setComposeValue}
-        onSubmit={handleSubmit}
-        disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
-        onToggleSettings={(anchorRect) => {
-          setSheetAnchor(anchorRect);
-          setSheetOpen((prev) => !prev);
-        }}
-        showPromptLabel={outputs.length > 0}
-        inputRef={composeInputRef}
-      />
+      {hasOutputs ? (
+        <ComposeBar
+          value={composeValue}
+          onChange={setComposeValue}
+          onSubmit={handleSubmit}
+          disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
+          onToggleSettings={(anchorRect) => {
+            setSheetAnchor(anchorRect);
+            setSheetOpen((prev) => !prev);
+          }}
+          showPromptLabel
+          inputRef={composeInputRef}
+        />
+      ) : (
+        <div className="sticky bottom-0 left-0 right-0 border-t border-brand-stroke/60 bg-brand-panel/90 px-4 py-8 text-white">
+          <div className="mx-auto flex max-w-4xl flex-col gap-4 text-center">
+            <p className="text-4xl font-normal text-white">What should I write?</p>
+            <ComposeBar
+              value={composeValue}
+              onChange={setComposeValue}
+              onSubmit={handleSubmit}
+              disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
+              onToggleSettings={(anchorRect) => {
+                setSheetAnchor(anchorRect);
+                setSheetOpen((prev) => !prev);
+              }}
+              compact
+              inputRef={composeInputRef}
+            />
+          </div>
+        </div>
+      )}
       <SettingsSheet
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}

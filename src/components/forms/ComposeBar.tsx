@@ -13,6 +13,7 @@ type ComposeBarProps = {
   onToggleSettings: (anchorRect: DOMRect | null) => void;
   showPromptLabel?: boolean;
   inputRef?: React.RefObject<HTMLTextAreaElement>;
+  compact?: boolean;
 };
 
 export default function ComposeBar({
@@ -22,7 +23,8 @@ export default function ComposeBar({
   disabled,
   onToggleSettings,
   showPromptLabel = false,
-  inputRef
+  inputRef,
+  compact = false
 }: ComposeBarProps) {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -61,11 +63,10 @@ export default function ComposeBar({
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [value]);
 
-  return (
-    <div className="fixed bottom-0 left-0 right-0 border-t border-brand-stroke/60 bg-brand-panel/90 backdrop-blur-xl">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-4 py-4">
-        {showPromptLabel && <p className="text-base font-semibold text-white">What should I write?</p>}
-        <div className="flex w-full items-end gap-3">
+  const content = (
+    <div className="flex w-full flex-col gap-2">
+      {showPromptLabel && <p className="text-base font-semibold text-white">What should I write?</p>}
+      <div className="flex w-full items-end gap-3">
         <button
           type="button"
           aria-label="Open settings"
@@ -98,8 +99,17 @@ export default function ComposeBar({
         >
           <ArrowUpIcon className="h-8 w-8 stroke-[3]" />
         </button>
-        </div>
       </div>
+    </div>
+  );
+
+  if (compact) {
+    return <div className="w-full">{content}</div>;
+  }
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 border-t border-brand-stroke/60 bg-brand-panel/90 backdrop-blur-xl">
+      <div className="mx-auto w-full max-w-5xl px-4 py-4">{content}</div>
     </div>
   );
 }
