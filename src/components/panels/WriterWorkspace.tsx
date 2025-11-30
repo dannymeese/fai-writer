@@ -118,9 +118,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     return () => clearTimeout(id);
   }, [toast]);
 
-  // Check if brand is defined
+  // Check if brand is defined (works for both authenticated users and guests)
   useEffect(() => {
-    if (isGuest) return;
     async function checkBrand() {
       try {
         const response = await fetch("/api/brand");
@@ -133,7 +132,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       }
     }
     checkBrand();
-  }, [isGuest]);
+  }, []);
 
   async function handleSubmit() {
     if (!composeValue.trim()) return;
@@ -326,7 +325,6 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           settings={settings}
           onChange={setSettings}
           anchorRect={sheetAnchor}
-          isGuest={isGuest}
         />
         <Toast message={toast} />
       </div>

@@ -53,7 +53,7 @@ export async function POST(request: Request) {
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  // Fetch brand info if user is authenticated
+  // Fetch brand info from database or cookie
   let brandInfo: string | null = null;
   if (isAuthenticated && session?.user?.id && prisma) {
     try {
@@ -62,8 +62,13 @@ export async function POST(request: Request) {
       }) as any;
       brandInfo = user?.brandInfo ?? null;
     } catch (error) {
-      console.error("Failed to fetch brand info", error);
+      console.error("Failed to fetch brand info from database", error);
     }
+  }
+  
+  // Fall back to cookie for guests or if DB lookup failed
+  if (!brandInfo && cookieStore) {
+    brandInfo = cookieStore.get("guest_brand_info")?.value ?? null;
   }
 
   const directiveLines = [

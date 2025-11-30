@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { cookies } from "next/headers";
 import OpenAI from "openai";
 import { z } from "zod";
 
@@ -10,9 +11,8 @@ const brandProcessSchema = z.object({
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const isAuthenticated = Boolean(session?.user?.id);
+  const cookieStore = await cookies();
 
   const json = await request.json().catch(() => null);
   const parsed = brandProcessSchema.safeParse(json);
@@ -61,17 +61,29 @@ Create a concise but complete brand guide that captures all essential informatio
       return NextResponse.json({ error: "Failed to process brand information" }, { status: 502 });
     }
 
-    // Save to database
-    if (prisma) {
-      await prisma.user.update({
-        where: { id: session.user.id },
-        data: {
-          brandInfo: processedBrandInfo
-        } as any
+    const jsonResponse = NextResponse.json({ success: true, brandInfo: processedBrandInfo });
+
+    // Save to database for authenticated users
+    if (isAuthenticated && session?.user?.id && prisma) {
+      try {
+        await prisma.user.update({
+          where: { id: session.user.id },
+          data: {
+            brandInfo: processedBrandInfo
+          } as any
+        });
+      } catch (error) {
+        console.error("Failed to save brand to database", error);
+      }
+    } else {
+      // Store in cookie for guests
+      jsonResponse.cookies.set("guest_brand_info", processedBrandInfo, {
+        maxAge: 60 * 60 * 24 * 365, // 1 year
+        path: "/"
       });
     }
 
-    return NextResponse.json({ success: true, brandInfo: processedBrandInfo });
+    return jsonResponse;
   } catch (error) {
     console.error("Brand processing error", error);
     return NextResponse.json({ error: "Failed to process brand information" }, { status: 500 });
@@ -80,24 +92,28 @@ Create a concise but complete brand guide that captures all essential informatio
 
 export async function GET() {
   const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const isAuthenticated = Boolean(session?.user?.id);
+  const cookieStore = await cookies();
+
+  // Try to get from database for authenticated users
+  if (isAuthenticated && session?.user?.id && prisma) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { brandInfo: true }
+      });
+
+      const brandInfo = (user as any)?.brandInfo ?? null;
+      if (brandInfo) {
+        return NextResponse.json({ brandInfo });
+      }
+    } catch (error) {
+      console.error("Failed to fetch brand info from database", error);
+    }
   }
 
-  if (!prisma) {
-    return NextResponse.json({ brandInfo: null });
-  }
-
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { brandInfo: true }
-    });
-
-    return NextResponse.json({ brandInfo: (user as any)?.brandInfo ?? null });
-  } catch (error) {
-    console.error("Failed to fetch brand info", error);
-    return NextResponse.json({ brandInfo: null });
-  }
+  // Fall back to cookie for guests or if DB lookup failed
+  const guestBrandInfo = cookieStore.get("guest_brand_info")?.value;
+  return NextResponse.json({ brandInfo: guestBrandInfo ?? null });
 }
 
