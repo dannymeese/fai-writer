@@ -63,13 +63,13 @@ export default function ComposeBar({
 
   const content = (
     <div className="flex w-full flex-col gap-2">
-      <div className="flex w-full items-end gap-0">
+      <div className="flex w-full items-end gap-1">
         <button
           type="button"
           aria-label="Open settings"
           ref={settingsButtonRef}
           onClick={() => onToggleSettings(settingsButtonRef.current?.getBoundingClientRect() ?? null)}
-          className="flex h-12 w-12 items-center justify-center rounded-l-2xl border-l border-t border-b border-brand-stroke/80 bg-brand-ink text-brand-muted transition hover:text-brand-blue self-end"
+          className="flex h-12 w-12 items-center justify-center rounded-l-full border-l border-t border-b border-brand-stroke/80 bg-brand-ink text-brand-muted transition hover:text-brand-blue self-end"
         >
           <WrenchIcon className="h-6 w-6" />
         </button>
@@ -79,7 +79,7 @@ export default function ComposeBar({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholderExamples[placeholderIndex]}
-            className="w-full resize-none rounded-r-2xl rounded-l-none border-r border-t border-b border-brand-stroke/80 bg-brand-ink px-4 py-3 text-base text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
+            className="w-full resize-none rounded-r-full rounded-l-none border-r border-t border-b border-brand-stroke/80 bg-brand-ink px-4 py-3 text-base text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
             rows={1}
           />
         </div>
