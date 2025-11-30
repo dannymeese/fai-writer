@@ -52,7 +52,6 @@ export default function ComposeBar({
 
   useEffect(() => {
     const textarea = textareaRef.current;
-    const button = settingsButtonRef.current;
     if (!textarea) return;
     const lineHeight = 24;
     const maxHeight = lineHeight * 10;
@@ -60,33 +59,18 @@ export default function ComposeBar({
     const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
     textarea.style.height = `${nextHeight}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
-    
-    // Sync button height with textarea height
-    if (button) {
-      button.style.height = `${nextHeight}px`;
-    }
   }, [value]);
-
-  // Set initial height on mount
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    const button = settingsButtonRef.current;
-    if (textarea && button) {
-      const height = textarea.offsetHeight || 48; // fallback to 48px (h-12)
-      button.style.height = `${height}px`;
-    }
-  }, []);
 
   const content = (
     <div className="flex w-full flex-col gap-2">
       <div className="flex w-full items-stretch gap-1">
-        <div className="flex items-stretch">
+        <div className="flex flex-1 items-stretch overflow-hidden rounded-full border border-brand-stroke/80 bg-brand-ink focus-within:border-brand-blue">
           <button
             type="button"
             aria-label="Open settings"
             ref={settingsButtonRef}
             onClick={() => onToggleSettings(settingsButtonRef.current?.getBoundingClientRect() ?? null)}
-            className="flex w-12 items-center justify-center rounded-l-full border-l border-t border-b border-brand-stroke/80 bg-brand-ink text-brand-muted transition hover:text-brand-blue"
+            className="flex w-12 items-center justify-center border-r border-brand-stroke/80 text-brand-muted transition hover:text-brand-blue"
           >
             <WrenchIcon className="h-6 w-6" />
           </button>
@@ -95,7 +79,7 @@ export default function ComposeBar({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholderExamples[placeholderIndex]}
-            className="flex-1 resize-none rounded-r-full rounded-l-none border-r border-t border-b border-brand-stroke/80 bg-brand-ink px-4 py-3 text-base text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
+            className="flex-1 resize-none border-none bg-transparent px-4 py-3 text-base text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:outline-none"
             rows={1}
           />
         </div>
