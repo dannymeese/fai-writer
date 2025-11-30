@@ -131,6 +131,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     try {
       const response = await fetch("/api/documents");
       if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        console.warn("load drafts failed", response.status, payload);
         return;
       }
       const docs = await response.json();
@@ -332,23 +334,37 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       return;
     }
     const resolvedContent = resolveOutputContent(output);
-    const response = await fetch("/api/documents", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: `${output.title} • Style`,
-        content: resolvedContent,
-        tone: output.settings.marketTier ?? undefined,
-        prompt: output.prompt,
-        // Only save non-length related settings
-        gradeLevel: output.settings.gradeLevel,
-        benchmark: output.settings.benchmark,
-        avoidWords: output.settings.avoidWords,
-        writingStyle: output.writingStyle ?? undefined
-      })
-    });
+    let response: Response;
+    try {
+      response = await fetch("/api/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `${output.title} • Style`,
+          content: resolvedContent,
+          tone: output.settings.marketTier ?? undefined,
+          prompt: output.prompt,
+          // Only save non-length related settings
+          gradeLevel: output.settings.gradeLevel ?? undefined,
+          benchmark: output.settings.benchmark ?? undefined,
+          avoidWords: output.settings.avoidWords ?? undefined,
+          writingStyle: output.writingStyle ?? undefined
+        })
+      });
+    } catch (error) {
+      console.error("save style network failure", error);
+      setToast("Unable to reach the server. Please try again.");
+      return;
+    }
+
     if (!response.ok) {
-      setToast("Could not save style.");
+      const payload = await response.json().catch(() => null);
+      console.warn("save style failed", response.status, payload);
+      setToast(
+        typeof payload?.error === "string"
+          ? payload.error
+          : "Could not save style."
+      );
       return;
     }
     fetchSavedDrafts();

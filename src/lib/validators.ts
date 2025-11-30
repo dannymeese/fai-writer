@@ -37,7 +37,7 @@ export const composeRequestSchema = z.object({
 export const documentSchema = z.object({
   title: z.string().min(1),
   content: z.string().min(1),
-  tone: z.string().optional(),
+  tone: z.string().optional().nullable(),
   prompt: z.string().optional(),
   characterLength: z.number().int().positive().max(2000).nullable().optional(),
   wordLength: z.number().int().positive().max(1500).nullable().optional(),
