@@ -14,8 +14,9 @@ function buildSystemPrompt(): string {
 3. DO NOT REPEAT SOMETHING THAT MEANS ESSENTIALLY THE SAME THING BUT IN DIFFERENT WORDS. 
 4. MAKE SURE THAT EVERY WORD SERVES A PURPOSE AND BRINGS ADDITIONAL MEANING OR DON'T USE IT AT ALL.
 5. ONLY PROVIDE TEXT THAT FEELS BESPOKE AND HUMAN.
-6. All missing info should be formatted in [] like [brand name], etc. Don't guess product name, service name, business name etc.
-7. DO NOT use emojis unless the user EXPLICITLY asks you to.`;
+6. If brand information is provided in the user's prompt, use it directly. DO NOT ask the user for brand details, names, products, services, or other information that has already been provided in the brand context.
+7. Only use placeholders [like this] for information that is truly missing and not mentioned anywhere in the brand context or user's request.
+8. DO NOT use emojis unless the user EXPLICITLY asks you to.`;
 }
 
 export async function POST(request: Request) {
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
   const briefSection = directiveLines.length ? `\n\nBrief:\n- ${directiveLines.join("\n- ")}` : "";
   
   // Append brand info to user prompt if available
-  const brandSection = brandInfo ? `\n\nBrand Context:\n${brandInfo}\n\nUse the brand guidelines, vocabulary, tone, and style preferences above when writing.` : "";
+  const brandSection = brandInfo ? `\n\nIMPORTANT: The following brand information has already been defined. Use this information directly - DO NOT ask the user for brand details, names, or other information that is already provided below:\n\nBrand Context:\n${brandInfo}\n\nUse the brand guidelines, vocabulary, tone, style preferences, and all details above when writing. If brand name, products, services, or other details are mentioned in the brand context, use them directly without asking the user.` : "";
   const userPrompt = `${prompt}${briefSection}${brandSection}`;
 
   try {
