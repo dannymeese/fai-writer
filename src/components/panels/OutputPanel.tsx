@@ -237,7 +237,7 @@ function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
 
   if (editing) {
     return (
-      <span className="ml-2 inline-flex items-center gap-2 rounded-full border-[3px] border-white px-3 py-1 text-xs font-semibold text-white">
+      <span className="relative ml-2 inline-flex items-center gap-2 rounded-full border border-white/40 px-3 py-1 text-xs font-semibold text-white">
         <input
           autoFocus
           value={draft}
@@ -255,22 +255,27 @@ function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
 
   if (value) {
     return (
-      <span className="ml-2 inline-flex items-center gap-2 rounded-full border-[3px] border-white px-3 py-1 text-xs font-semibold text-white">
-        <span>{value}</span>
-        <button type="button" className="text-white/70 hover:text-white" onClick={openEditor}>
-          Edit
+      <span className="relative ml-2 inline-flex items-center gap-2 text-sm font-semibold uppercase text-white">
+        <span className="text-base normal-case">{value}</span>
+        <button type="button" className="text-[11px] font-bold uppercase tracking-[0.2em] text-white" onClick={openEditor}>
+          EDIT
         </button>
+        <span
+          className="pointer-events-none absolute left-0 right-0"
+          style={{ bottom: "-4px", height: "3px", backgroundColor: "#0f0" }}
+        />
       </span>
     );
   }
 
   return (
-    <button
-      type="button"
-      onClick={openEditor}
-      className="ml-2 inline-flex items-center rounded-full border-[3px] border-white px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/10"
-    >
-      {displayLabel}
+    <button type="button" onClick={openEditor} className="relative ml-2 inline-flex items-center gap-2 text-sm font-semibold uppercase text-white">
+      <span className="text-base normal-case">{displayLabel}</span>
+      <span className="text-2xl font-bold leading-none">+</span>
+      <span
+        className="pointer-events-none absolute left-0 right-0"
+        style={{ bottom: "-4px", height: "3px", backgroundColor: "#ffffff" }}
+      />
     </button>
   );
 }
