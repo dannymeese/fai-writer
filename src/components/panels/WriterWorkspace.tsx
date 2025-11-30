@@ -256,15 +256,15 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
 
   if (!hasOutputs) {
     return (
-      <div className="flex min-h-screen flex-col bg-brand-background text-brand-text">
+      <div className="relative flex min-h-screen flex-col bg-brand-background text-brand-text">
         {!isGuest && (
-          <div className="mx-auto flex w-full max-w-6xl justify-end px-6 pt-6">
+          <div className="absolute right-6 top-6 z-10">
             <SignOutButton />
           </div>
         )}
-        <div className="flex flex-1 items-center justify-center px-4 py-12">
-          <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-4 text-white">
-            <p className="text-3xl font-normal">What should I write?</p>
+        <div className="flex flex-1 items-center justify-center px-4">
+          <div className="flex w-full max-w-4xl flex-col items-center gap-5 text-white">
+            <p className="text-2xl font-normal">What should I write?</p>
             <ComposeBar
               value={composeValue}
               onChange={setComposeValue}
