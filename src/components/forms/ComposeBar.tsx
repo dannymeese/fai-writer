@@ -95,6 +95,19 @@ export default function ComposeBar({
             ref={textareaRef}
             value={value}
             onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                // Shift+Enter: allow new line (default behavior)
+                if (e.shiftKey && !e.metaKey && !e.ctrlKey) {
+                  return;
+                }
+                // Enter alone, Cmd+Enter, or Ctrl+Enter: submit
+                e.preventDefault();
+                if (!disabled && value.trim()) {
+                  onSubmit();
+                }
+              }
+            }}
             placeholder={placeholderExamples[placeholderIndex]}
             className="flex-1 resize-none border-none bg-transparent px-4 py-3 text-base text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:outline-none"
             rows={1}
