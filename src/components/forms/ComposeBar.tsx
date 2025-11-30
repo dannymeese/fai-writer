@@ -2,7 +2,7 @@
 
 import { ArrowUpIcon, WrenchIcon } from "@heroicons/react/24/solid";
 import { cn } from "@/lib/utils";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type ComposeBarProps = {
   value: string;
@@ -11,11 +11,44 @@ type ComposeBarProps = {
   disabled?: boolean;
   onToggleSettings: (anchorRect: DOMRect | null) => void;
   showPromptLabel?: boolean;
+  inputRef?: React.RefObject<HTMLTextAreaElement>;
 };
 
-export default function ComposeBar({ value, onChange, onSubmit, disabled, onToggleSettings, showPromptLabel = false }: ComposeBarProps) {
+export default function ComposeBar({
+  value,
+  onChange,
+  onSubmit,
+  disabled,
+  onToggleSettings,
+  showPromptLabel = false,
+  inputRef
+}: ComposeBarProps) {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = inputRef ?? internalTextareaRef;
+  const placeholderExamples = useMemo(
+    () => [
+      "Write a luxury hotel welcome email.",
+      "Draft a VC pitch opening paragraph.",
+      "Polish a college admissions essay intro.",
+      "Summarize a medical research paper.",
+      "Compose a heartfelt wedding toast.",
+      "Rewrite a SaaS onboarding sequence.",
+      "Craft a keynote speech conclusion.",
+      "Turn bullet points into a press release.",
+      "Explain quantum computing plainly.",
+      "Revise a product update for customers."
+    ],
+    []
+  );
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPlaceholderIndex((prev) => (prev + 1) % placeholderExamples.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [placeholderExamples.length]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -47,7 +80,7 @@ export default function ComposeBar({ value, onChange, onSubmit, disabled, onTogg
             ref={textareaRef}
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="What should I write or revise?"
+            placeholder={placeholderExamples[placeholderIndex]}
             className="w-full resize-none rounded-2xl border border-brand-stroke/80 bg-brand-ink px-4 py-3 text-base text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
             rows={1}
           />
@@ -63,8 +96,7 @@ export default function ComposeBar({ value, onChange, onSubmit, disabled, onTogg
             }
           )}
         >
-          <ArrowUpIcon className="mr-2 h-4 w-4" />
-          Send
+          <ArrowUpIcon className="h-6 w-6 font-bold" />
         </button>
         </div>
       </div>

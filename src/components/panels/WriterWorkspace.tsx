@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { SignOutButton } from "../shared/SignOutButton";
 import OutputPanel from "./OutputPanel";
@@ -88,6 +88,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [guestLimitReached, setGuestLimitReached] = useState(false);
+  const composeInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -271,6 +272,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             }
             setComposeValue(output.prompt);
             setSettings(normalizeSettings(output.settings));
+          requestAnimationFrame(() => {
+            if (composeInputRef.current) {
+              composeInputRef.current.focus();
+              const length = composeInputRef.current.value.length;
+              composeInputRef.current.setSelectionRange(length, length);
+            }
+          });
           }}
           canSaveStyle={!guestLimitEnabled || !isGuest}
           onPlaceholderUpdate={updatePlaceholder}
@@ -286,6 +294,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           setSheetOpen((prev) => !prev);
         }}
         showPromptLabel={outputs.length > 0}
+        inputRef={composeInputRef}
       />
       <SettingsSheet
         open={sheetOpen}
