@@ -17,14 +17,21 @@ AI-assisted luxury copy studio tailored for Cloudways deployments.
    npm install
    ```
 2. Copy `env.example` to `.env` and fill in credentials.
-3. Generate Prisma client and run migrations:
+3. (Optional but recommended) Start a local MySQL instance via Docker so registration/saved styles work:
+   ```bash
+   docker compose up -d
+   ```
+   This uses `docker-compose.yml` (MySQL 8.0 on `localhost:3307` with the `fw_user/fw_pass` credentials that match `DATABASE_URL`). Ensure Docker Desktop is running before executing the command.
+4. Generate Prisma client and run migrations:
    ```bash
    npx prisma db push
    ```
-4. Start the dev server:
+5. Start the dev server:
    ```bash
    npm run dev
    ```
+
+If Docker isn’t available, the UI still works in guest mode, but registration will warn that the database is unavailable.
 
 ## Cloudways notes
 
