@@ -32,17 +32,25 @@ if (hasDatabase) {
         }
         const parsed = signInSchema.safeParse(credentials);
         if (!parsed.success) {
+          // eslint-disable-next-line no-console
+          console.warn("[auth] credentials schema failed", parsed.error.flatten());
           return null;
         }
         const { email, password } = parsed.data;
+        // eslint-disable-next-line no-console
+        console.info("[auth] Attempting sign-in", email);
         const user = await prisma.user.findUnique({
           where: { email }
         });
         if (!user?.password) {
+          // eslint-disable-next-line no-console
+          console.warn("[auth] No user or password for email", email);
           return null;
         }
         const valid = await compare(password, user.password);
         if (!valid) {
+          // eslint-disable-next-line no-console
+          console.warn("[auth] Invalid password for", email);
           return null;
         }
         return {

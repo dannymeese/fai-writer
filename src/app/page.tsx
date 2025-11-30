@@ -1,7 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import WriterWorkspace from "@/components/panels/WriterWorkspace";
-import { logEvent } from "@/lib/logger";
 
 // Prisma client in this workspace does not surface optional brief fields in its generated types,
 // so define the subset we know exists and cast query results to it for now.
@@ -22,7 +21,6 @@ type StoredDocument = {
 
 export default async function HomePage() {
   const session = await auth();
-  logEvent("home session", { userId: session?.user?.id ?? null });
   const sanitizeTier = (value: string | null | undefined) =>
     value && ["MASS", "PREMIUM", "LUXURY", "UHNW"].includes(value) ? (value as "MASS" | "PREMIUM" | "LUXURY" | "UHNW") : null;
 

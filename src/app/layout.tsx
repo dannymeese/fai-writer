@@ -3,6 +3,7 @@ import { Manrope, Fira_Code } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/shared/Providers";
 import SiteHeader from "@/components/shared/SiteHeader";
+import { auth } from "@/auth";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -21,11 +22,12 @@ export const metadata: Metadata = {
   description: "AI copy studio crafted for premium brands"
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth();
   return (
     <html lang="en" className={`${manrope.variable} ${firaCode.variable}`}>
       <body className="min-h-screen bg-brand-background font-sans text-brand-text antialiased">
-        <Providers>
+        <Providers session={session}>
           <div className="flex min-h-screen flex-col bg-brand-background text-brand-text">
             <SiteHeader />
             <main className="flex-1">{children}</main>
