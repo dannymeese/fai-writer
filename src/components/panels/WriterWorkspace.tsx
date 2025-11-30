@@ -311,7 +311,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         )}
         <div className="flex flex-1 items-center justify-center px-4">
           <div className="flex w-full max-w-4xl flex-col items-center gap-5 text-white">
-            <p className="text-2xl font-normal">What should I write?</p>
+            <p className="pb-10 text-[2rem] font-normal leading-none">What should I write?</p>
             <ComposeBar
               value={composeValue}
               onChange={setComposeValue}
