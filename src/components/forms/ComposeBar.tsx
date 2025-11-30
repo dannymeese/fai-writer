@@ -30,13 +30,12 @@ export default function ComposeBar({
   const placeholderExamples = useMemo(
     () => [
       "Draft a VC pitch for an organic dog food brand.",
-      "Rewrite our retention email for premium spa guests.",
-      "Polish a college admissions essay about robotics.",
-      "Summarize a medical paper on gene therapies for parents.",
+      "Rewrite the retention email below for premium spa guests:",
+      "Draft a college admissions essay about robotics.",
+      "Outline a medical paper on gene therapies.",
       "Compose a heartfelt toast for a founder’s retirement gala.",
-      "Rewrite our SaaS onboarding flow for enterprise clients.",
-      "Craft a keynote opener for a sustainability summit.",
-      "Turn these bullet points into a press release for a launch.",
+      "I need a keynote opener for a sustainability summit.",
+      "Turn these bullet points into a press release for a launch:",
       "Explain quantum computing to luxury retail executives.",
       "Revise a product update note for boutique hotel partners."
     ],
