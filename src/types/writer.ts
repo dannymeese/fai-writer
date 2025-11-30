@@ -14,5 +14,6 @@ export type WriterOutput = {
   prompt: string;
   placeholderValues?: Record<string, string>;
   placeholderMeta?: OutputPlaceholder[];
+  isPending?: boolean;
 };
 

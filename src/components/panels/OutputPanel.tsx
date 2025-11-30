@@ -1,6 +1,6 @@
 "use client";
 
-import { formatTimestamp } from "@/lib/utils";
+import { cn, formatTimestamp } from "@/lib/utils";
 import { WriterOutput } from "@/types/writer";
 import { ClipboardDocumentIcon, ArrowDownTrayIcon, BookmarkIcon } from "@heroicons/react/24/outline";
 import { useEffect, useState } from "react";
@@ -43,8 +43,8 @@ export default function OutputPanel({
 
   if (!outputs.length) {
     return (
-      <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-brand-stroke/60 bg-brand-panel/60 p-8 text-center text-brand-muted">
-        Your drafts will land here with instant copy, download, and style saves.
+      <div className="flex h-[50vh] items-center justify-center rounded-3xl border border-dashed border-brand-stroke/60 bg-brand-panel/60 p-8 text-center">
+        <p className="text-4xl font-semibold text-white">What should I write?</p>
       </div>
     );
   }
@@ -73,21 +73,38 @@ export default function OutputPanel({
           </div>
           <div className="flex flex-col gap-1">
             <p className="text-[9px] font-semibold uppercase text-brand-muted">FORGETABOUTIT WRITER PRO</p>
-            <article className="max-w-3xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/90 p-6 text-brand-text shadow-[0_25px_80px_rgba(0,0,0,0.35)]">
-              <div className="space-y-3 text-base leading-relaxed text-brand-text/90">
-                <OutputContent output={output} onPlaceholderUpdate={onPlaceholderUpdate} />
-              </div>
+            <article
+              className={cn(
+                "max-w-3xl rounded-3xl border border-brand-stroke/60 p-6 text-brand-text shadow-[0_25px_80px_rgba(0,0,0,0.35)]",
+                output.isPending ? "bg-brand-blue/10 animate-pulse" : "bg-brand-panel/90"
+              )}
+            >
+              {output.isPending ? (
+                <div className="flex h-32 items-center justify-center">
+                  <div className="h-4 w-1/2 rounded-full bg-brand-blue/40" />
+                </div>
+              ) : (
+                <div className="space-y-3 text-base leading-relaxed text-brand-text/90">
+                  <OutputContent output={output} onPlaceholderUpdate={onPlaceholderUpdate} />
+                </div>
+              )}
               <footer className="mt-6 flex flex-wrap items-center gap-3">
-                <ActionButton icon={<ClipboardDocumentIcon className="h-4 w-4" />} label="Copy to Clipboard" onClick={() => handleAction("copy", output)} />
+                <ActionButton
+                  icon={<ClipboardDocumentIcon className="h-4 w-4" />}
+                  label="Copy to Clipboard"
+                  onClick={() => handleAction("copy", output)}
+                  disabled={output.isPending}
+                />
                 <ActionButton
                   icon={<ArrowDownTrayIcon className="h-4 w-4" />}
                   label="Download .docx"
                   onClick={() => handleAction("download", output)}
+                  disabled={output.isPending}
                 />
                 <ActionButton
                   icon={<BookmarkIcon className="h-4 w-4" />}
                   label="Save Writing Style"
-                  disabled={!canSaveStyle}
+                  disabled={!canSaveStyle || output.isPending}
                   onClick={() => onSaveStyle(output)}
                 />
               </footer>
@@ -102,6 +119,9 @@ export default function OutputPanel({
   );
 
   function handleAction(type: PendingAction["type"], output: WriterOutput) {
+    if (output.isPending) {
+      return;
+    }
     if (hasPendingPlaceholders(output)) {
       setPendingAction({ outputId: output.id, type });
       return;

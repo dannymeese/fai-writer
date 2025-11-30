@@ -101,14 +101,30 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       setToast("Create a free account to keep writing.");
       return;
     }
+    const currentPrompt = composeValue;
+    setComposeValue("");
     setLoading(true);
     const snapshotSettings = { ...settings };
+    const tempId = crypto.randomUUID();
+    const pendingOutput: WriterOutput = ensurePlaceholderState({
+      id: tempId,
+      title: smartTitleFromPrompt(currentPrompt),
+      content: "",
+      createdAt: new Date().toISOString(),
+      settings: normalizeSettings({
+        ...snapshotSettings,
+        marketTier: snapshotSettings.marketTier ?? null
+      }),
+      prompt: currentPrompt,
+      isPending: true
+    });
+    setOutputs((prev) => [pendingOutput, ...prev]);
     try {
       const response = await fetch("/api/compose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: composeValue,
+          prompt: currentPrompt,
           settings: snapshotSettings
         })
       });
@@ -124,20 +140,21 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         throw new Error("Failed to compose");
       }
       const data = await response.json();
+      const finalId = data.documentId ?? tempId;
       const nextCount = outputs.length + 1;
       const newOutput: WriterOutput = ensurePlaceholderState({
-        id: data.documentId ?? crypto.randomUUID(),
-        title: data.title ?? smartTitleFromPrompt(composeValue),
+        id: finalId,
+        title: data.title ?? smartTitleFromPrompt(currentPrompt),
         content: data.content,
         createdAt: data.createdAt ?? new Date().toISOString(),
         settings: normalizeSettings({
           ...snapshotSettings,
           marketTier: snapshotSettings.marketTier ?? null
         }),
-        prompt: composeValue
+        prompt: currentPrompt,
+        isPending: false
       });
-      setOutputs((prev) => [newOutput, ...prev]);
-      setComposeValue("");
+      setOutputs((prev) => prev.map((entry) => (entry.id === tempId ? newOutput : entry)));
       setToast("Draft ready with guardrails applied.");
       if (guestLimitEnabled && isGuest && nextCount >= 5) {
         setGuestLimitReached(true);
@@ -145,6 +162,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     } catch (error) {
       console.error(error);
       setToast("Could not complete that request.");
+      setOutputs((prev) => prev.filter((entry) => entry.id !== tempId));
     } finally {
       setLoading(false);
     }
@@ -253,7 +271,6 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             }
             setComposeValue(output.prompt);
             setSettings(normalizeSettings(output.settings));
-            setSheetOpen(true);
           }}
           canSaveStyle={!guestLimitEnabled || !isGuest}
           onPlaceholderUpdate={updatePlaceholder}
