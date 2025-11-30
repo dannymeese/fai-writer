@@ -88,7 +88,7 @@ export default function ComposeBar({
           onClick={onSubmit}
           disabled={disabled || !value.trim()}
           className={cn(
-            "flex min-w-[120px] items-center justify-center self-end rounded-full bg-white px-4 text-black transition hover:bg-gray-100",
+            "flex h-full min-w-[120px] items-center justify-center rounded-full bg-white px-4 text-black transition hover:bg-gray-100",
             {
               "opacity-60": disabled || !value.trim()
             }
