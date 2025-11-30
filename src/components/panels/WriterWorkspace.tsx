@@ -284,6 +284,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           }}
           canSaveStyle={!guestLimitEnabled || !isGuest}
           onPlaceholderUpdate={updatePlaceholder}
+          showEmptyState={hasOutputs}
         />
       </main>
       {hasOutputs ? (

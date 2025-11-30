@@ -14,6 +14,7 @@ type OutputPanelProps = {
   onEdit: (output: WriterOutput) => void;
   canSaveStyle?: boolean;
   onPlaceholderUpdate: (outputId: string, placeholderId: string, value: string | null) => void;
+  showEmptyState?: boolean;
 };
 
 type PendingAction = {
@@ -37,16 +38,17 @@ export default function OutputPanel({
   onSaveStyle,
   onEdit,
   canSaveStyle = true,
-  onPlaceholderUpdate
+  onPlaceholderUpdate,
+  showEmptyState = true
 }: OutputPanelProps) {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   if (!outputs.length) {
-    return (
+    return showEmptyState ? (
       <div className="flex min-h-[60vh] w-full items-center justify-center text-center">
         <p className="text-8xl font-normal text-white">What should I write?</p>
       </div>
-    );
+    ) : null;
   }
 
   return (
