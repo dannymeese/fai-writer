@@ -27,6 +27,12 @@ model Document {
   title       String
   content     String
   tone        String?
+  prompt      String?
+  characterLength Int?
+  wordLength  Int?
+  gradeLevel  String?
+  benchmark   String?
+  avoidWords  String?
   owner       User     @relation(fields: [ownerId], references: [id])
   ownerId     String
   createdAt   DateTime @default(now())

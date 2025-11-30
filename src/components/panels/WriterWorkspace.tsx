@@ -28,13 +28,21 @@ const defaultSettings: ComposerSettingsInput = {
   avoidWords: null
 };
 
+function normalizeSettings(next?: Partial<ComposerSettingsInput>): ComposerSettingsInput {
+  return {
+    marketTier: (next?.marketTier ?? null) as ComposerSettingsInput["marketTier"],
+    characterLength: next?.characterLength ?? null,
+    wordLength: next?.wordLength ?? null,
+    gradeLevel: next?.gradeLevel ?? null,
+    benchmark: next?.benchmark ?? null,
+    avoidWords: next?.avoidWords ?? null
+  };
+}
+
 export default function WriterWorkspace({ user, initialOutputs, isGuest = false }: WriterWorkspaceProps) {
   const guestLimitEnabled = process.env.NEXT_PUBLIC_ENFORCE_GUEST_LIMIT === "true";
   const [composeValue, setComposeValue] = useState("");
-  const [settings, setSettings] = useState<ComposerSettingsInput>({
-    ...defaultSettings,
-    marketTier: (user.marketTier as ComposerSettingsInput["marketTier"]) || "MASS"
-  });
+  const [settings, setSettings] = useState<ComposerSettingsInput>(defaultSettings);
   const [outputs, setOutputs] = useState<WriterOutput[]>(initialOutputs ?? []);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetAnchor, setSheetAnchor] = useState<DOMRect | null>(null);
@@ -99,10 +107,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         title: data.title ?? smartTitleFromPrompt(composeValue),
         content: data.content,
         createdAt: data.createdAt ?? new Date().toISOString(),
-        settings: {
+        settings: normalizeSettings({
           ...snapshotSettings,
           marketTier: snapshotSettings.marketTier ?? activeMarketTier
-        },
+        }),
         prompt: composeValue
       };
       setOutputs((prev) => [newOutput, ...prev]);
@@ -165,7 +173,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       body: JSON.stringify({
         title: `${output.title} • Style`,
         content: output.content,
-        tone: output.settings.marketTier
+        tone: output.settings.marketTier ?? undefined,
+        prompt: output.prompt,
+        characterLength: output.settings.characterLength,
+        wordLength: output.settings.wordLength,
+        gradeLevel: output.settings.gradeLevel,
+        benchmark: output.settings.benchmark,
+        avoidWords: output.settings.avoidWords
       })
     });
     if (!response.ok) {
@@ -221,8 +235,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               return;
             }
             setComposeValue(output.prompt);
-            setSettings(output.settings);
-            setSheetOpen(false);
+            setSettings(normalizeSettings(output.settings));
+            setSheetOpen(true);
           }}
           canSaveStyle={!guestLimitEnabled || !isGuest}
         />

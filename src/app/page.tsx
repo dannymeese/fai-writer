@@ -38,14 +38,14 @@ export default async function HomePage() {
         content: doc.content,
         createdAt: doc.createdAt.toISOString(),
         settings: {
-          marketTier: sanitizeTier(doc.tone ?? user.marketTier),
-          characterLength: null,
-          wordLength: null,
-          gradeLevel: null,
-          benchmark: null,
-          avoidWords: null
+          marketTier: doc.tone ? sanitizeTier(doc.tone) : null,
+          characterLength: doc.characterLength ?? null,
+          wordLength: doc.wordLength ?? null,
+          gradeLevel: doc.gradeLevel ?? null,
+          benchmark: doc.benchmark ?? null,
+          avoidWords: doc.avoidWords ?? null
         },
-        prompt: ""
+        prompt: doc.prompt ?? ""
       }))}
     />
   );

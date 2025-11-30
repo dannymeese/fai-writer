@@ -93,6 +93,12 @@ export async function POST(request: Request) {
           title,
           content,
           tone: effectiveMarketTier,
+          prompt,
+          characterLength: settings.characterLength ?? undefined,
+          wordLength: settings.wordLength ?? undefined,
+          gradeLevel: settings.gradeLevel ?? undefined,
+          benchmark: settings.benchmark ?? undefined,
+          avoidWords: settings.avoidWords ?? undefined,
           ownerId: session.user.id
         }
       });
@@ -105,6 +111,7 @@ export async function POST(request: Request) {
       title,
       content,
       createdAt: timestamp,
+      prompt,
       settings: {
         ...settings,
         marketTier: settings.marketTier ?? effectiveMarketTier
