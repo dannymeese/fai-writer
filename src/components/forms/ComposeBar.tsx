@@ -63,13 +63,13 @@ export default function ComposeBar({
 
   const content = (
     <div className="flex w-full flex-col gap-2">
-      <div className="flex w-full items-end gap-3">
+      <div className="flex w-full items-end gap-0">
         <button
           type="button"
           aria-label="Open settings"
           ref={settingsButtonRef}
           onClick={() => onToggleSettings(settingsButtonRef.current?.getBoundingClientRect() ?? null)}
-          className="flex h-12 w-12 items-center justify-center rounded-full border border-brand-stroke/70 bg-transparent text-brand-muted transition hover:text-brand-blue self-end"
+          className="flex h-12 w-12 items-center justify-center rounded-l-2xl border-l border-t border-b border-brand-stroke/80 bg-brand-ink text-brand-muted transition hover:text-brand-blue self-end"
         >
           <WrenchIcon className="h-6 w-6" />
         </button>
@@ -79,7 +79,7 @@ export default function ComposeBar({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholderExamples[placeholderIndex]}
-            className="w-full resize-none rounded-2xl border border-brand-stroke/80 bg-brand-ink px-4 py-3 text-base text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
+            className="w-full resize-none rounded-r-2xl rounded-l-none border-r border-t border-b border-brand-stroke/80 bg-brand-ink px-4 py-3 text-base text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
             rows={1}
           />
         </div>
@@ -88,13 +88,13 @@ export default function ComposeBar({
           onClick={onSubmit}
           disabled={disabled || !value.trim()}
           className={cn(
-            "flex h-12 min-w-[120px] items-center justify-center self-end rounded-full bg-brand-blue px-4 text-white transition hover:bg-brand-blueHover",
+            "flex h-12 min-w-[120px] items-center justify-center self-end rounded-full bg-white px-4 text-black transition hover:bg-gray-100",
             {
               "opacity-60": disabled || !value.trim()
             }
           )}
         >
-          <ArrowUpIcon className="h-8 w-8 stroke-[3]" />
+          <ArrowUpIcon className="h-8 w-8 stroke-[3] text-black" />
         </button>
       </div>
     </div>
