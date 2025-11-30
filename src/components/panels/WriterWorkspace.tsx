@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { SignOutButton } from "../shared/SignOutButton";
 import OutputPanel from "./OutputPanel";
@@ -27,6 +27,8 @@ type SavedDraft = {
   settings: ComposerSettingsInput;
   writingStyle?: string | null;
 };
+
+type SidebarTab = "drafts" | "styles" | "brands";
 
 const defaultSettings: ComposerSettingsInput = {
   marketTier: null,
@@ -122,7 +124,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [hasBrand, setHasBrand] = useState(false);
   const [brandSummary, setBrandSummary] = useState<string | null>(null);
   const [savedDrafts, setSavedDrafts] = useState<SavedDraft[]>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("drafts");
   const composeInputRef = useRef<HTMLTextAreaElement>(null);
   const isAuthenticated = !isGuest;
 
@@ -260,6 +263,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         isPending: false
       });
       setOutputs((prev) => prev.map((entry) => (entry.id === tempId ? newOutput : entry)));
+      fetchSavedDrafts();
       setToast("Draft ready with guardrails applied.");
       if (guestLimitEnabled && isGuest && nextCount >= 5) {
         setGuestLimitReached(true);
@@ -373,6 +377,19 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
 
   const hasOutputs = outputs.length > 0;
 
+  const { draftDocuments, styleDocuments } = useMemo(() => {
+    const drafts: SavedDraft[] = [];
+    const styles: SavedDraft[] = [];
+    savedDrafts.forEach((doc) => {
+      if (isStyleDocument(doc)) {
+        styles.push(doc);
+      } else {
+        drafts.push(doc);
+      }
+    });
+    return { draftDocuments: drafts, styleDocuments: styles };
+  }, [savedDrafts]);
+
   function handleLoadConversation(draft: SavedDraft) {
     const restored = ensurePlaceholderState({
       id: draft.id,
@@ -389,24 +406,62 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  if (!hasOutputs) {
-    return (
-      <div className="fixed inset-0 flex flex-col overflow-hidden bg-brand-background text-brand-text">
+  return (
+    <div className="flex min-h-screen bg-brand-background text-brand-text">
+      {isAuthenticated && (
+        <WorkspaceSidebar
+          open={sidebarOpen}
+          activeTab={sidebarTab}
+          drafts={draftDocuments}
+          styles={styleDocuments}
+          brandSummary={brandSummary}
+          hasBrand={hasBrand}
+          onSelect={handleLoadConversation}
+          onToggle={() => setSidebarOpen((prev) => !prev)}
+          onTabChange={(tab) => setSidebarTab(tab)}
+        />
+      )}
+      <div className="flex min-h-screen flex-1 flex-col pb-32">
         {!isGuest && (
-          <div className="absolute right-6 top-6 z-10">
+          <div className="flex justify-end px-6 pt-6">
             <SignOutButton />
           </div>
         )}
-        <div className="flex flex-1 overflow-hidden">
-          {isAuthenticated && (
-            <ConversationSidebar
-              open={sidebarOpen}
-              drafts={savedDrafts}
-              onToggle={() => setSidebarOpen((prev) => !prev)}
-              onSelect={handleLoadConversation}
-            />
+        <div
+          className={cn(
+            "flex-1 px-4 sm:px-6",
+            hasOutputs ? "py-8" : "flex items-center justify-center"
           )}
-          <div className="flex flex-1 items-center justify-center px-4">
+        >
+          {hasOutputs ? (
+            <div className="mx-auto w-full max-w-5xl">
+              {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
+              <OutputPanel
+                outputs={outputs}
+                onCopy={handleCopy}
+                onDownload={handleDownload}
+                onSaveStyle={handleSaveStyle}
+                onEdit={(output) => {
+                  if (!output.prompt) {
+                    return;
+                  }
+                  setComposeValue(output.prompt);
+                  setSettings(normalizeSettings(output.settings));
+                  requestAnimationFrame(() => {
+                    if (composeInputRef.current) {
+                      composeInputRef.current.focus();
+                      const length = composeInputRef.current.value.length;
+                      composeInputRef.current.setSelectionRange(length, length);
+                    }
+                  });
+                }}
+                canSaveStyle={!guestLimitEnabled || !isGuest}
+                onPlaceholderUpdate={updatePlaceholder}
+                showEmptyState={hasOutputs}
+                hasBrand={hasBrand}
+              />
+            </div>
+          ) : (
             <div className="flex w-full max-w-4xl flex-col items-center gap-5 text-white">
               <p className="pb-10 text-[2rem] font-normal leading-none">What should I write?</p>
               <ComposeBar
@@ -423,78 +478,27 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
                 hasCustomOptions={hasCustomOptions(settings) || hasBrand}
               />
             </div>
+          )}
+        </div>
+        {hasOutputs && (
+          <div className="px-4 pb-10 sm:px-6">
+            <div className="mx-auto w-full max-w-5xl">
+              <ComposeBar
+                value={composeValue}
+                onChange={setComposeValue}
+                onSubmit={handleSubmit}
+                disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
+                onToggleSettings={(anchorRect) => {
+                  setSheetAnchor(anchorRect);
+                  setSheetOpen((prev) => !prev);
+                }}
+                inputRef={composeInputRef}
+                hasCustomOptions={hasCustomOptions(settings) || hasBrand}
+              />
+            </div>
           </div>
-        </div>
-        <SettingsSheet
-          open={sheetOpen}
-          onClose={() => setSheetOpen(false)}
-          settings={settings}
-          onChange={setSettings}
-          anchorRect={sheetAnchor}
-          onBrandUpdate={handleBrandSummaryUpdate}
-          initialBrandDefined={hasBrand}
-        />
-        <Toast message={toast} />
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-brand-background pb-32 text-brand-text">
-      {!isGuest && (
-        <div className="mx-auto flex max-w-6xl justify-end px-6 pt-6">
-            <SignOutButton />
-        </div>
-      )}
-      <main className="mx-auto flex max-w-6xl gap-6 px-6 py-10">
-        {isAuthenticated && (
-          <ConversationSidebar
-            open={sidebarOpen}
-            drafts={savedDrafts}
-            onToggle={() => setSidebarOpen((prev) => !prev)}
-            onSelect={handleLoadConversation}
-          />
         )}
-        <div className="flex-1">
-          {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
-          <OutputPanel
-            outputs={outputs}
-            onCopy={handleCopy}
-            onDownload={handleDownload}
-            onSaveStyle={handleSaveStyle}
-            onEdit={(output) => {
-              if (!output.prompt) {
-                return;
-              }
-              setComposeValue(output.prompt);
-              setSettings(normalizeSettings(output.settings));
-              requestAnimationFrame(() => {
-                if (composeInputRef.current) {
-                  composeInputRef.current.focus();
-                  const length = composeInputRef.current.value.length;
-                  composeInputRef.current.setSelectionRange(length, length);
-                }
-              });
-            }}
-            canSaveStyle={!guestLimitEnabled || !isGuest}
-            onPlaceholderUpdate={updatePlaceholder}
-            showEmptyState={hasOutputs}
-            hasBrand={hasBrand}
-          />
-        </div>
-      </main>
-      <ComposeBar
-        value={composeValue}
-        onChange={setComposeValue}
-        onSubmit={handleSubmit}
-        disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
-        onToggleSettings={(anchorRect) => {
-          setSheetAnchor(anchorRect);
-          setSheetOpen((prev) => !prev);
-        }}
-        inputRef={composeInputRef}
-        hasCustomOptions={hasCustomOptions(settings) || hasBrand}
-      />
+      </div>
       <SettingsSheet
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
@@ -551,62 +555,142 @@ function RegisterGate() {
   );
 }
 
-type ConversationSidebarProps = {
+type WorkspaceSidebarProps = {
   open: boolean;
+  activeTab: SidebarTab;
   drafts: SavedDraft[];
+  styles: SavedDraft[];
+  brandSummary: string | null;
+  hasBrand: boolean;
   onToggle: () => void;
+  onTabChange: (tab: SidebarTab) => void;
   onSelect: (draft: SavedDraft) => void;
 };
 
-function ConversationSidebar({ open, drafts, onToggle, onSelect }: ConversationSidebarProps) {
+function WorkspaceSidebar({
+  open,
+  activeTab,
+  drafts,
+  styles,
+  brandSummary,
+  hasBrand,
+  onToggle,
+  onTabChange,
+  onSelect
+}: WorkspaceSidebarProps) {
+  const tabs: { id: SidebarTab; label: string }[] = [
+    { id: "drafts", label: "Drafts" },
+    { id: "styles", label: "Styles" },
+    { id: "brands", label: "Brands" }
+  ];
+
+  function renderDraftList(items: SavedDraft[], emptyLabel: string) {
+    if (!items.length) {
+      return <p className="text-sm text-brand-muted">{emptyLabel}</p>;
+    }
+    return (
+      <ul className="space-y-3 pr-2">
+        {items.map((draft) => (
+          <li key={draft.id}>
+            <button
+              type="button"
+              onClick={() => onSelect(draft)}
+              className="w-full rounded-2xl border border-brand-stroke/40 bg-brand-background/60 px-3 py-3 text-left transition hover:border-brand-blue"
+            >
+              <p className="text-sm font-semibold text-white">{draft.title || "Untitled draft"}</p>
+              <p className="text-xs text-brand-muted">{formatTimestamp(draft.createdAt)}</p>
+              {draft.prompt && (
+                <p className="mt-1 line-clamp-2 text-xs text-brand-muted/80">{draft.prompt}</p>
+              )}
+              {activeTab === "styles" && draft.writingStyle && (
+                <p className="mt-2 line-clamp-3 text-xs text-brand-muted/90">{draft.writingStyle}</p>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  function renderContent() {
+    if (activeTab === "drafts") {
+      return renderDraftList(drafts, "No drafts yet. Generate something to see it here.");
+    }
+    if (activeTab === "styles") {
+      return renderDraftList(styles, "Save a style from an output to reuse it later.");
+    }
+    if (hasBrand && brandSummary) {
+      return (
+        <div className="rounded-2xl border border-brand-stroke/40 bg-brand-background/60 p-4 text-sm text-brand-muted/90">
+          <p className="text-base font-semibold text-white">Defined brand</p>
+          <p className="mt-2 whitespace-pre-line leading-relaxed">{brandSummary}</p>
+          <p className="mt-4 text-xs text-brand-muted">Update the brand summary inside Settings.</p>
+        </div>
+      );
+    }
+    return <p className="text-sm text-brand-muted">No brand defined yet. Add one inside Settings.</p>;
+  }
+
   return (
     <aside
       className={cn(
-        "relative hidden h-[calc(100vh-180px)] flex-shrink-0 rounded-3xl border border-brand-stroke/60 bg-brand-panel/60 p-4 transition-all duration-300 lg:block",
-        open ? "w-72" : "w-12"
+        "hidden border-r border-brand-stroke/40 bg-brand-panel/60 text-brand-text transition-all duration-300 lg:flex lg:flex-col",
+        open ? "w-80 px-5 py-6" : "w-16 items-center py-6"
       )}
     >
       <button
         type="button"
-        aria-label={open ? "Collapse conversation history" : "Expand conversation history"}
+        aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
         onClick={onToggle}
-        className="absolute -right-3 top-4 flex h-8 w-8 items-center justify-center rounded-full border border-brand-stroke/60 bg-brand-background text-sm font-semibold text-brand-text shadow"
+        className="mb-6 flex h-8 w-8 items-center justify-center rounded-full border border-brand-stroke/60 bg-brand-background text-sm font-semibold text-brand-text shadow"
       >
         {open ? "⟨" : "⟩"}
       </button>
       {open ? (
-        <div className="mt-6 flex h-full flex-col overflow-hidden">
-          <p className="text-sm font-semibold uppercase text-brand-muted tracking-[0.2em]">History</p>
-          <div className="mt-4 flex-1 overflow-y-auto pr-2">
-            {drafts.length === 0 ? (
-              <p className="text-sm text-brand-muted">No saved conversations yet.</p>
-            ) : (
-              <ul className="space-y-3">
-                {drafts.map((draft) => (
-                  <li key={draft.id}>
-                    <button
-                      type="button"
-                      onClick={() => onSelect(draft)}
-                      className="w-full rounded-2xl border border-brand-stroke/40 bg-brand-background/60 px-3 py-3 text-left transition hover:border-brand-blue"
-                    >
-                      <p className="text-sm font-semibold text-white">{draft.title || "Untitled draft"}</p>
-                      <p className="text-xs text-brand-muted">{formatTimestamp(draft.createdAt)}</p>
-                      {draft.prompt && (
-                        <p className="mt-1 line-clamp-2 text-xs text-brand-muted/80">{draft.prompt}</p>
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+        <>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-muted">Workspace</p>
+          <div className="mt-4 flex gap-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onTabChange(tab.id)}
+                className={cn(
+                  "flex-1 rounded-full border border-brand-stroke/60 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide transition",
+                  activeTab === tab.id
+                    ? "bg-brand-blue text-white"
+                    : "bg-transparent text-brand-muted hover:text-white"
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-        </div>
+          <div className="mt-6 flex-1 overflow-y-auto">{renderContent()}</div>
+        </>
       ) : (
-        <div className="flex h-full items-center justify-center">
-          <span className="rotate-90 text-xs font-semibold uppercase tracking-[0.3em] text-brand-muted">History</span>
+        <div className="flex flex-1 flex-col items-center gap-4">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onTabChange(tab.id)}
+              className={cn(
+                "flex h-10 w-10 items-center justify-center rounded-full border border-brand-stroke/60 text-xs font-semibold transition",
+                activeTab === tab.id ? "bg-brand-blue text-white" : "text-brand-muted hover:text-white"
+              )}
+              title={tab.label}
+            >
+              {tab.label.charAt(0)}
+            </button>
+          ))}
         </div>
       )}
     </aside>
   );
+}
+
+function isStyleDocument(draft: SavedDraft): boolean {
+  return draft.title?.toLowerCase().includes("• style") ?? false;
 }
 
