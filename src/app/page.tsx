@@ -16,6 +16,7 @@ type StoredDocument = {
   gradeLevel: string | null;
   benchmark: string | null;
   avoidWords: string | null;
+  writingStyle: string | null;
 };
 
 export default async function HomePage() {
@@ -60,6 +61,7 @@ export default async function HomePage() {
           avoidWords: doc.avoidWords ?? null
         },
         prompt: doc.prompt ?? "",
+        writingStyle: doc.writingStyle ?? null,
         placeholderValues: {}
       }))}
     />

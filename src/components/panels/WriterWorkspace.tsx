@@ -163,6 +163,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           marketTier: snapshotSettings.marketTier ?? null
         }),
         prompt: currentPrompt,
+        writingStyle: data.writingStyle ?? null,
         isPending: false
       });
       setOutputs((prev) => prev.map((entry) => (entry.id === tempId ? newOutput : entry)));
@@ -248,11 +249,11 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         content: resolvedContent,
         tone: output.settings.marketTier ?? undefined,
         prompt: output.prompt,
-        characterLength: output.settings.characterLength,
-        wordLength: output.settings.wordLength,
+        // Only save non-length related settings
         gradeLevel: output.settings.gradeLevel,
         benchmark: output.settings.benchmark,
-        avoidWords: output.settings.avoidWords
+        avoidWords: output.settings.avoidWords,
+        writingStyle: output.writingStyle ?? undefined
       })
     });
     if (!response.ok) {

@@ -44,8 +44,15 @@ export async function POST(request: Request) {
       title: parsed.data.title,
       content: parsed.data.content,
       tone: parsed.data.tone,
+      prompt: parsed.data.prompt,
+      characterLength: parsed.data.characterLength,
+      wordLength: parsed.data.wordLength,
+      gradeLevel: parsed.data.gradeLevel,
+      benchmark: parsed.data.benchmark,
+      avoidWords: parsed.data.avoidWords,
+      writingStyle: parsed.data.writingStyle,
       ownerId: session.user.id
-    }
+    } as any
   });
 
   return NextResponse.json(doc);

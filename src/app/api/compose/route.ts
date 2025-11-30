@@ -6,7 +6,8 @@ import { composeRequestSchema } from "@/lib/validators";
 import { prisma } from "@/lib/prisma";
 import { smartTitleFromPrompt } from "@/lib/utils";
 
-const systemPrompt = `VITAL RULES FOR ALL OUTPUT:
+function buildSystemPrompt(brandInfo: string | null): string {
+  let prompt = `VITAL RULES FOR ALL OUTPUT:
 
 1. DO NOT USE EM DASHES OR EN DASHES.
 2. DO NOT WRITE WITH ANY AI WRITING TELLS OR RED FLAGS.
@@ -15,6 +16,13 @@ const systemPrompt = `VITAL RULES FOR ALL OUTPUT:
 5. ONLY PROVIDE TEXT THAT FEELS BESPOKE AND HUMAN.
 6. All missing info should be formatted in [] like [brand name], etc. Don't guess product name, service name, business name etc.
 7. DO NOT use emojis unless the user EXPLICITLY asks you to.`;
+
+  if (brandInfo) {
+    prompt += `\n\nBRAND GUIDELINES:\n${brandInfo}\n\nAlways follow the brand guidelines above. Use the brand vocabulary, tone, and style preferences when writing.`;
+  }
+
+  return prompt;
+}
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -45,6 +53,19 @@ export async function POST(request: Request) {
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+  // Fetch brand info if user is authenticated
+  let brandInfo: string | null = null;
+  if (isAuthenticated && session?.user?.id && prisma) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: session.user.id }
+      }) as any;
+      brandInfo = user?.brandInfo ?? null;
+    } catch (error) {
+      console.error("Failed to fetch brand info", error);
+    }
+  }
+
   const directiveLines = [
     effectiveMarketTier ? `Target market: ${effectiveMarketTier}.` : null,
     settings.gradeLevel ? `Write at approximately a ${settings.gradeLevel} reading level.` : null,
@@ -64,7 +85,10 @@ export async function POST(request: Request) {
   const userPrompt = `${prompt}${briefSection}`;
 
   try {
-    const response = await openai.responses.create({
+    const systemPrompt = buildSystemPrompt(brandInfo);
+    
+    // Generate the main content
+    const contentResponse = await openai.responses.create({
       model: "gpt-5.1",
       temperature: 0.62,
       max_output_tokens: 900,
@@ -80,11 +104,30 @@ export async function POST(request: Request) {
       ]
     });
 
-    const content = response.output_text?.trim();
+    const content = contentResponse.output_text?.trim();
 
     if (!content) {
       return NextResponse.json({ error: "No content returned" }, { status: 502 });
     }
+
+    // Generate writing style description
+    const styleResponse = await openai.responses.create({
+      model: "gpt-5.1",
+      temperature: 0.4,
+      max_output_tokens: 200,
+      input: [
+        {
+          role: "system",
+          content: "You are a writing analyst. Describe the writing style of the given text in 2-3 sentences. Focus on tone, voice, structure, vocabulary choices, and any distinctive characteristics."
+        },
+        {
+          role: "user",
+          content: `Analyze and describe the writing style of this text:\n\n${content}`
+        }
+      ]
+    });
+
+    const writingStyle = styleResponse.output_text?.trim() || null;
 
     const title = smartTitleFromPrompt(prompt);
     let documentId: string | null = null;
@@ -102,6 +145,7 @@ export async function POST(request: Request) {
           gradeLevel: settings.gradeLevel ?? undefined,
           benchmark: settings.benchmark ?? undefined,
           avoidWords: settings.avoidWords ?? undefined,
+          writingStyle: writingStyle ?? undefined,
           ownerId: session.user.id
         } as any // local Prisma typings omit prompt/meta fields, so cast until schema is regenerated upstream
       });
@@ -113,6 +157,7 @@ export async function POST(request: Request) {
       documentId,
       title,
       content,
+      writingStyle,
       createdAt: timestamp,
       prompt,
       settings: {

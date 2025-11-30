@@ -15,5 +15,6 @@ export type WriterOutput = {
   placeholderValues?: Record<string, string>;
   placeholderMeta?: OutputPlaceholder[];
   isPending?: boolean;
+  writingStyle?: string | null;
 };
 

@@ -90,6 +90,12 @@ export default function OutputPanel({
               ) : (
                 <div className="space-y-3 text-base leading-relaxed text-brand-text/90">
                   <OutputContent output={output} onPlaceholderUpdate={onPlaceholderUpdate} />
+                  {output.writingStyle && (
+                    <div className="mt-4 rounded-xl border border-brand-stroke/40 bg-brand-ink/50 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase text-brand-muted mb-1.5">Writing Style</p>
+                      <p className="text-sm text-brand-text/80 leading-relaxed">{output.writingStyle}</p>
+                    </div>
+                  )}
                 </div>
               )}
               <footer className="mt-6 flex flex-wrap items-center gap-3">

@@ -15,6 +15,7 @@ model User {
   image         String?
   password      String?
   marketTier    MarketTier @default(MASS)
+  brandInfo     String?   @db.Text
   documents     Document[]
   accounts      Account[]
   sessions      Session[]
@@ -33,6 +34,7 @@ model Document {
   gradeLevel  String?
   benchmark   String?
   avoidWords  String?
+  writingStyle String? @db.Text
   owner       User     @relation(fields: [ownerId], references: [id])
   ownerId     String
   createdAt   DateTime @default(now())

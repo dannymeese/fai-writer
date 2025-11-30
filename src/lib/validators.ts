@@ -42,6 +42,7 @@ export const documentSchema = z.object({
   wordLength: z.number().int().positive().max(1500).nullable().optional(),
   gradeLevel: z.string().max(32).nullable().optional(),
   benchmark: z.string().max(120).nullable().optional(),
-  avoidWords: z.string().max(200).nullable().optional()
+  avoidWords: z.string().max(200).nullable().optional(),
+  writingStyle: z.string().nullable().optional()
 });
 
