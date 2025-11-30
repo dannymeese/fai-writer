@@ -300,9 +300,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           inputRef={composeInputRef}
         />
       ) : (
-        <div className="px-4 py-12">
-          <div className="mx-auto flex max-w-4xl flex-col items-center gap-4 text-white">
-            <p className="text-4xl font-normal">What should I write?</p>
+        <div className="flex min-h-[60vh] items-center justify-center px-4 py-12">
+          <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 text-white">
             <ComposeBar
               value={composeValue}
               onChange={setComposeValue}
