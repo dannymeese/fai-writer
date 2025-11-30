@@ -112,6 +112,12 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [hasBrand, setHasBrand] = useState(false);
   const [brandSummary, setBrandSummary] = useState<string | null>(null);
   const composeInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (composeInputRef.current) {
+      composeInputRef.current.focus();
+    }
+  }, []);
   function handleBrandSummaryUpdate(summary: string | null) {
     setBrandSummary(summary);
     setHasBrand(!!summary);
@@ -136,7 +142,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         }
       } catch (error) {
         console.error("Failed to check brand info", error);
-      }
+    }
     }
     checkBrand();
   }, []);
@@ -345,7 +351,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     <div className="min-h-screen bg-brand-background pb-32 text-brand-text">
       {!isGuest && (
         <div className="mx-auto flex max-w-6xl justify-end px-6 pt-6">
-          <SignOutButton />
+            <SignOutButton />
         </div>
       )}
       <main className="mx-auto max-w-5xl px-6 py-10">
