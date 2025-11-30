@@ -300,9 +300,9 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           inputRef={composeInputRef}
         />
       ) : (
-        <div className="sticky bottom-0 left-0 right-0 border-t border-brand-stroke/60 bg-brand-panel/90 px-4 py-8 text-white">
-          <div className="mx-auto flex max-w-4xl flex-col gap-4">
-            <p className="text-4xl font-normal text-white text-center">What should I write?</p>
+        <div className="px-4 py-12">
+          <div className="mx-auto flex max-w-4xl flex-col items-center gap-4 text-white">
+            <p className="text-4xl font-normal">What should I write?</p>
             <ComposeBar
               value={composeValue}
               onChange={setComposeValue}
@@ -314,7 +314,6 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               }}
               compact
               inputRef={composeInputRef}
-              showPromptLabel={false}
             />
           </div>
         </div>
