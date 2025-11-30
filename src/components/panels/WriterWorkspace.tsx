@@ -254,6 +254,43 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
 
   const hasOutputs = outputs.length > 0;
 
+  if (!hasOutputs) {
+    return (
+      <div className="flex min-h-screen flex-col bg-brand-background text-brand-text">
+        {!isGuest && (
+          <div className="mx-auto flex w-full max-w-6xl justify-end px-6 pt-6">
+            <SignOutButton />
+          </div>
+        )}
+        <div className="flex flex-1 items-center justify-center px-4 py-12">
+          <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-4 text-white">
+            <p className="text-3xl font-normal">What should I write?</p>
+            <ComposeBar
+              value={composeValue}
+              onChange={setComposeValue}
+              onSubmit={handleSubmit}
+              disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
+              onToggleSettings={(anchorRect) => {
+                setSheetAnchor(anchorRect);
+                setSheetOpen((prev) => !prev);
+              }}
+              compact
+              inputRef={composeInputRef}
+            />
+          </div>
+        </div>
+        <SettingsSheet
+          open={sheetOpen}
+          onClose={() => setSheetOpen(false)}
+          settings={settings}
+          onChange={setSettings}
+          anchorRect={sheetAnchor}
+        />
+        <Toast message={toast} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-brand-background pb-32 text-brand-text">
       {!isGuest && (
@@ -287,37 +324,17 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           showEmptyState={hasOutputs}
         />
       </main>
-      {hasOutputs ? (
-        <ComposeBar
-          value={composeValue}
-          onChange={setComposeValue}
-          onSubmit={handleSubmit}
-          disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
-          onToggleSettings={(anchorRect) => {
-            setSheetAnchor(anchorRect);
-            setSheetOpen((prev) => !prev);
-          }}
-          inputRef={composeInputRef}
-        />
-      ) : (
-        <div className="flex min-h-[70vh] items-center justify-center px-4 py-12">
-          <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-4 text-white">
-            <p className="text-3xl font-normal">What should I write?</p>
-            <ComposeBar
-              value={composeValue}
-              onChange={setComposeValue}
-              onSubmit={handleSubmit}
-              disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
-              onToggleSettings={(anchorRect) => {
-                setSheetAnchor(anchorRect);
-                setSheetOpen((prev) => !prev);
-              }}
-              compact
-              inputRef={composeInputRef}
-            />
-          </div>
-        </div>
-      )}
+      <ComposeBar
+        value={composeValue}
+        onChange={setComposeValue}
+        onSubmit={handleSubmit}
+        disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
+        onToggleSettings={(anchorRect) => {
+          setSheetAnchor(anchorRect);
+          setSheetOpen((prev) => !prev);
+        }}
+        inputRef={composeInputRef}
+      />
       <SettingsSheet
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
