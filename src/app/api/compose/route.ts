@@ -6,8 +6,8 @@ import { composeRequestSchema } from "@/lib/validators";
 import { prisma } from "@/lib/prisma";
 import { smartTitleFromPrompt } from "@/lib/utils";
 
-function buildSystemPrompt(brandInfo: string | null): string {
-  let prompt = `VITAL RULES FOR ALL OUTPUT:
+function buildSystemPrompt(): string {
+  return `VITAL RULES FOR ALL OUTPUT:
 
 1. DO NOT USE EM DASHES OR EN DASHES.
 2. DO NOT WRITE WITH ANY AI WRITING TELLS OR RED FLAGS.
@@ -16,12 +16,6 @@ function buildSystemPrompt(brandInfo: string | null): string {
 5. ONLY PROVIDE TEXT THAT FEELS BESPOKE AND HUMAN.
 6. All missing info should be formatted in [] like [brand name], etc. Don't guess product name, service name, business name etc.
 7. DO NOT use emojis unless the user EXPLICITLY asks you to.`;
-
-  if (brandInfo) {
-    prompt += `\n\nBRAND GUIDELINES:\n${brandInfo}\n\nAlways follow the brand guidelines above. Use the brand vocabulary, tone, and style preferences when writing.`;
-  }
-
-  return prompt;
 }
 
 export async function POST(request: Request) {
@@ -87,10 +81,13 @@ export async function POST(request: Request) {
   ].filter(Boolean);
 
   const briefSection = directiveLines.length ? `\n\nBrief:\n- ${directiveLines.join("\n- ")}` : "";
-  const userPrompt = `${prompt}${briefSection}`;
+  
+  // Append brand info to user prompt if available
+  const brandSection = brandInfo ? `\n\nBrand Context:\n${brandInfo}\n\nUse the brand guidelines, vocabulary, tone, and style preferences above when writing.` : "";
+  const userPrompt = `${prompt}${briefSection}${brandSection}`;
 
   try {
-    const systemPrompt = buildSystemPrompt(brandInfo);
+    const systemPrompt = buildSystemPrompt(null); // Remove brand from system prompt since it's now in user prompt
     
     // Generate the main content
     const contentResponse = await openai.responses.create({
