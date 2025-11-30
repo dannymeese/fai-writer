@@ -87,7 +87,7 @@ export async function POST(request: Request) {
   const userPrompt = `${prompt}${briefSection}${brandSection}`;
 
   try {
-    const systemPrompt = buildSystemPrompt(null); // Remove brand from system prompt since it's now in user prompt
+    const systemPrompt = buildSystemPrompt(); // Brand info is now in user prompt
     
     // Generate the main content
     const contentResponse = await openai.responses.create({
