@@ -186,7 +186,11 @@ function InlineConfirm({
   const actionLabel = action === "copy" ? "Copy anyway" : "Download anyway";
   return (
     <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-brand-stroke/60 bg-brand-panel/70 px-4 py-3 text-sm text-brand-text">
-      <p className="flex-1 text-sm text-brand-muted">There are still placeholders in your text.</p>
+      <p className="flex-1 text-sm text-brand-muted">
+        There are still{" "}
+        <span className="underline decoration-2 decoration-brand-blue underline-offset-2 text-brand-blue">placeholders</span>{" "}
+        in your text.
+      </p>
       <button
         type="button"
         className="rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white transition hover:bg-brand-blue/80"
