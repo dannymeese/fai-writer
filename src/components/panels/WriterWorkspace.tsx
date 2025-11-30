@@ -78,6 +78,15 @@ function resolveOutputContent(output: WriterOutput): string {
   });
 }
 
+function hasPendingPlaceholders(output: WriterOutput): boolean {
+  const meta = output.placeholderMeta ?? [];
+  if (!meta.length) return false;
+  return meta.some((placeholder) => {
+    const value = output.placeholderValues?.[placeholder.id];
+    return !value || !value.trim();
+  });
+}
+
 export default function WriterWorkspace({ user, initialOutputs, isGuest = false }: WriterWorkspaceProps) {
   const guestLimitEnabled = process.env.NEXT_PUBLIC_ENFORCE_GUEST_LIMIT === "true";
   const [composeValue, setComposeValue] = useState("");
@@ -170,6 +179,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }
 
   async function handleCopy(output: WriterOutput) {
+    if (hasPendingPlaceholders(output)) {
+      const confirmed = window.confirm("There are still placeholders in your text. Continue?");
+      if (!confirmed) return;
+    }
     try {
       await navigator.clipboard.writeText(resolveOutputContent(output));
       setToast("Copied without any AI tells.");
@@ -179,6 +192,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }
 
   async function handleDownload(output: WriterOutput) {
+    if (hasPendingPlaceholders(output)) {
+      const confirmed = window.confirm("There are still placeholders in your text. Continue?");
+      if (!confirmed) return;
+    }
     const resolved = resolveOutputContent(output);
     const response = await fetch("/api/export", {
       method: "POST",

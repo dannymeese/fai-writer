@@ -38,9 +38,10 @@ export default function OutputPanel({
       {outputs.map((output) => (
         <div key={output.id} className="space-y-4">
           <p className="text-center text-xs uppercase tracking-[0.2em] text-brand-muted">{formatTimestamp(output.createdAt)}</p>
-          <div className="flex justify-end">
+          <div className="flex flex-col items-end gap-1">
+            <p className="text-[9px] font-semibold uppercase text-brand-muted">YOU</p>
             <div className="max-w-xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/80 px-4 py-3 text-sm text-brand-text shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
-              <div className="mb-2 flex justify-end">
+              <div className="mb-1 flex justify-end">
                 {output.prompt && (
                   <button
                     type="button"
@@ -54,7 +55,9 @@ export default function OutputPanel({
               <p className="text-brand-text/90">{output.prompt || "Prompt unavailable for this draft."}</p>
             </div>
           </div>
-          <article className="max-w-3xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/90 p-6 text-brand-text shadow-[0_25px_80px_rgba(0,0,0,0.35)]">
+          <div className="flex flex-col gap-1">
+            <p className="text-[9px] font-semibold uppercase text-brand-muted">FORGETABOUTIT WRITER PRO</p>
+            <article className="max-w-3xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/90 p-6 text-brand-text shadow-[0_25px_80px_rgba(0,0,0,0.35)]">
             <header className="mb-4">
               <h2 className="font-display text-2xl text-brand-text">{output.title}</h2>
             </header>
@@ -78,7 +81,8 @@ export default function OutputPanel({
                 onClick={() => onSaveStyle(output)}
               />
             </footer>
-          </article>
+            </article>
+          </div>
         </div>
       ))}
     </div>
@@ -208,7 +212,7 @@ function PlaceholderField({ outputId, placeholderId, label, value, onUpdate }: P
     }
   }, [value]);
 
-  const displayLabel = value || `Enter ${label} +`;
+  const displayLabel = value || `Enter ${label}`;
 
   function handleSubmit() {
     const trimmed = draft.trim();
@@ -237,44 +241,39 @@ function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
 
   if (editing) {
     return (
-      <span className="relative ml-2 inline-flex items-center gap-2 rounded-full border border-white/40 px-3 py-1 text-xs font-semibold text-white">
+      <span className="relative inline-flex items-center gap-2 text-sm font-semibold text-white">
         <input
           autoFocus
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
-          className="w-32 border-none bg-transparent text-white placeholder:text-white/50 focus:outline-none"
+          className="w-40 border-none bg-transparent text-white placeholder:text-white/50 focus:outline-none"
           placeholder={label}
         />
-        <button type="button" className="text-white/70 hover:text-white" onClick={handleSubmit}>
+        <span
+          className="pointer-events-none absolute left-0 right-0"
+          style={{ bottom: "-4px", height: "3px", backgroundColor: value ? "#0f0" : "#ffffff" }}
+        />
+        <button type="button" className="text-xs font-semibold text-white/80 hover:text-white" onClick={handleSubmit}>
           Done
         </button>
       </span>
     );
   }
 
-  if (value) {
-    return (
-      <span className="relative ml-2 inline-flex items-center gap-2 text-sm font-semibold uppercase text-white">
-        <span className="text-base normal-case">{value}</span>
-        <button type="button" className="text-[11px] font-bold uppercase tracking-[0.2em] text-white" onClick={openEditor}>
-          EDIT
-        </button>
-        <span
-          className="pointer-events-none absolute left-0 right-0"
-          style={{ bottom: "-4px", height: "3px", backgroundColor: "#0f0" }}
-        />
-      </span>
-    );
-  }
+  const underlineColor = value ? "#0f0" : "#ffffff";
 
   return (
-    <button type="button" onClick={openEditor} className="relative ml-2 inline-flex items-center gap-2 text-sm font-semibold uppercase text-white">
+    <button type="button" onClick={openEditor} className="relative inline-flex items-center gap-2 text-sm font-semibold text-white">
       <span className="text-base normal-case">{displayLabel}</span>
-      <span className="text-2xl font-bold leading-none">+</span>
+      {value ? (
+        <span className="text-[11px] font-bold text-white">EDIT</span>
+      ) : (
+        <span className="text-2xl font-bold leading-none">+</span>
+      )}
       <span
         className="pointer-events-none absolute left-0 right-0"
-        style={{ bottom: "-4px", height: "3px", backgroundColor: "#ffffff" }}
+        style={{ bottom: "-4px", height: "3px", backgroundColor: underlineColor }}
       />
     </button>
   );
