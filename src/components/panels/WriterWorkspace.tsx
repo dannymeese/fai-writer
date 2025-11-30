@@ -326,6 +326,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           settings={settings}
           onChange={setSettings}
           anchorRect={sheetAnchor}
+          isGuest={isGuest}
         />
         <Toast message={toast} />
       </div>

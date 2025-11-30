@@ -11,6 +11,7 @@ type SettingsSheetProps = {
   settings: ComposerSettingsInput;
   onChange: (next: ComposerSettingsInput) => void;
   anchorRect: DOMRect | null;
+  isGuest?: boolean;
 };
  
 const marketLabels = {
@@ -20,7 +21,7 @@ const marketLabels = {
   UHNW: "UHNW ($$$$$)"
 } as const;
  
-export default function SettingsSheet({ open, onClose, settings, onChange, anchorRect }: SettingsSheetProps) {
+export default function SettingsSheet({ open, onClose, settings, onChange, anchorRect, isGuest = false }: SettingsSheetProps) {
   const [brandModalOpen, setBrandModalOpen] = useState(false);
   const [brandInput, setBrandInput] = useState("");
   const [brandProcessing, setBrandProcessing] = useState(false);
@@ -28,6 +29,7 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
 
   // Check if brand is defined on mount and when modal opens
   useEffect(() => {
+    if (isGuest) return;
     async function checkBrand() {
       try {
         const response = await fetch("/api/brand");
@@ -42,10 +44,10 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
     if (open) {
       checkBrand();
     }
-  }, [open]);
+  }, [open, isGuest]);
 
   async function handleDefineBrand() {
-    if (!brandInput.trim()) {
+    if (!brandInput.trim() || isGuest) {
       return;
     }
     setBrandProcessing(true);
@@ -61,10 +63,13 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
         setBrandModalOpen(false);
         setHasBrand(true);
       } else {
-        console.error("Failed to save brand info", data.error || "Unknown error");
+        const errorMsg = data.error || "Unknown error";
+        console.error("Failed to save brand info", errorMsg);
+        alert(`Failed to save brand: ${errorMsg}. Please make sure you're signed in.`);
       }
     } catch (error) {
       console.error("Failed to save brand info", error);
+      alert("Failed to save brand. Please try again.");
     } finally {
       setBrandProcessing(false);
     }
@@ -189,21 +194,23 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
                   value={settings.avoidWords ?? ""}
                   onChange={(value) => update("avoidWords", value)}
                 />
-                <div className="pt-2 border-t border-brand-stroke/60">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-brand-muted">Brand</span>
-                    {hasBrand && (
-                      <span className="text-xs text-brand-blue font-semibold">Custom Brand Defined</span>
-                    )}
+                {!isGuest && (
+                  <div className="pt-2 border-t border-brand-stroke/60">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-brand-muted">Brand</span>
+                      {hasBrand && (
+                        <span className="text-xs text-brand-blue font-semibold">Custom Brand Defined</span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setBrandModalOpen(true)}
+                      className="w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
+                    >
+                      {hasBrand ? "Update Brand" : "Define Brand"}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setBrandModalOpen(true)}
-                    className="w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
-                  >
-                    {hasBrand ? "Update Brand" : "Define Brand"}
-                  </button>
-                </div>
+                )}
                </div>
              </Dialog.Panel>
            </Transition.Child>
