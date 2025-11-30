@@ -5,6 +5,7 @@ import { WriterOutput } from "@/types/writer";
 import { ClipboardDocumentIcon, ArrowDownTrayIcon, BookmarkIcon } from "@heroicons/react/24/outline";
 import { useEffect, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
+import { ComposerSettingsInput } from "@/lib/validators";
 
 type OutputPanelProps = {
   outputs: WriterOutput[];
@@ -60,6 +61,7 @@ export default function OutputPanel({
             <p className="text-[9px] font-semibold uppercase text-brand-muted">YOU</p>
             <div className="max-w-xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/80 px-4 py-3 text-sm text-brand-text shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
               <p className="text-brand-text/90">{output.prompt || "Prompt unavailable for this draft."}</p>
+              <SettingsTags settings={output.settings} />
               {output.prompt && (
                 <div className="mt-3 flex justify-end">
                   <button
@@ -363,6 +365,60 @@ function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
         style={{ bottom: "-4px", height: "3px", backgroundColor: underlineColor }}
       />
     </button>
+  );
+}
+
+type SettingsTagsProps = {
+  settings: ComposerSettingsInput;
+};
+
+const marketLabels: Record<string, string> = {
+  MASS: "Mass ($)",
+  PREMIUM: "Premium ($$)",
+  LUXURY: "Luxury ($$$)",
+  UHNW: "UHNW ($$$$$)"
+};
+
+function SettingsTags({ settings }: SettingsTagsProps) {
+  const tags: string[] = [];
+
+  if (settings.marketTier) {
+    tags.push(marketLabels[settings.marketTier] || settings.marketTier);
+  }
+
+  if (settings.gradeLevel) {
+    tags.push(settings.gradeLevel);
+  }
+
+  if (settings.characterLength) {
+    tags.push(`${settings.characterLength} chars`);
+  } else if (settings.wordLength) {
+    tags.push(`${settings.wordLength} words`);
+  }
+
+  if (settings.benchmark) {
+    tags.push(`Benchmark: ${settings.benchmark}`);
+  }
+
+  if (settings.avoidWords) {
+    tags.push(`Avoid: ${settings.avoidWords}`);
+  }
+
+  if (tags.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {tags.map((tag, idx) => (
+        <span
+          key={idx}
+          className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-medium text-brand-text/70 shadow-[0_0_8px_rgba(255,255,255,0.15)]"
+        >
+          {tag}
+        </span>
+      ))}
+    </div>
   );
 }
 

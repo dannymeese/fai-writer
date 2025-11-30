@@ -123,7 +123,6 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
                     <option value="Grade 5">Grade 5</option>
                     <option value="Grade 9">Grade 9</option>
                     <option value="Grade 12">Grade 12</option>
-                    <option value="Custom">Custom</option>
                     <option value="Collegiate">Collegiate</option>
                     <option value="PhD">PhD</option>
                   </select>
