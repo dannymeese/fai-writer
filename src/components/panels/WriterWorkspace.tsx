@@ -47,8 +47,11 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     return () => clearTimeout(id);
   }, [toast]);
 
+  const fallbackTier = (user.marketTier as ComposerSettingsInput["marketTier"]) ?? "MASS";
+  const activeMarketTier = settings.marketTier ?? fallbackTier;
+
   const headline = useMemo(() => {
-    switch (settings.marketTier) {
+    switch (activeMarketTier) {
       case "UHNW":
         return "Ultra high touch language engaged.";
       case "LUXURY":
@@ -58,7 +61,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       default:
         return "Mass market polish activated.";
     }
-  }, [settings.marketTier]);
+  }, [activeMarketTier]);
 
   async function handleSubmit() {
     if (!composeValue.trim()) return;
@@ -95,7 +98,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         title: data.title ?? smartTitleFromPrompt(composeValue),
         content: data.content,
         createdAt: data.createdAt ?? new Date().toISOString(),
-        settings: snapshotSettings
+        settings: {
+          ...snapshotSettings,
+          marketTier: snapshotSettings.marketTier ?? activeMarketTier
+        }
       };
       setOutputs((prev) => [newOutput, ...prev]);
       setComposeValue("");

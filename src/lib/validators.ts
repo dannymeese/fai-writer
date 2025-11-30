@@ -18,7 +18,7 @@ export const signInSchema = z.object({
 });
 
 export const composerSettingsSchema = z.object({
-  marketTier: z.enum(marketTiers),
+  marketTier: z.enum(marketTiers).nullable(),
   characterLength: z.number().int().positive().max(2000).nullable(),
   wordLength: z.number().int().positive().max(1500).nullable(),
   gradeLevel: z.string().max(32).nullable(),

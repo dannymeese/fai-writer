@@ -5,13 +5,12 @@
  import { XMarkIcon } from "@heroicons/react/24/outline";
  import { ComposerSettingsInput, marketTiers } from "@/lib/validators";
  
- type SettingsSheetProps = {
-   open: boolean;
-   onClose: () => void;
-   settings: ComposerSettingsInput;
-   onChange: (next: ComposerSettingsInput) => void;
-   anchor?: HTMLElement | null;
- };
+type SettingsSheetProps = {
+  open: boolean;
+  onClose: () => void;
+  settings: ComposerSettingsInput;
+  onChange: (next: ComposerSettingsInput) => void;
+};
  
  const marketLabels = {
    MASS: "Mass ($)",

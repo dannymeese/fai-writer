@@ -10,8 +10,9 @@ const systemPrompt = `VITAL RULES FOR ALL OUTPUT:
 
 1. DO NOT USE EM DASHES OR EN DASHES.
 2. DO NOT WRITE WITH ANY AI WRITING TELLS OR RED FLAGS.
-
-Respond with confident luxury copy that feels bespoke and human.`;
+3. DO NOT BE REDUNDANT. DO NOT REPEAT SOMETHING THAT MEANS ESSENTIALLY THE SAME THING BUT IN DIFFERENT WORDS. 
+4. MAKE SURE THAT EVERY WORD SERVES A PURPOSE AND BRINGS ADDITIONAL MEANING OR DON'T USE IT AT ALL.
+5. ONLY PROVIDE TEXT THAT FEELS BESPOKE AND HUMAN.`;
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
   }
 
   const { prompt, settings } = parsed.data;
+  const effectiveMarketTier = settings.marketTier ?? session?.user?.marketTier ?? "MASS";
 
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ error: "OPENAI_API_KEY missing" }, { status: 500 });
@@ -42,7 +44,7 @@ export async function POST(request: Request) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const directiveLines = [
-    `Target market: ${settings.marketTier}`,
+    `Target market: ${effectiveMarketTier}`,
     settings.gradeLevel ? `Write at approximately a ${settings.gradeLevel} reading level.` : null,
     settings.benchmark ? `Mirror the tone and polish of ${settings.benchmark}.` : null,
     settings.characterLength
@@ -90,7 +92,7 @@ export async function POST(request: Request) {
         data: {
           title,
           content,
-          tone: settings.marketTier,
+          tone: effectiveMarketTier,
           ownerId: session.user.id
         }
       });
@@ -103,7 +105,10 @@ export async function POST(request: Request) {
       title,
       content,
       createdAt: timestamp,
-      settings
+      settings: {
+        ...settings,
+        marketTier: settings.marketTier ?? effectiveMarketTier
+      }
     });
 
     if (enforceGuestLimit && !isAuthenticated && cookieStore) {
