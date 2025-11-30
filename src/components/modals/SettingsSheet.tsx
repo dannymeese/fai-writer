@@ -12,6 +12,7 @@ type SettingsSheetProps = {
   onChange: (next: ComposerSettingsInput) => void;
   anchorRect: DOMRect | null;
   onBrandUpdate?: (summary: string | null) => void;
+  initialBrandDefined?: boolean;
 };
  
 const marketLabels = {
@@ -21,11 +22,19 @@ const marketLabels = {
   UHNW: "UHNW ($$$$$)"
 } as const;
  
-export default function SettingsSheet({ open, onClose, settings, onChange, anchorRect, onBrandUpdate }: SettingsSheetProps) {
+export default function SettingsSheet({
+  open,
+  onClose,
+  settings,
+  onChange,
+  anchorRect,
+  onBrandUpdate,
+  initialBrandDefined = false
+}: SettingsSheetProps) {
   const [brandModalOpen, setBrandModalOpen] = useState(false);
   const [brandInput, setBrandInput] = useState("");
   const [brandProcessing, setBrandProcessing] = useState(false);
-  const [hasBrand, setHasBrand] = useState(false);
+  const [hasBrand, setHasBrand] = useState(initialBrandDefined);
 
   // Check if brand is defined on mount and when modal opens
   useEffect(() => {

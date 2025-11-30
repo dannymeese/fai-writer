@@ -334,6 +334,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           onChange={setSettings}
           anchorRect={sheetAnchor}
           onBrandUpdate={handleBrandSummaryUpdate}
+          initialBrandDefined={hasBrand}
         />
         <Toast message={toast} />
       </div>
@@ -393,6 +394,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         onChange={setSettings}
         anchorRect={sheetAnchor}
         onBrandUpdate={handleBrandSummaryUpdate}
+        initialBrandDefined={hasBrand}
       />
       <Toast message={toast} />
     </div>
