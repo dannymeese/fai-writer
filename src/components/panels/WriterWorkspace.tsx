@@ -66,15 +66,25 @@ function ensurePlaceholderState(output: WriterOutput): WriterOutput {
 
 function resolveOutputContent(output: WriterOutput): string {
   const meta = output.placeholderMeta ?? [];
+  const values = output.placeholderValues ?? {};
   if (!meta.length) {
     return output.content;
   }
-  let cursor = 0;
-  return output.content.replace(/\[([^\]]+)]/g, (match) => {
-    const current = meta[cursor++];
-    if (!current) return match;
-    const value = output.placeholderValues?.[current.id];
-    return value && value.trim() ? value : match;
+  
+  // Create a map of placeholder labels to their values for more reliable matching
+  const labelToValue = new Map<string, string>();
+  meta.forEach((placeholder) => {
+    const value = values[placeholder.id];
+    if (value && value.trim()) {
+      labelToValue.set(placeholder.label, value.trim());
+    }
+  });
+  
+  // Replace placeholders by matching their label content
+  return output.content.replace(/\[([^\]]+)]/g, (match, label) => {
+    const trimmedLabel = label.trim();
+    const value = labelToValue.get(trimmedLabel);
+    return value || match;
   });
 }
 
