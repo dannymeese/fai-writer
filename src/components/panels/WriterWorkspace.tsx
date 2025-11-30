@@ -296,7 +296,6 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             setSheetAnchor(anchorRect);
             setSheetOpen((prev) => !prev);
           }}
-          showPromptLabel
           inputRef={composeInputRef}
         />
       ) : (

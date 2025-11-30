@@ -11,7 +11,6 @@ type ComposeBarProps = {
   onSubmit: () => void;
   disabled?: boolean;
   onToggleSettings: (anchorRect: DOMRect | null) => void;
-  showPromptLabel?: boolean;
   inputRef?: React.RefObject<HTMLTextAreaElement>;
   compact?: boolean;
 };
@@ -22,7 +21,6 @@ export default function ComposeBar({
   onSubmit,
   disabled,
   onToggleSettings,
-  showPromptLabel = false,
   inputRef,
   compact = false
 }: ComposeBarProps) {
@@ -65,7 +63,6 @@ export default function ComposeBar({
 
   const content = (
     <div className="flex w-full flex-col gap-2">
-      {showPromptLabel && <p className="text-base font-semibold text-white">What should I write?</p>}
       <div className="flex w-full items-end gap-3">
         <button
           type="button"
