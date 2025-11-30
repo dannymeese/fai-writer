@@ -149,15 +149,15 @@ export default function SettingsSheet({
                </header>
               <div className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field
-                    label="Character length"
+                <Field
+                  label="Character count"
                     placeholder="600"
                     type="number"
                     value={settings.characterLength ?? ""}
                     onChange={(value) => update("characterLength", value)}
                   />
                   <Field
-                    label="Word length"
+                  label="Word count"
                     placeholder="250"
                     type="number"
                     value={settings.wordLength ?? ""}
