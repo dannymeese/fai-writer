@@ -6,6 +6,7 @@ import type { NextAuthConfig } from "next-auth";
 import type { Provider } from "next-auth/providers";
 import { prisma } from "./prisma";
 import { signInSchema } from "./validators";
+import { logEvent } from "./logger";
 
 const hasDatabase = Boolean(prisma);
 
@@ -58,11 +59,14 @@ if (hasDatabase) {
 export const authConfig = {
   ...(hasDatabase && prisma ? { adapter: PrismaAdapter(prisma) } : {}),
   session: {
-    strategy: hasDatabase ? "database" : "jwt"
+    strategy: "jwt"
   },
   providers,
   callbacks: {
     async session({ session, user, token }) {
+      logEvent("session callback", {
+        userId: user?.id ?? token?.sub ?? session?.user?.id ?? null
+      });
       if (session.user) {
         session.user.id = user?.id ?? (token?.sub ?? session.user.id ?? "");
         session.user.marketTier =
@@ -71,6 +75,7 @@ export const authConfig = {
       return session;
     },
     async jwt({ token, user }) {
+      logEvent("jwt callback", { tokenSub: token.sub ?? null, userId: (user as any)?.id ?? null });
       if (user) {
         (token as any).marketTier = (user as any).marketTier ?? "MASS";
       }
