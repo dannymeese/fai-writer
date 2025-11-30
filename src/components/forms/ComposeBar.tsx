@@ -1,27 +1,31 @@
 "use client";
 
-import { PaperAirplaneIcon, Cog6ToothIcon } from "@heroicons/react/24/solid";
+import { PaperAirplaneIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
 import { cn } from "@/lib/utils";
+import { useRef } from "react";
 
 type ComposeBarProps = {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
   disabled?: boolean;
-  onOpenSettings: () => void;
+  onToggleSettings: (anchorRect: DOMRect | null) => void;
 };
 
-export default function ComposeBar({ value, onChange, onSubmit, disabled, onOpenSettings }: ComposeBarProps) {
+export default function ComposeBar({ value, onChange, onSubmit, disabled, onToggleSettings }: ComposeBarProps) {
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+
   return (
     <div className="fixed bottom-0 left-0 right-0 border-t border-brand-stroke/60 bg-brand-panel/90 backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-4 py-4">
         <button
           type="button"
           aria-label="Open settings"
-          onClick={onOpenSettings}
+          ref={settingsButtonRef}
+          onClick={() => onToggleSettings(settingsButtonRef.current?.getBoundingClientRect() ?? null)}
           className="flex h-12 w-12 items-center justify-center rounded-full border border-brand-stroke/70 bg-transparent text-brand-muted transition hover:text-brand-blue"
         >
-          <Cog6ToothIcon className="h-6 w-6" />
+          <WrenchScrewdriverIcon className="h-6 w-6" />
         </button>
         <textarea
           value={value}

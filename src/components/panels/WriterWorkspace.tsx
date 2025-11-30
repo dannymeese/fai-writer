@@ -20,7 +20,7 @@ type WriterWorkspaceProps = {
 };
 
 const defaultSettings: ComposerSettingsInput = {
-  marketTier: "MASS",
+  marketTier: null,
   characterLength: null,
   wordLength: null,
   gradeLevel: null,
@@ -37,6 +37,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   });
   const [outputs, setOutputs] = useState<WriterOutput[]>(initialOutputs ?? []);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetAnchor, setSheetAnchor] = useState<DOMRect | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [guestLimitReached, setGuestLimitReached] = useState(false);
@@ -101,7 +102,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         settings: {
           ...snapshotSettings,
           marketTier: snapshotSettings.marketTier ?? activeMarketTier
-        }
+        },
+        prompt: composeValue
       };
       setOutputs((prev) => [newOutput, ...prev]);
       setComposeValue("");
@@ -214,6 +216,14 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           onCopy={handleCopy}
           onDownload={handleDownload}
           onSaveStyle={handleSaveStyle}
+          onEdit={(output) => {
+            if (!output.prompt) {
+              return;
+            }
+            setComposeValue(output.prompt);
+            setSettings(output.settings);
+            setSheetOpen(false);
+          }}
           canSaveStyle={!guestLimitEnabled || !isGuest}
         />
       </main>
@@ -222,13 +232,17 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         onChange={setComposeValue}
         onSubmit={handleSubmit}
         disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
-        onOpenSettings={() => setSheetOpen(true)}
+        onToggleSettings={(anchorRect) => {
+          setSheetAnchor(anchorRect);
+          setSheetOpen((prev) => !prev);
+        }}
       />
       <SettingsSheet
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
         settings={settings}
         onChange={setSettings}
+        anchorRect={sheetAnchor}
       />
       <Toast message={toast} />
     </div>

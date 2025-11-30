@@ -44,7 +44,8 @@ export default async function HomePage() {
           gradeLevel: null,
           benchmark: null,
           avoidWords: null
-        }
+        },
+        prompt: ""
       }))}
     />
   );

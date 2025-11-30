@@ -6,5 +6,6 @@ export type WriterOutput = {
   content: string;
   createdAt: string;
   settings: ComposerSettingsInput;
+  prompt: string;
 };
 

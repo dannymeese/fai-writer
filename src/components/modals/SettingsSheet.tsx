@@ -2,7 +2,7 @@
  
  import { Dialog, Transition } from "@headlessui/react";
  import { Fragment } from "react";
- import { XMarkIcon } from "@heroicons/react/24/outline";
+import { MinusSmallIcon } from "@heroicons/react/24/outline";
  import { ComposerSettingsInput, marketTiers } from "@/lib/validators";
  
 type SettingsSheetProps = {
@@ -10,6 +10,7 @@ type SettingsSheetProps = {
   onClose: () => void;
   settings: ComposerSettingsInput;
   onChange: (next: ComposerSettingsInput) => void;
+  anchorRect: DOMRect | null;
 };
  
  const marketLabels = {
@@ -19,7 +20,7 @@ type SettingsSheetProps = {
    UHNW: "UHNW ($$$$$)"
  } as const;
  
-export default function SettingsSheet({ open, onClose, settings, onChange }: SettingsSheetProps) {
+export default function SettingsSheet({ open, onClose, settings, onChange, anchorRect }: SettingsSheetProps) {
   function update(field: keyof ComposerSettingsInput, value: string) {
     if (field === "marketTier") {
       onChange({
@@ -40,7 +41,15 @@ export default function SettingsSheet({ open, onClose, settings, onChange }: Set
      <Transition show={open} as={Fragment}>
       <Dialog onClose={onClose} className="relative z-50">
         <div className="fixed inset-0 pointer-events-none" aria-hidden="true" />
-        <div className="fixed inset-x-0 bottom-24 flex justify-center p-4 sm:justify-end sm:pr-10">
+        {open && (
+          <button
+            type="button"
+            className="fixed inset-0 cursor-default bg-transparent"
+            onClick={onClose}
+            aria-label="Dismiss brief controls"
+          />
+        )}
+        <div className="pointer-events-none fixed inset-x-0 bottom-24 flex justify-end p-4 sm:pr-10">
           <Transition.Child
             as={Fragment}
             enter="ease-out duration-200"
@@ -50,7 +59,19 @@ export default function SettingsSheet({ open, onClose, settings, onChange }: Set
             leaveFrom="opacity-100 translate-y-0"
             leaveTo="opacity-0 translate-y-4"
           >
-            <Dialog.Panel className="w-full max-w-lg rounded-3xl border border-brand-stroke/60 bg-brand-panel/95 p-6 text-brand-text shadow-[0_30px_80px_rgba(0,0,0,0.55)]">
+            <Dialog.Panel
+              className="pointer-events-auto w-full max-w-lg rounded-3xl border border-brand-stroke/60 bg-brand-panel/95 p-6 text-brand-text shadow-[0_30px_80px_rgba(0,0,0,0.55)]"
+              style={
+                anchorRect
+                  ? {
+                      position: "fixed",
+                      bottom: `calc(64px + 3rem)`,
+                      left: Math.max(16, anchorRect.left - 200),
+                      right: "auto"
+                    }
+                  : undefined
+              }
+            >
                <header className="mb-4 flex items-center justify-between">
                  <div>
                   <Dialog.Title className="font-display text-2xl text-brand-text">
@@ -60,8 +81,8 @@ export default function SettingsSheet({ open, onClose, settings, onChange }: Set
                      Set tone, benchmarks, and what words to dodge.
                    </p>
                  </div>
-                <button onClick={onClose} className="rounded-full border border-brand-stroke/70 p-2 text-brand-text hover:text-brand-blue">
-                   <XMarkIcon className="h-5 w-5" />
+                <button onClick={onClose} className="rounded-full border border-brand-stroke/70 p-2 text-brand-text hover:text-brand-blue" aria-label="Close brief controls">
+                  <MinusSmallIcon className="h-5 w-5" />
                  </button>
                </header>
                <div className="space-y-4">

@@ -15,7 +15,7 @@ const navLinks = [
 
 export default function SiteFooter() {
   return (
-    <footer className="border-t border-brand-stroke/60 bg-brand-background px-4 py-10 text-brand-text">
+    <footer className="border-t border-brand-stroke/60 bg-brand-background px-4 pb-[120px] pt-10 text-brand-text">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 lg:flex-row lg:justify-between">
         <div className="space-y-4 lg:max-w-md">
           <Link href="https://forgetaboutit.ai" target="_blank" rel="noreferrer" className="inline-flex">
