@@ -105,77 +105,90 @@ export async function POST(request: Request) {
 
   try {
     const systemPrompt = buildSystemPrompt(brandInfo);
-    
-    // Generate the main content
-    const contentResponse = await openai.responses.create({
-      model: "gpt-5.1",
-      temperature: 0.62,
-      max_output_tokens: 900,
-      input: [
-        {
-          role: "system",
-          content: systemPrompt
-        },
-        {
-          role: "user",
-          content: userPrompt
-        }
-      ]
-    });
 
-    const content = contentResponse.output_text?.trim();
-
-    if (!content) {
-      return NextResponse.json({ error: "No content returned" }, { status: 502 });
+    let contentText: string | null = null;
+    try {
+      const contentResponse = await openai.responses.create({
+        model: "gpt-5.1",
+        temperature: 0.62,
+        max_output_tokens: 900,
+        input: [
+          {
+            role: "system",
+            content: systemPrompt
+          },
+          {
+            role: "user",
+            content: userPrompt
+          }
+        ]
+      });
+      contentText = contentResponse.output_text?.trim() ?? null;
+    } catch (err) {
+      console.error("OpenAI content generation failed", err);
+      return NextResponse.json({ error: "Unable to generate draft content." }, { status: 502 });
     }
 
-    // Generate writing style description
-    const styleResponse = await openai.responses.create({
-      model: "gpt-5.1",
-      temperature: 0.4,
-      max_output_tokens: 200,
-      input: [
-        {
-          role: "system",
-          content: "You are a writing analyst. Describe the writing style of the given text in 2-3 sentences. Focus on tone, voice, structure, vocabulary choices, and any distinctive characteristics."
-        },
-        {
-          role: "user",
-          content: `Analyze and describe the writing style of this text:\n\n${content}`
-        }
-      ]
-    });
+    if (!contentText) {
+      return NextResponse.json({ error: "The writing model returned an empty response." }, { status: 502 });
+    }
 
-    const writingStyle = styleResponse.output_text?.trim() || null;
+    let writingStyle: string | null = null;
+    try {
+      const styleResponse = await openai.responses.create({
+        model: "gpt-5.1",
+        temperature: 0.4,
+        max_output_tokens: 200,
+        input: [
+          {
+            role: "system",
+            content:
+              "You are a writing analyst. Describe the writing style of the given text in 2-3 sentences. Focus on tone, voice, structure, vocabulary choices, and any distinctive characteristics."
+          },
+          {
+            role: "user",
+            content: `Analyze and describe the writing style of this text:\n\n${contentText}`
+          }
+        ]
+      });
+      writingStyle = styleResponse.output_text?.trim() ?? null;
+    } catch (err) {
+      console.error("OpenAI style generation failed", err);
+      // Non-blocking: continue without style metadata
+    }
 
     const title = smartTitleFromPrompt(prompt);
     let documentId: string | null = null;
     let timestamp = new Date().toISOString();
 
     if (isAuthenticated && session?.user?.id && prisma) {
-      const document = await prisma.document.create({
-        data: {
-          title,
-          content,
-          tone: effectiveMarketTier ?? undefined,
-          prompt,
-          characterLength: settings.characterLength ?? undefined,
-          wordLength: settings.wordLength ?? undefined,
-          gradeLevel: settings.gradeLevel ?? undefined,
-          benchmark: settings.benchmark ?? undefined,
-          avoidWords: settings.avoidWords ?? undefined,
-          writingStyle: writingStyle ?? undefined,
-          ownerId: session.user.id
-        } as any // local Prisma typings omit prompt/meta fields, so cast until schema is regenerated upstream
-      });
-      documentId = document.id;
-      timestamp = document.createdAt.toISOString();
+      try {
+        const document = await prisma.document.create({
+          data: {
+            title,
+            content: contentText,
+            tone: effectiveMarketTier ?? undefined,
+            prompt,
+            characterLength: settings.characterLength ?? undefined,
+            wordLength: settings.wordLength ?? undefined,
+            gradeLevel: settings.gradeLevel ?? undefined,
+            benchmark: settings.benchmark ?? undefined,
+            avoidWords: settings.avoidWords ?? undefined,
+            writingStyle: writingStyle ?? undefined,
+            ownerId: session.user.id
+          } as any
+        });
+        documentId = document.id;
+        timestamp = document.createdAt.toISOString();
+      } catch (err) {
+        console.error("Failed to persist composed document", err);
+      }
     }
 
     const jsonResponse = NextResponse.json({
       documentId,
       title,
-      content,
+      content: contentText,
       writingStyle,
       createdAt: timestamp,
       prompt,

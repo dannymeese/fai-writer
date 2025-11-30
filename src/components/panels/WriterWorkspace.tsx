@@ -230,15 +230,16 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         })
       });
       if (!response.ok) {
-        if (response.status === 403) {
-          const errorData = await response.json().catch(() => null);
-          if (guestLimitEnabled && errorData?.requireAuth) {
-            setGuestLimitReached(true);
-            setToast("You’ve unlocked 5 samples. Register to continue.");
-            return;
-          }
+        const errorPayload = await response.json().catch(() => null);
+        if (response.status === 403 && guestLimitEnabled && errorPayload?.requireAuth) {
+          setGuestLimitReached(true);
+          setToast("You’ve reached the guest limit. Please register to continue.");
+        } else {
+          setToast(errorPayload?.error ?? "Unable to complete that request.");
         }
-        throw new Error("Failed to compose");
+        setOutputs((prev) => prev.filter((entry) => entry.id !== tempId));
+        setLoading(false);
+        return;
       }
       const data = await response.json();
       const finalId = data.documentId ?? tempId;
@@ -263,7 +264,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       }
     } catch (error) {
       console.error(error);
-      setToast("Could not complete that request.");
+      setToast(error instanceof Error ? error.message : "Could not complete that request.");
       setOutputs((prev) => prev.filter((entry) => entry.id !== tempId));
     } finally {
       setLoading(false);

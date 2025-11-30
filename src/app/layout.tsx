@@ -22,6 +22,8 @@ export const metadata: Metadata = {
   description: "AI copy studio crafted for premium brands"
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   return (

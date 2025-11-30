@@ -2,6 +2,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import WriterWorkspace from "@/components/panels/WriterWorkspace";
 
+export const dynamic = "force-dynamic";
+
 // Prisma client in this workspace does not surface optional brief fields in its generated types,
 // so define the subset we know exists and cast query results to it for now.
 type StoredDocument = {
