@@ -10,16 +10,16 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          background: "#050505",
-          ink: "#080810",
-          panel: "#11111C",
-          stroke: "#1E1E2A",
-          text: "#F8F7F2",
-          muted: "#B6B9C9",
-          blue: "#5C64FF",
-          blueHover: "#4A51E6",
-          lavender: "#C7C5FF",
-          bone: "#EDE9DE"
+          background: "#000000",
+          ink: "#111111",
+          panel: "#141414",
+          stroke: "#2a2a2a",
+          text: "#ffffff",
+          muted: "#b3b3b3",
+          blue: "#0000ff",
+          blueHover: "#0000ff",
+          lavender: "#d9d9d9",
+          bone: "#f5f5f5"
         }
       },
       fontFamily: {

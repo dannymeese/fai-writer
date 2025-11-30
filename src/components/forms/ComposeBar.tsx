@@ -31,7 +31,7 @@ export default function ComposeBar({ value, onChange, onSubmit, disabled, onTogg
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="What should I write or revise?"
-          className="h-12 flex-1 resize-none rounded-2xl border border-brand-stroke/80 bg-brand-ink px-4 py-3 text-base text-brand-text placeholder:text-brand-muted focus:border-brand-blue focus:outline-none"
+          className="h-12 flex-1 resize-none rounded-2xl border border-brand-stroke/80 bg-brand-ink px-4 py-3 text-base text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
         />
         <button
           type="button"

@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   }
 
   const { prompt, settings } = parsed.data;
-  const effectiveMarketTier = settings.marketTier ?? session?.user?.marketTier ?? "MASS";
+  const effectiveMarketTier = settings.marketTier ?? null;
 
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ error: "OPENAI_API_KEY missing" }, { status: 500 });
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const directiveLines = [
-    `Target market: ${effectiveMarketTier}`,
+    effectiveMarketTier ? `Target market: ${effectiveMarketTier}.` : null,
     settings.gradeLevel ? `Write at approximately a ${settings.gradeLevel} reading level.` : null,
     settings.benchmark ? `Mirror the tone and polish of ${settings.benchmark}.` : null,
     settings.characterLength
@@ -58,7 +58,8 @@ export async function POST(request: Request) {
       : null
   ].filter(Boolean);
 
-  const userPrompt = `${prompt}\n\nBrief:\n- ${directiveLines.join("\n- ")}`;
+  const briefSection = directiveLines.length ? `\n\nBrief:\n- ${directiveLines.join("\n- ")}` : "";
+  const userPrompt = `${prompt}${briefSection}`;
 
   try {
     const response = await openai.responses.create({
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
         data: {
           title,
           content,
-          tone: effectiveMarketTier,
+          tone: effectiveMarketTier ?? undefined,
           prompt,
           characterLength: settings.characterLength ?? undefined,
           wordLength: settings.wordLength ?? undefined,
@@ -100,7 +101,7 @@ export async function POST(request: Request) {
           benchmark: settings.benchmark ?? undefined,
           avoidWords: settings.avoidWords ?? undefined,
           ownerId: session.user.id
-        }
+        } as any // local Prisma typings omit prompt/meta fields, so cast until schema is regenerated upstream
       });
       documentId = document.id;
       timestamp = document.createdAt.toISOString();
@@ -114,7 +115,7 @@ export async function POST(request: Request) {
       prompt,
       settings: {
         ...settings,
-        marketTier: settings.marketTier ?? effectiveMarketTier
+        marketTier: settings.marketTier ?? null
       }
     });
 

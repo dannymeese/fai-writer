@@ -35,13 +35,13 @@ export default function SiteFooter() {
               <input
                 type="email"
                 placeholder="Email"
-                className="w-full rounded-2xl border border-brand-stroke/70 bg-brand-ink px-4 py-3 text-sm text-brand-text placeholder:text-brand-muted focus:border-brand-blue focus:outline-none"
+                className="w-full rounded-2xl border border-brand-stroke/70 bg-brand-ink px-4 py-3 text-sm text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
               />
               <label className="flex items-center gap-2 text-xs text-brand-muted">
                 <input type="checkbox" className="h-4 w-4 rounded border-brand-stroke/70 bg-transparent" />
                 I accept the privacy policy
               </label>
-              <button className="w-full rounded-full bg-brand-blue px-4 py-2 text-sm font-semibold text-white hover:bg-brand-blueHover">
+              <button className="w-full rounded-full bg-brand-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-80">
                 Subscribe
               </button>
             </form>

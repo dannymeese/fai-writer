@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { SignOutButton } from "../shared/SignOutButton";
 import OutputPanel from "./OutputPanel";
@@ -13,7 +13,6 @@ import { cn, smartTitleFromPrompt } from "@/lib/utils";
 type WriterWorkspaceProps = {
   user: {
     name: string;
-    marketTier: string;
   };
   initialOutputs?: WriterOutput[];
   isGuest?: boolean;
@@ -56,22 +55,6 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     return () => clearTimeout(id);
   }, [toast]);
 
-  const fallbackTier = (user.marketTier as ComposerSettingsInput["marketTier"]) ?? "MASS";
-  const activeMarketTier = settings.marketTier ?? fallbackTier;
-
-  const headline = useMemo(() => {
-    switch (activeMarketTier) {
-      case "UHNW":
-        return "Ultra high touch language engaged.";
-      case "LUXURY":
-        return "Luxury tone locked in.";
-      case "PREMIUM":
-        return "Premium hospitality cadence ready.";
-      default:
-        return "Mass market polish activated.";
-    }
-  }, [activeMarketTier]);
-
   async function handleSubmit() {
     if (!composeValue.trim()) return;
     if (guestLimitEnabled && isGuest && guestLimitReached) {
@@ -109,7 +92,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         createdAt: data.createdAt ?? new Date().toISOString(),
         settings: normalizeSettings({
           ...snapshotSettings,
-          marketTier: snapshotSettings.marketTier ?? activeMarketTier
+          marketTier: snapshotSettings.marketTier ?? null
         }),
         prompt: composeValue
       };
@@ -194,9 +177,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       <header className="border-b border-brand-stroke/60 bg-brand-background/95 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-brand-muted">Forgetaboutit Writer</p>
             <h1 className="font-display text-4xl text-brand-text">Hello {user.name}</h1>
-            <p className="text-sm text-brand-muted">{headline}</p>
             {guestLimitEnabled && isGuest && (
               <p className="mt-2 text-sm text-brand-muted">
                 First five outputs are on us. We’ll ask you to register after that.

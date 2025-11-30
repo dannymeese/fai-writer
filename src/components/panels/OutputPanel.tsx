@@ -27,14 +27,14 @@ export default function OutputPanel({ outputs, onCopy, onDownload, onSaveStyle, 
     <div className="space-y-6">
       {outputs.map((output) => (
         <div key={output.id} className="space-y-4">
+          <p className="text-center text-xs uppercase tracking-[0.2em] text-brand-muted">{formatTimestamp(output.createdAt)}</p>
           <div className="flex justify-end">
             <div className="max-w-xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/80 px-4 py-3 text-sm text-brand-text shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-xs uppercase tracking-[0.3em] text-brand-muted">You</p>
+              <div className="mb-2 flex justify-end">
                 {output.prompt && (
                   <button
                     type="button"
-                    className="text-xs font-semibold text-brand-blue hover:text-brand-blueHover"
+                    className="text-xs font-semibold text-brand-blue hover:opacity-80"
                     onClick={() => onEdit(output)}
                   >
                     Edit &amp; resend
@@ -45,12 +45,8 @@ export default function OutputPanel({ outputs, onCopy, onDownload, onSaveStyle, 
             </div>
           </div>
           <article className="max-w-3xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/90 p-6 text-brand-text shadow-[0_25px_80px_rgba(0,0,0,0.35)]">
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-brand-muted">Forgetaboutit</p>
-                <h2 className="font-display text-2xl text-brand-text">{output.title}</h2>
-              </div>
-              <p className="text-sm text-brand-muted">{formatTimestamp(output.createdAt)}</p>
+            <header className="mb-4">
+              <h2 className="font-display text-2xl text-brand-text">{output.title}</h2>
             </header>
             <div className="space-y-3 text-base leading-relaxed text-brand-text/90">
               {output.content.split("\n").map((line, idx) => (

@@ -2,35 +2,49 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import WriterWorkspace from "@/components/panels/WriterWorkspace";
 
+// Prisma client in this workspace does not surface optional brief fields in its generated types,
+// so define the subset we know exists and cast query results to it for now.
+type StoredDocument = {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: Date;
+  tone: string | null;
+  prompt: string | null;
+  characterLength: number | null;
+  wordLength: number | null;
+  gradeLevel: string | null;
+  benchmark: string | null;
+  avoidWords: string | null;
+};
+
 export default async function HomePage() {
   const session = await auth();
   const sanitizeTier = (value: string | null | undefined) =>
-    value && ["MASS", "PREMIUM", "LUXURY", "UHNW"].includes(value) ? (value as "MASS" | "PREMIUM" | "LUXURY" | "UHNW") : "MASS";
+    value && ["MASS", "PREMIUM", "LUXURY", "UHNW"].includes(value) ? (value as "MASS" | "PREMIUM" | "LUXURY" | "UHNW") : null;
 
   if (!session?.user?.id || !prisma) {
     return (
       <WriterWorkspace
         isGuest
         user={{
-          name: session?.user?.name ?? "Guest",
-          marketTier: session?.user?.marketTier ?? "MASS"
+          name: session?.user?.name ?? "Guest"
         }}
       />
     );
   }
 
   const user = session.user;
-  const documents = await prisma.document.findMany({
+  const documents = (await prisma.document.findMany({
     where: { ownerId: user.id },
     orderBy: { createdAt: "desc" },
     take: 5
-  });
+  })) as unknown as StoredDocument[];
 
   return (
     <WriterWorkspace
       user={{
-        name: user.name ?? "Creator",
-        marketTier: user.marketTier ?? "MASS"
+        name: user.name ?? "Creator"
       }}
       initialOutputs={documents.map((doc) => ({
         id: doc.id,

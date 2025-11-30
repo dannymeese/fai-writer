@@ -132,19 +132,19 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
                     <option value="College">College</option>
                   </select>
                 </div>
-                 <Field
-                   label="Enter benchmark"
-                   placeholder="Tom Ford"
-                   value={settings.benchmark ?? ""}
-                   onChange={(value) => update("benchmark", value)}
-                 />
-                 <Field
-                   label="Enter avoid words"
-                   placeholder="budget, cheap"
-                   value={settings.avoidWords ?? ""}
-                   onChange={(value) => update("avoidWords", value)}
-                   textarea
-                 />
+                <Field
+                  label="Benchmark"
+                  placeholder="Tom Ford"
+                  value={settings.benchmark ?? ""}
+                  onChange={(value) => update("benchmark", value)}
+                />
+                <Field
+                  label="Avoid words"
+                  placeholder="budget, cheap"
+                  value={settings.avoidWords ?? ""}
+                  onChange={(value) => update("avoidWords", value)}
+                  textarea
+                />
                </div>
              </Dialog.Panel>
            </Transition.Child>
@@ -165,7 +165,7 @@ type FieldProps = {
 
 function Field({ label, value, onChange, placeholder, type = "text", textarea }: FieldProps) {
   const shared =
-    "mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text placeholder:text-brand-muted focus:border-brand-blue focus:outline-none";
+    "mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none";
   return (
     <div>
       <label className="text-sm text-brand-muted">{label}</label>
