@@ -1,6 +1,6 @@
 "use client";
 
-import { PaperAirplaneIcon, WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
+import { PaperAirplaneIcon, WrenchIcon } from "@heroicons/react/24/solid";
 import { cn } from "@/lib/utils";
 import { useRef } from "react";
 
@@ -25,7 +25,7 @@ export default function ComposeBar({ value, onChange, onSubmit, disabled, onTogg
           onClick={() => onToggleSettings(settingsButtonRef.current?.getBoundingClientRect() ?? null)}
           className="flex h-12 w-12 items-center justify-center rounded-full border border-brand-stroke/70 bg-transparent text-brand-muted transition hover:text-brand-blue"
         >
-          <WrenchScrewdriverIcon className="h-6 w-6" />
+          <WrenchIcon className="h-6 w-6" />
         </button>
         <textarea
           value={value}

@@ -13,12 +13,12 @@ type SettingsSheetProps = {
   anchorRect: DOMRect | null;
 };
  
- const marketLabels = {
-   MASS: "Mass ($)",
-   PREMIUM: "Premium ($$)",
-   LUXURY: "Luxury ($$$)",
-   UHNW: "UHNW ($$$$$)"
- } as const;
+const marketLabels = {
+  MASS: "Mass ($)",
+  PREMIUM: "Premium ($$)",
+  LUXURY: "Luxury ($$$)",
+  UHNW: "UHNW ($$$$$)"
+} as const;
  
 export default function SettingsSheet({ open, onClose, settings, onChange, anchorRect }: SettingsSheetProps) {
   function update(field: keyof ComposerSettingsInput, value: string) {
@@ -85,53 +85,53 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
                   <MinusSmallIcon className="h-5 w-5" />
                  </button>
                </header>
-               <div className="space-y-4">
-                 <div>
-                   <label className="text-sm text-brand-muted">Choose market (optional)</label>
-                   <select
-                     value={settings.marketTier ?? ""}
-                     onChange={(e) => update("marketTier", e.target.value)}
-                     className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
-                   >
-                     <option value="">Let Forgetaboutit decide</option>
-                     {marketTiers.map((tier) => (
-                       <option key={tier} value={tier}>
-                         {marketLabels[tier]}
-                       </option>
-                     ))}
-                   </select>
-                 </div>
-                 <div className="grid gap-4 sm:grid-cols-2">
-                   <Field
-                     label="Enter character length"
-                     placeholder="600"
-                     type="number"
-                     value={settings.characterLength ?? ""}
-                     onChange={(value) => update("characterLength", value)}
-                   />
-                   <Field
-                     label="Enter word length"
-                     placeholder="250"
-                     type="number"
-                     value={settings.wordLength ?? ""}
-                     onChange={(value) => update("wordLength", value)}
-                   />
-                 </div>
-                 <div>
-                   <label className="text-sm text-brand-muted">Choose grade level (optional)</label>
-                   <select
-                     value={settings.gradeLevel ?? ""}
-                     onChange={(e) => update("gradeLevel", e.target.value)}
-                     className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
-                   >
-                     <option value="">Let Forgetaboutit decide</option>
-                     <option value="Grade 5">Grade 5</option>
-                     <option value="Grade 8">Grade 8</option>
-                     <option value="Grade 10">Grade 10</option>
-                     <option value="Grade 12">Grade 12</option>
-                     <option value="College">College</option>
-                   </select>
-                 </div>
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field
+                    label="Character length (optional)"
+                    placeholder="600"
+                    type="number"
+                    value={settings.characterLength ?? ""}
+                    onChange={(value) => update("characterLength", value)}
+                  />
+                  <Field
+                    label="Word length (optional)"
+                    placeholder="250"
+                    type="number"
+                    value={settings.wordLength ?? ""}
+                    onChange={(value) => update("wordLength", value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-brand-muted">Choose market (optional)</label>
+                  <select
+                    value={settings.marketTier ?? ""}
+                    onChange={(e) => update("marketTier", e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
+                  >
+                    <option value="">Auto</option>
+                    {marketTiers.map((tier) => (
+                      <option key={tier} value={tier}>
+                        {marketLabels[tier]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm text-brand-muted">Choose grade level (optional)</label>
+                  <select
+                    value={settings.gradeLevel ?? ""}
+                    onChange={(e) => update("gradeLevel", e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
+                  >
+                    <option value="">Auto</option>
+                    <option value="Grade 5">Grade 5</option>
+                    <option value="Grade 8">Grade 8</option>
+                    <option value="Grade 10">Grade 10</option>
+                    <option value="Grade 12">Grade 12</option>
+                    <option value="College">College</option>
+                  </select>
+                </div>
                  <Field
                    label="Enter benchmark"
                    placeholder="Tom Ford"
@@ -145,14 +145,6 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
                    onChange={(value) => update("avoidWords", value)}
                    textarea
                  />
-               </div>
-              <div className="mt-6 flex justify-end gap-2">
-                 <button
-                   onClick={onClose}
-                  className="rounded-full border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text hover:border-brand-blue hover:text-brand-blue"
-                 >
-                   Close
-                 </button>
                </div>
              </Dialog.Panel>
            </Transition.Child>
