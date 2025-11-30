@@ -51,7 +51,7 @@ export default function OutputPanel({
 
   return (
     <div className="space-y-6">
-      {outputs.map((output) => (
+      {[...outputs].reverse().map((output) => (
         <div key={output.id} className="space-y-4">
           <p className="text-center text-xs text-brand-muted">{formatTimestamp(output.createdAt)}</p>
           <div className="flex flex-col items-end gap-1">
