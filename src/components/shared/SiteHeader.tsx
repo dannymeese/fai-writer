@@ -11,7 +11,7 @@ export default function SiteHeader() {
           <span style={{ color: "#0000ff" }}>.ai </span>
           <span style={{ color: "#ffffff" }}>Writer Pro</span>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
           <Link
             href="/sign-in"
             className="text-sm font-semibold text-white transition hover:text-brand-blue"

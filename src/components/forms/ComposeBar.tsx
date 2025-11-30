@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowUpIcon, WrenchIcon } from "@heroicons/react/24/solid";
+import { ArrowUpIcon } from "@heroicons/react/24/outline";
+import { WrenchIcon } from "@heroicons/react/24/solid";
 import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -90,13 +91,13 @@ export default function ComposeBar({
           onClick={onSubmit}
           disabled={disabled || !value.trim()}
           className={cn(
-            "flex h-12 min-w-[120px] items-center justify-center self-end rounded-full bg-brand-blue px-4 font-semibold text-white transition hover:bg-brand-blueHover",
+            "flex h-12 min-w-[120px] items-center justify-center self-end rounded-full bg-brand-blue px-4 text-white transition hover:bg-brand-blueHover",
             {
-            "opacity-60": disabled || !value.trim()
+              "opacity-60": disabled || !value.trim()
             }
           )}
         >
-          <ArrowUpIcon className="h-6 w-6 font-bold" />
+          <ArrowUpIcon className="h-8 w-8 stroke-[3]" />
         </button>
         </div>
       </div>

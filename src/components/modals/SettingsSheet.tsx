@@ -121,10 +121,11 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
                   >
                     <option value="">Auto</option>
                     <option value="Grade 5">Grade 5</option>
-                    <option value="Grade 8">Grade 8</option>
-                    <option value="Grade 10">Grade 10</option>
+                    <option value="Grade 9">Grade 9</option>
                     <option value="Grade 12">Grade 12</option>
-                    <option value="College">College</option>
+                    <option value="Custom">Custom</option>
+                    <option value="Collegiate">Collegiate</option>
+                    <option value="PhD">PhD</option>
                   </select>
                 </div>
                 <Field
@@ -138,7 +139,6 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
                   placeholder="budget, cheap"
                   value={settings.avoidWords ?? ""}
                   onChange={(value) => update("avoidWords", value)}
-                  textarea
                 />
                </div>
              </Dialog.Panel>

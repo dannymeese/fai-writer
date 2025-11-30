@@ -44,7 +44,7 @@ export default function OutputPanel({
   if (!outputs.length) {
     return (
       <div className="flex min-h-[60vh] w-full items-center justify-center text-center">
-        <p className="text-4xl font-semibold text-white">What should I write?</p>
+        <p className="text-8xl font-normal text-white">What should I write?</p>
       </div>
     );
   }
