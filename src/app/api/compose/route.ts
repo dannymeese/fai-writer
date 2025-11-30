@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const session = await auth();
   const isAuthenticated = Boolean(session?.user?.id);
   const enforceGuestLimit = process.env.ENFORCE_GUEST_LIMIT === "true";
-  const cookieStore = enforceGuestLimit ? await cookies() : null;
+  const cookieStore = await cookies(); // Always get cookies for brand info access
   const guestCounter = Number(cookieStore?.get("guest_outputs")?.value ?? "0");
   if (enforceGuestLimit && !isAuthenticated && guestCounter >= 5) {
     return NextResponse.json(
@@ -61,8 +61,8 @@ export async function POST(request: Request) {
   }
   
   // Fall back to cookie for guests or if DB lookup failed
-  if (!brandInfo && cookieStore) {
-    brandInfo = cookieStore.get("guest_brand_info")?.value ?? null;
+  if (!brandInfo) {
+    brandInfo = cookieStore?.get("guest_brand_info")?.value ?? null;
   }
 
   const directiveLines = [
