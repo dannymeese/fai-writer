@@ -1,5 +1,10 @@
 import { ComposerSettingsInput } from "@/lib/validators";
 
+export type OutputPlaceholder = {
+  id: string;
+  label: string;
+};
+
 export type WriterOutput = {
   id: string;
   title: string;
@@ -8,5 +13,6 @@ export type WriterOutput = {
   settings: ComposerSettingsInput;
   prompt: string;
   placeholderValues?: Record<string, string>;
+  placeholderMeta?: OutputPlaceholder[];
 };
 

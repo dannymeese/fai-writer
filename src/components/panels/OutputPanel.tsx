@@ -13,7 +13,7 @@ type OutputPanelProps = {
   onSaveStyle: (output: WriterOutput) => Promise<void>;
   onEdit: (output: WriterOutput) => void;
   canSaveStyle?: boolean;
-  onPlaceholderUpdate: (outputId: string, placeholderKey: string, value: string | null) => void;
+  onPlaceholderUpdate: (outputId: string, placeholderId: string, value: string | null) => void;
 };
 
 export default function OutputPanel({
@@ -59,16 +59,10 @@ export default function OutputPanel({
               <h2 className="font-display text-2xl text-brand-text">{output.title}</h2>
             </header>
             <div className="space-y-3 text-base leading-relaxed text-brand-text/90">
-              {output.content.split("\n").map((line, idx) => (
-                <p key={idx}>
-                  <LineWithPlaceholders
-                    line={line}
-                    outputId={output.id}
-                    values={output.placeholderValues ?? {}}
-                    onUpdate={onPlaceholderUpdate}
-                  />
-                </p>
-              ))}
+              <OutputContent
+                output={output}
+                onPlaceholderUpdate={onPlaceholderUpdate}
+              />
             </div>
             <footer className="mt-6 flex flex-wrap items-center gap-3">
               <ActionButton icon={<ClipboardDocumentIcon className="h-4 w-4" />} label="Copy to Clipboard" onClick={() => onCopy(output)} />
@@ -115,63 +109,95 @@ function ActionButton({
   );
 }
 
-type LineWithPlaceholdersProps = {
-  line: string;
-  outputId: string;
-  values: Record<string, string>;
-  onUpdate: (outputId: string, placeholderKey: string, value: string | null) => void;
+type OutputContentProps = {
+  output: WriterOutput;
+  onPlaceholderUpdate: (outputId: string, placeholderId: string, value: string | null) => void;
 };
 
-function LineWithPlaceholders({ line, outputId, values, onUpdate }: LineWithPlaceholdersProps) {
-  const segments: Array<{ type: "text"; content: string } | { type: "placeholder"; key: string }> = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null = null;
-  const regex = /\[([^\]]+)]/g;
-  while ((match = regex.exec(line)) !== null) {
-    if (match.index > lastIndex) {
-      segments.push({ type: "text", content: line.slice(lastIndex, match.index) });
-    }
-    const key = match[1]?.trim() ?? "";
-    segments.push({ type: "placeholder", key });
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < line.length) {
-    segments.push({ type: "text", content: line.slice(lastIndex) });
-  }
-
-  if (!segments.length) {
-    return <>{line}</>;
-  }
+function OutputContent({ output, onPlaceholderUpdate }: OutputContentProps) {
+  const lines = output.content.split("\n");
+  const placeholderMeta = output.placeholderMeta ?? [];
+  const values = output.placeholderValues ?? {};
+  let cursor = 0;
 
   return (
     <>
-      {segments.map((segment, idx) => {
-        if (segment.type === "text") {
-          return <span key={`${outputId}-text-${idx}`}>{segment.content}</span>;
-        }
-        const value = segment.key ? values[segment.key] ?? "" : "";
-        return (
-          <PlaceholderField
-            key={`${outputId}-${segment.key}-${idx}`}
-            outputId={outputId}
-            placeholderKey={segment.key}
-            value={value}
-            onUpdate={onUpdate}
-          />
-        );
+      {lines.map((line, idx) => {
+        const { nodes, nextCursor } = buildLineSegments({
+          line,
+          outputId: output.id,
+          placeholderMeta,
+          cursor,
+          values,
+          onPlaceholderUpdate
+        });
+        cursor = nextCursor;
+        return <p key={idx}>{nodes}</p>;
       })}
     </>
   );
 }
 
-type PlaceholderFieldProps = {
+type BuildSegmentsArgs = {
+  line: string;
   outputId: string;
-  placeholderKey: string;
-  value: string;
-  onUpdate: (outputId: string, placeholderKey: string, value: string | null) => void;
+  placeholderMeta: WriterOutput["placeholderMeta"];
+  cursor: number;
+  values: Record<string, string>;
+  onPlaceholderUpdate: (outputId: string, placeholderId: string, value: string | null) => void;
 };
 
-function PlaceholderField({ outputId, placeholderKey, value, onUpdate }: PlaceholderFieldProps) {
+function buildLineSegments({
+  line,
+  outputId,
+  placeholderMeta,
+  cursor,
+  values,
+  onPlaceholderUpdate
+}: BuildSegmentsArgs): { nodes: ReactNode[]; nextCursor: number } {
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  let localCursor = cursor;
+  const regex = /\[([^\]]+)]/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(line)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(<span key={`${outputId}-text-${localCursor}-${match.index}`}>{line.slice(lastIndex, match.index)}</span>);
+    }
+    const meta = placeholderMeta?.[localCursor];
+    const label = meta?.label ?? (match[1]?.trim() || "missing info");
+    const placeholderId = meta?.id ?? `ph-${localCursor}`;
+    nodes.push(
+      <PlaceholderField
+        key={`${outputId}-${placeholderId}-${localCursor}`}
+        outputId={outputId}
+        placeholderId={placeholderId}
+        label={label}
+        value={values[placeholderId] ?? ""}
+        onUpdate={onPlaceholderUpdate}
+      />
+    );
+    lastIndex = match.index + match[0].length;
+    localCursor++;
+  }
+
+  if (lastIndex < line.length) {
+    nodes.push(<span key={`${outputId}-text-tail-${localCursor}-${lastIndex}`}>{line.slice(lastIndex)}</span>);
+  }
+
+  return { nodes, nextCursor: localCursor };
+}
+
+type PlaceholderFieldProps = {
+  outputId: string;
+  placeholderId: string;
+  label: string;
+  value: string;
+  onUpdate: (outputId: string, placeholderId: string, value: string | null) => void;
+};
+
+function PlaceholderField({ outputId, placeholderId, label, value, onUpdate }: PlaceholderFieldProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
@@ -182,12 +208,11 @@ function PlaceholderField({ outputId, placeholderKey, value, onUpdate }: Placeho
     }
   }, [value]);
 
-  const keyLabel = placeholderKey || "missing info";
-  const label = value || `Enter ${keyLabel} +`;
+  const displayLabel = value || `Enter ${label} +`;
 
   function handleSubmit() {
     const trimmed = draft.trim();
-    onUpdate(outputId, placeholderKey, trimmed || null);
+    onUpdate(outputId, placeholderId, trimmed || null);
     setEditing(false);
   }
 
@@ -210,10 +235,6 @@ function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     setEditing(true);
   }
 
-  if (!placeholderKey) {
-    return null;
-  }
-
   if (editing) {
     return (
       <span className="ml-2 inline-flex items-center gap-2 rounded-full border-[3px] border-white px-3 py-1 text-xs font-semibold text-white">
@@ -223,7 +244,7 @@ function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
           className="w-32 border-none bg-transparent text-white placeholder:text-white/50 focus:outline-none"
-          placeholder={keyLabel}
+          placeholder={label}
         />
         <button type="button" className="text-white/70 hover:text-white" onClick={handleSubmit}>
           Done
@@ -249,7 +270,7 @@ function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
       onClick={openEditor}
       className="ml-2 inline-flex items-center rounded-full border-[3px] border-white px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/10"
     >
-      {label}
+      {displayLabel}
     </button>
   );
 }

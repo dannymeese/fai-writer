@@ -7,7 +7,7 @@ import OutputPanel from "./OutputPanel";
 import ComposeBar from "../forms/ComposeBar";
 import SettingsSheet from "../modals/SettingsSheet";
 import { ComposerSettingsInput } from "@/lib/validators";
-import { WriterOutput } from "@/types/writer";
+import { OutputPlaceholder, WriterOutput } from "@/types/writer";
 import { cn, smartTitleFromPrompt } from "@/lib/utils";
 
 type WriterWorkspaceProps = {
@@ -38,20 +38,43 @@ function normalizeSettings(next?: Partial<ComposerSettingsInput>): ComposerSetti
   };
 }
 
+function derivePlaceholderMeta(content: string): OutputPlaceholder[] {
+  const meta: OutputPlaceholder[] = [];
+  const regex = /\[([^\]]+)]/g;
+  let match: RegExpExecArray | null;
+  let index = 0;
+  while ((match = regex.exec(content)) !== null) {
+    const label = (match[1] ?? "").trim() || "missing info";
+    meta.push({ id: `ph-${index++}`, label });
+  }
+  return meta;
+}
+
 function ensurePlaceholderState(output: WriterOutput): WriterOutput {
+  const placeholderMeta = derivePlaceholderMeta(output.content);
+  const existingValues = output.placeholderValues ?? {};
+  const nextValues: Record<string, string> = {};
+  placeholderMeta.forEach((placeholder) => {
+    nextValues[placeholder.id] = existingValues[placeholder.id] ?? "";
+  });
   return {
     ...output,
-    placeholderValues: { ...(output.placeholderValues ?? {}) }
+    placeholderMeta,
+    placeholderValues: nextValues
   };
 }
 
 function resolveOutputContent(output: WriterOutput): string {
-  const replacements = output.placeholderValues ?? {};
-  return output.content.replace(/\[([^\]]+)]/g, (match, rawKey) => {
-    const key = rawKey.trim();
-    if (!key) return match;
-    const value = replacements[key];
-    return value ? value : match;
+  const meta = output.placeholderMeta ?? [];
+  if (!meta.length) {
+    return output.content;
+  }
+  let cursor = 0;
+  return output.content.replace(/\[([^\]]+)]/g, (match) => {
+    const current = meta[cursor++];
+    if (!current) return match;
+    const value = output.placeholderValues?.[current.id];
+    return value && value.trim() ? value : match;
   });
 }
 
@@ -102,7 +125,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       }
       const data = await response.json();
       const nextCount = outputs.length + 1;
-      const newOutput: WriterOutput = {
+      const newOutput: WriterOutput = ensurePlaceholderState({
         id: data.documentId ?? crypto.randomUUID(),
         title: data.title ?? smartTitleFromPrompt(composeValue),
         content: data.content,
@@ -111,9 +134,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           ...snapshotSettings,
           marketTier: snapshotSettings.marketTier ?? null
         }),
-        prompt: composeValue,
-        placeholderValues: {}
-      };
+        prompt: composeValue
+      });
       setOutputs((prev) => [newOutput, ...prev]);
       setComposeValue("");
       setToast("Draft ready with guardrails applied.");
@@ -128,19 +150,16 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     }
   }
 
-  function updatePlaceholder(outputId: string, placeholderKey: string, value: string | null) {
+  function updatePlaceholder(outputId: string, placeholderId: string, value: string | null) {
     setOutputs((prev) =>
       prev.map((existing) => {
         if (existing.id !== outputId) return existing;
-        const key = placeholderKey.trim();
-        if (!key) {
-          return existing;
-        }
         const current = existing.placeholderValues ? { ...existing.placeholderValues } : {};
-        if (value && value.trim()) {
-          current[key] = value.trim();
+        const trimmed = value?.trim() ?? "";
+        if (trimmed) {
+          current[placeholderId] = trimmed;
         } else {
-          delete current[key];
+          delete current[placeholderId];
         }
         return {
           ...existing,
