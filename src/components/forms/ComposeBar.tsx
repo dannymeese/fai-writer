@@ -25,6 +25,7 @@ export default function ComposeBar({
   compact = false
 }: ComposeBarProps) {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const sendButtonRef = useRef<HTMLButtonElement>(null);
   const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = inputRef ?? internalTextareaRef;
   const placeholderExamples = useMemo(
@@ -52,6 +53,7 @@ export default function ComposeBar({
 
   useEffect(() => {
     const textarea = textareaRef.current;
+    const sendButton = sendButtonRef.current;
     if (!textarea) return;
     const lineHeight = 24;
     const maxHeight = lineHeight * 10;
@@ -59,7 +61,22 @@ export default function ComposeBar({
     const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
     textarea.style.height = `${nextHeight}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+    
+    // Sync send button height with textarea height
+    if (sendButton) {
+      sendButton.style.height = `${nextHeight}px`;
+    }
   }, [value]);
+
+  // Set initial height on mount
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    const sendButton = sendButtonRef.current;
+    if (textarea && sendButton) {
+      const height = textarea.offsetHeight || 48; // fallback to 48px (h-12)
+      sendButton.style.height = `${height}px`;
+    }
+  }, []);
 
   const content = (
     <div className="flex w-full flex-col gap-2">
@@ -85,10 +102,11 @@ export default function ComposeBar({
         </div>
         <button
           type="button"
+          ref={sendButtonRef}
           onClick={onSubmit}
           disabled={disabled || !value.trim()}
           className={cn(
-            "flex h-full min-w-[120px] items-center justify-center rounded-full bg-white px-4 text-black transition hover:bg-gray-100",
+            "flex min-w-[120px] items-center justify-center rounded-full bg-white px-4 text-black transition hover:bg-gray-100",
             {
               "opacity-60": disabled || !value.trim()
             }
