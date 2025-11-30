@@ -28,8 +28,8 @@ export async function POST(request: Request) {
   const session = await auth();
   const isAuthenticated = Boolean(session?.user?.id);
   const enforceGuestLimit = process.env.ENFORCE_GUEST_LIMIT === "true";
-  const cookieStore = enforceGuestLimit ? await cookies() : null;
-  const guestCounter = Number(cookieStore?.get("guest_outputs")?.value ?? "0");
+  const cookieStore = await cookies();
+  const guestCounter = enforceGuestLimit ? Number(cookieStore.get("guest_outputs")?.value ?? "0") : 0;
   if (enforceGuestLimit && !isAuthenticated && guestCounter >= 5) {
     return NextResponse.json(
       { error: "Guest limit reached", requireAuth: true },
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
   }
   
   // Fall back to cookie for guests or if DB lookup failed
-  if (!brandInfo && cookieStore) {
+  if (!brandInfo) {
     brandInfo = cookieStore.get("guest_brand_info")?.value ?? null;
   }
 
@@ -172,7 +172,7 @@ export async function POST(request: Request) {
       }
     });
 
-    if (enforceGuestLimit && !isAuthenticated && cookieStore) {
+    if (enforceGuestLimit && !isAuthenticated) {
       jsonResponse.cookies.set("guest_outputs", String(guestCounter + 1), {
         maxAge: 60 * 60 * 24,
         path: "/"
