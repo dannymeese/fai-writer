@@ -256,13 +256,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
 
   if (!hasOutputs) {
     return (
-      <div className="relative flex min-h-screen flex-col overflow-hidden bg-brand-background text-brand-text">
+      <div className="fixed inset-0 flex flex-col overflow-hidden bg-brand-background text-brand-text">
         {!isGuest && (
           <div className="absolute right-6 top-6 z-10">
             <SignOutButton />
           </div>
         )}
-        <div className="flex flex-1 items-center justify-center px-4" style={{ minHeight: "calc(100vh - 140px)" }}>
+        <div className="flex flex-1 items-center justify-center px-4">
           <div className="flex w-full max-w-4xl flex-col items-center gap-5 text-white">
             <p className="text-2xl font-normal">What should I write?</p>
             <ComposeBar
