@@ -19,6 +19,14 @@ function buildSystemPrompt(brandInfo: string | null): string {
 8. NEVER ask the user for more information—provide the best possible answer immediately.
 9. If a brand summary is provided, prioritize it above all other context and keep tone, vocabulary, and claims aligned with that brand.`;
 
+  prompt += `
+AVOID THESE COMMON AI TELLS:
+- No neutral, generic, or “robotically tidy” tone; inject specific voice, real-world texture, and asymmetric structures.
+- Keep sentence length and structure varied; avoid uniform rhythm that triggers burstiness/perplexity detectors.
+- Never default to lists-of-three, rigid BuzzFeed-style bullets, or “not X, not Y, but Z” triads.
+- Skip over-explaining or recap paragraphs (“in conclusion,” “it is important to note,” etc.).
+- Use slang, local idiom, or unexpected phrasing when appropriate; avoid stock AI sincerity or filler.`;
+
   if (brandInfo) {
     prompt += `\n\nBRAND GUIDELINES:\n${brandInfo}\n\nAlways follow the brand guidelines above. Use the brand vocabulary, tone, and style preferences when writing.`;
   }
@@ -46,7 +54,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { prompt, settings } = parsed.data;
+  const { prompt, settings, brandSummary } = parsed.data;
   const effectiveMarketTier = settings.marketTier ?? null;
 
   if (!process.env.OPENAI_API_KEY) {
@@ -56,8 +64,8 @@ export async function POST(request: Request) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   // Fetch brand info from database or cookie
-  let brandInfo: string | null = null;
-  if (isAuthenticated && session?.user?.id && prisma) {
+  let brandInfo: string | null = brandSummary?.trim() || null;
+  if (!brandInfo && isAuthenticated && session?.user?.id && prisma) {
     try {
       const user = await prisma.user.findUnique({
         where: { id: session.user.id }
