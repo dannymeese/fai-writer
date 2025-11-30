@@ -29,16 +29,16 @@ export default function ComposeBar({
   const textareaRef = inputRef ?? internalTextareaRef;
   const placeholderExamples = useMemo(
     () => [
-      "Write a luxury hotel welcome email.",
-      "Draft a VC pitch opening paragraph.",
-      "Polish a college admissions essay intro.",
-      "Summarize a medical research paper.",
-      "Compose a heartfelt wedding toast.",
-      "Rewrite a SaaS onboarding sequence.",
-      "Craft a keynote speech conclusion.",
-      "Turn bullet points into a press release.",
-      "Explain quantum computing plainly.",
-      "Revise a product update for customers."
+      "Draft a VC pitch for an organic dog food brand.",
+      "Rewrite our retention email for premium spa guests.",
+      "Polish a college admissions essay about robotics.",
+      "Summarize a medical paper on gene therapies for parents.",
+      "Compose a heartfelt toast for a founder’s retirement gala.",
+      "Rewrite our SaaS onboarding flow for enterprise clients.",
+      "Craft a keynote opener for a sustainability summit.",
+      "Turn these bullet points into a press release for a launch.",
+      "Explain quantum computing to luxury retail executives.",
+      "Revise a product update note for boutique hotel partners."
     ],
     []
   );
