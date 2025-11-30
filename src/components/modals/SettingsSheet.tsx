@@ -11,6 +11,7 @@ type SettingsSheetProps = {
   settings: ComposerSettingsInput;
   onChange: (next: ComposerSettingsInput) => void;
   anchorRect: DOMRect | null;
+  onBrandUpdate?: (summary: string | null) => void;
 };
  
 const marketLabels = {
@@ -20,7 +21,7 @@ const marketLabels = {
   UHNW: "UHNW ($$$$$)"
 } as const;
  
-export default function SettingsSheet({ open, onClose, settings, onChange, anchorRect }: SettingsSheetProps) {
+export default function SettingsSheet({ open, onClose, settings, onChange, anchorRect, onBrandUpdate }: SettingsSheetProps) {
   const [brandModalOpen, setBrandModalOpen] = useState(false);
   const [brandInput, setBrandInput] = useState("");
   const [brandProcessing, setBrandProcessing] = useState(false);
@@ -33,7 +34,9 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
         const response = await fetch("/api/brand");
         if (response.ok) {
           const data = await response.json();
-          setHasBrand(!!data.brandInfo);
+          const summary = data.brandInfo ?? null;
+          setHasBrand(!!summary);
+          onBrandUpdate?.(summary);
         }
       } catch (error) {
         console.error("Failed to check brand info", error);
@@ -42,7 +45,7 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
     if (open) {
       checkBrand();
     }
-  }, [open]);
+  }, [open, onBrandUpdate]);
 
   async function handleDefineBrand() {
     if (!brandInput.trim()) {
@@ -57,9 +60,11 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
       });
       const data = await response.json();
       if (response.ok && !data.error) {
+        const summary = data.brandInfo ?? null;
         setBrandInput("");
         setBrandModalOpen(false);
-        setHasBrand(true);
+        setHasBrand(!!summary);
+        onBrandUpdate?.(summary);
       } else {
         console.error("Failed to save brand info", data.error || "Unknown error");
       }

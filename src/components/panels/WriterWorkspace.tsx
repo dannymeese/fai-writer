@@ -110,7 +110,12 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [toast, setToast] = useState<string | null>(null);
   const [guestLimitReached, setGuestLimitReached] = useState(false);
   const [hasBrand, setHasBrand] = useState(false);
+  const [brandSummary, setBrandSummary] = useState<string | null>(null);
   const composeInputRef = useRef<HTMLTextAreaElement>(null);
+  function handleBrandSummaryUpdate(summary: string | null) {
+    setBrandSummary(summary);
+    setHasBrand(!!summary);
+  }
 
   useEffect(() => {
     if (!toast) return;
@@ -125,7 +130,9 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         const response = await fetch("/api/brand");
         if (response.ok) {
           const data = await response.json();
-          setHasBrand(!!data.brandInfo);
+          const summary = data.brandInfo ?? null;
+          setHasBrand(!!summary);
+          setBrandSummary(summary);
         }
       } catch (error) {
         console.error("Failed to check brand info", error);
@@ -164,7 +171,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: currentPrompt,
-          settings: snapshotSettings
+          settings: snapshotSettings,
+          brandSummary: brandSummary ?? undefined
         })
       });
       if (!response.ok) {
@@ -315,7 +323,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               }}
               compact
               inputRef={composeInputRef}
-              hasCustomOptions={hasCustomOptions(settings)}
+              hasCustomOptions={hasCustomOptions(settings) || hasBrand}
             />
           </div>
         </div>
@@ -325,6 +333,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           settings={settings}
           onChange={setSettings}
           anchorRect={sheetAnchor}
+          onBrandUpdate={handleBrandSummaryUpdate}
         />
         <Toast message={toast} />
       </div>
@@ -375,7 +384,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           setSheetOpen((prev) => !prev);
         }}
         inputRef={composeInputRef}
-        hasCustomOptions={hasCustomOptions(settings)}
+        hasCustomOptions={hasCustomOptions(settings) || hasBrand}
       />
       <SettingsSheet
         open={sheetOpen}
@@ -383,6 +392,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         settings={settings}
         onChange={setSettings}
         anchorRect={sheetAnchor}
+        onBrandUpdate={handleBrandSummaryUpdate}
       />
       <Toast message={toast} />
     </div>

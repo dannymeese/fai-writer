@@ -30,7 +30,8 @@ export type ComposerSettingsInput = z.infer<typeof composerSettingsSchema>;
 
 export const composeRequestSchema = z.object({
   prompt: z.string().min(10, "Share more detail"),
-  settings: composerSettingsSchema
+  settings: composerSettingsSchema,
+  brandSummary: z.string().max(8000).optional()
 });
 
 export const documentSchema = z.object({
