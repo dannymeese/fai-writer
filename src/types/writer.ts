@@ -7,5 +7,6 @@ export type WriterOutput = {
   createdAt: string;
   settings: ComposerSettingsInput;
   prompt: string;
+  placeholderValues?: Record<string, string>;
 };
 

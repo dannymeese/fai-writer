@@ -38,11 +38,28 @@ function normalizeSettings(next?: Partial<ComposerSettingsInput>): ComposerSetti
   };
 }
 
+function ensurePlaceholderState(output: WriterOutput): WriterOutput {
+  return {
+    ...output,
+    placeholderValues: { ...(output.placeholderValues ?? {}) }
+  };
+}
+
+function resolveOutputContent(output: WriterOutput): string {
+  const replacements = output.placeholderValues ?? {};
+  return output.content.replace(/\{([^}]+)}/g, (match, rawKey) => {
+    const key = rawKey.trim();
+    if (!key) return match;
+    const value = replacements[key];
+    return value ? value : match;
+  });
+}
+
 export default function WriterWorkspace({ user, initialOutputs, isGuest = false }: WriterWorkspaceProps) {
   const guestLimitEnabled = process.env.NEXT_PUBLIC_ENFORCE_GUEST_LIMIT === "true";
   const [composeValue, setComposeValue] = useState("");
   const [settings, setSettings] = useState<ComposerSettingsInput>(defaultSettings);
-  const [outputs, setOutputs] = useState<WriterOutput[]>(initialOutputs ?? []);
+  const [outputs, setOutputs] = useState<WriterOutput[]>(() => (initialOutputs ?? []).map(ensurePlaceholderState));
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetAnchor, setSheetAnchor] = useState<DOMRect | null>(null);
   const [loading, setLoading] = useState(false);
@@ -94,7 +111,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           ...snapshotSettings,
           marketTier: snapshotSettings.marketTier ?? null
         }),
-        prompt: composeValue
+        prompt: composeValue,
+        placeholderValues: {}
       };
       setOutputs((prev) => [newOutput, ...prev]);
       setComposeValue("");
@@ -110,9 +128,31 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     }
   }
 
+  function updatePlaceholder(outputId: string, placeholderKey: string, value: string | null) {
+    setOutputs((prev) =>
+      prev.map((existing) => {
+        if (existing.id !== outputId) return existing;
+        const key = placeholderKey.trim();
+        if (!key) {
+          return existing;
+        }
+        const current = existing.placeholderValues ? { ...existing.placeholderValues } : {};
+        if (value && value.trim()) {
+          current[key] = value.trim();
+        } else {
+          delete current[key];
+        }
+        return {
+          ...existing,
+          placeholderValues: current
+        };
+      })
+    );
+  }
+
   async function handleCopy(output: WriterOutput) {
     try {
-      await navigator.clipboard.writeText(output.content);
+      await navigator.clipboard.writeText(resolveOutputContent(output));
       setToast("Copied without any AI tells.");
     } catch {
       setToast("Clipboard blocked.");
@@ -120,12 +160,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }
 
   async function handleDownload(output: WriterOutput) {
+    const resolved = resolveOutputContent(output);
     const response = await fetch("/api/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: output.title,
-        content: output.content
+        content: resolved
       })
     });
     if (!response.ok) {
@@ -150,12 +191,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       setToast("Create an account to save writing styles.");
       return;
     }
+    const resolvedContent = resolveOutputContent(output);
     const response = await fetch("/api/documents", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: `${output.title} • Style`,
-        content: output.content,
+        content: resolvedContent,
         tone: output.settings.marketTier ?? undefined,
         prompt: output.prompt,
         characterLength: output.settings.characterLength,
@@ -220,6 +262,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             setSheetOpen(true);
           }}
           canSaveStyle={!guestLimitEnabled || !isGuest}
+          onPlaceholderUpdate={updatePlaceholder}
         />
       </main>
       <ComposeBar

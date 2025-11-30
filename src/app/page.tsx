@@ -59,7 +59,8 @@ export default async function HomePage() {
           benchmark: doc.benchmark ?? null,
           avoidWords: doc.avoidWords ?? null
         },
-        prompt: doc.prompt ?? ""
+        prompt: doc.prompt ?? "",
+        placeholderValues: {}
       }))}
     />
   );

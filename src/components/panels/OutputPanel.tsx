@@ -3,7 +3,8 @@
 import { formatTimestamp } from "@/lib/utils";
 import { WriterOutput } from "@/types/writer";
 import { ClipboardDocumentIcon, ArrowDownTrayIcon, BookmarkIcon } from "@heroicons/react/24/outline";
-import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
 type OutputPanelProps = {
   outputs: WriterOutput[];
@@ -12,9 +13,18 @@ type OutputPanelProps = {
   onSaveStyle: (output: WriterOutput) => Promise<void>;
   onEdit: (output: WriterOutput) => void;
   canSaveStyle?: boolean;
+  onPlaceholderUpdate: (outputId: string, placeholderKey: string, value: string | null) => void;
 };
 
-export default function OutputPanel({ outputs, onCopy, onDownload, onSaveStyle, onEdit, canSaveStyle = true }: OutputPanelProps) {
+export default function OutputPanel({
+  outputs,
+  onCopy,
+  onDownload,
+  onSaveStyle,
+  onEdit,
+  canSaveStyle = true,
+  onPlaceholderUpdate
+}: OutputPanelProps) {
   if (!outputs.length) {
     return (
       <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-brand-stroke/60 bg-brand-panel/60 p-8 text-center text-brand-muted">
@@ -50,7 +60,14 @@ export default function OutputPanel({ outputs, onCopy, onDownload, onSaveStyle, 
             </header>
             <div className="space-y-3 text-base leading-relaxed text-brand-text/90">
               {output.content.split("\n").map((line, idx) => (
-                <p key={idx}>{line}</p>
+                <p key={idx}>
+                  <LineWithPlaceholders
+                    line={line}
+                    outputId={output.id}
+                    values={output.placeholderValues ?? {}}
+                    onUpdate={onPlaceholderUpdate}
+                  />
+                </p>
               ))}
             </div>
             <footer className="mt-6 flex flex-wrap items-center gap-3">
@@ -93,6 +110,144 @@ function ActionButton({
       className="inline-flex items-center gap-2 rounded-full border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue disabled:cursor-not-allowed disabled:border-brand-stroke disabled:text-brand-muted"
     >
       {icon}
+      {label}
+    </button>
+  );
+}
+
+type LineWithPlaceholdersProps = {
+  line: string;
+  outputId: string;
+  values: Record<string, string>;
+  onUpdate: (outputId: string, placeholderKey: string, value: string | null) => void;
+};
+
+function LineWithPlaceholders({ line, outputId, values, onUpdate }: LineWithPlaceholdersProps) {
+  const segments: Array<{ type: "text"; content: string } | { type: "placeholder"; key: string }> = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null = null;
+  const regex = /\{([^}]+)}/g;
+  while ((match = regex.exec(line)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ type: "text", content: line.slice(lastIndex, match.index) });
+    }
+    const key = match[1]?.trim() ?? "";
+    segments.push({ type: "placeholder", key });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < line.length) {
+    segments.push({ type: "text", content: line.slice(lastIndex) });
+  }
+
+  if (!segments.length) {
+    return <>{line}</>;
+  }
+
+  return (
+    <>
+      {segments.map((segment, idx) => {
+        if (segment.type === "text") {
+          return <span key={`${outputId}-text-${idx}`}>{segment.content}</span>;
+        }
+        const value = segment.key ? values[segment.key] ?? "" : "";
+        return (
+          <PlaceholderField
+            key={`${outputId}-${segment.key}-${idx}`}
+            outputId={outputId}
+            placeholderKey={segment.key}
+            value={value}
+            onUpdate={onUpdate}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+type PlaceholderFieldProps = {
+  outputId: string;
+  placeholderKey: string;
+  value: string;
+  onUpdate: (outputId: string, placeholderKey: string, value: string | null) => void;
+};
+
+function PlaceholderField({ outputId, placeholderKey, value, onUpdate }: PlaceholderFieldProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+    if (!value) {
+      setEditing(false);
+    }
+  }, [value]);
+
+  const label = value || "Add Product Name +";
+
+  function handleSubmit() {
+    const trimmed = draft.trim();
+    onUpdate(outputId, placeholderKey, trimmed || null);
+    setEditing(false);
+  }
+
+function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleSubmit();
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setDraft(value);
+      if (!value) {
+        setEditing(false);
+      }
+    }
+  }
+
+  function openEditor() {
+    setDraft(value);
+    setEditing(true);
+  }
+
+  if (!placeholderKey) {
+    return null;
+  }
+
+  if (editing) {
+    return (
+      <span className="ml-2 inline-flex items-center gap-2 rounded-full border-[3px] border-white px-3 py-1 text-xs font-semibold text-white">
+        <input
+          autoFocus
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={handleKeyDown}
+          className="w-32 border-none bg-transparent text-white placeholder:text-white/50 focus:outline-none"
+          placeholder="Product name"
+        />
+        <button type="button" className="text-white/70 hover:text-white" onClick={handleSubmit}>
+          Done
+        </button>
+      </span>
+    );
+  }
+
+  if (value) {
+    return (
+      <span className="ml-2 inline-flex items-center gap-2 rounded-full border-[3px] border-white px-3 py-1 text-xs font-semibold text-white">
+        <span>{value}</span>
+        <button type="button" className="text-white/70 hover:text-white" onClick={openEditor}>
+          Edit
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={openEditor}
+      className="ml-2 inline-flex items-center rounded-full border-[3px] border-white px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-white/10"
+    >
       {label}
     </button>
   );
