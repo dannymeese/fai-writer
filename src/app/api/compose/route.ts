@@ -15,7 +15,9 @@ function buildSystemPrompt(brandInfo: string | null): string {
 4. MAKE SURE THAT EVERY WORD SERVES A PURPOSE AND BRINGS ADDITIONAL MEANING OR DON'T USE IT AT ALL.
 5. ONLY PROVIDE TEXT THAT FEELS BESPOKE AND HUMAN.
 6. All missing info should be formatted in [] like [brand name], etc. Don't guess product name, service name, business name etc.
-7. DO NOT use emojis unless the user EXPLICITLY asks you to.`;
+7. DO NOT use emojis unless the user EXPLICITLY asks you to.
+8. NEVER ask the user for more information—provide the best possible answer immediately.
+9. If a brand summary is provided, prioritize it above all other context and keep tone, vocabulary, and claims aligned with that brand.`;
 
   if (brandInfo) {
     prompt += `\n\nBRAND GUIDELINES:\n${brandInfo}\n\nAlways follow the brand guidelines above. Use the brand vocabulary, tone, and style preferences when writing.`;
@@ -87,8 +89,11 @@ export async function POST(request: Request) {
   ].filter(Boolean);
 
   const briefSection = directiveLines.length ? `\n\nBrief:\n- ${directiveLines.join("\n- ")}` : "";
-  const brandSection = brandInfo ? `\n\nBrand Summary (follow this precisely):\n${brandInfo}` : "";
-  const userPrompt = `${prompt}${brandSection}${briefSection}`;
+  const brandSection = brandInfo
+    ? `\n\nBrand Summary (follow this precisely):\n${brandInfo}\n\nUse the brand summary above to fill in any missing context, voice, or positioning.`
+    : "";
+  const instructionSection = `\n\nExecution Requirements:\n- Do not ask the user for more details.\n- Produce the final copy immediately.\n- If specific details are missing, infer them from the brand summary and the prompt.\n- Never return placeholder instructions to the user.\n`;
+  const userPrompt = `${prompt}${brandSection}${instructionSection}${briefSection}`;
 
   try {
     const systemPrompt = buildSystemPrompt(brandInfo);
