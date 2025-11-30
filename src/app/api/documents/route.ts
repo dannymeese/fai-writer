@@ -44,12 +44,6 @@ export async function POST(request: Request) {
       title: parsed.data.title,
       content: parsed.data.content,
       tone: parsed.data.tone,
-      prompt: parsed.data.prompt,
-      characterLength: parsed.data.characterLength ?? undefined,
-      wordLength: parsed.data.wordLength ?? undefined,
-      gradeLevel: parsed.data.gradeLevel ?? undefined,
-      benchmark: parsed.data.benchmark ?? undefined,
-      avoidWords: parsed.data.avoidWords ?? undefined,
       ownerId: session.user.id
     }
   });
