@@ -6,24 +6,29 @@ import { composeRequestSchema } from "@/lib/validators";
 import { prisma } from "@/lib/prisma";
 import { smartTitleFromPrompt } from "@/lib/utils";
 
-function buildSystemPrompt(): string {
-  return `VITAL RULES FOR ALL OUTPUT:
+function buildSystemPrompt(brandInfo: string | null): string {
+  let prompt = `VITAL RULES FOR ALL OUTPUT:
 
 1. DO NOT USE EM DASHES OR EN DASHES.
 2. DO NOT WRITE WITH ANY AI WRITING TELLS OR RED FLAGS.
 3. DO NOT REPEAT SOMETHING THAT MEANS ESSENTIALLY THE SAME THING BUT IN DIFFERENT WORDS. 
 4. MAKE SURE THAT EVERY WORD SERVES A PURPOSE AND BRINGS ADDITIONAL MEANING OR DON'T USE IT AT ALL.
 5. ONLY PROVIDE TEXT THAT FEELS BESPOKE AND HUMAN.
-6. If brand information is provided in the user's prompt, use it directly. DO NOT ask the user for brand details, names, products, services, or other information that has already been provided in the brand context.
-7. Only use placeholders [like this] for information that is truly missing and not mentioned anywhere in the brand context or user's request.
-8. DO NOT use emojis unless the user EXPLICITLY asks you to.`;
+6. All missing info should be formatted in [] like [brand name], etc. Don't guess product name, service name, business name etc.
+7. DO NOT use emojis unless the user EXPLICITLY asks you to.`;
+
+  if (brandInfo) {
+    prompt += `\n\nBRAND GUIDELINES:\n${brandInfo}\n\nAlways follow the brand guidelines above. Use the brand vocabulary, tone, and style preferences when writing.`;
+  }
+
+  return prompt;
 }
 
 export async function POST(request: Request) {
   const session = await auth();
   const isAuthenticated = Boolean(session?.user?.id);
   const enforceGuestLimit = process.env.ENFORCE_GUEST_LIMIT === "true";
-  const cookieStore = await cookies(); // Always get cookies for brand info access
+  const cookieStore = enforceGuestLimit ? await cookies() : null;
   const guestCounter = Number(cookieStore?.get("guest_outputs")?.value ?? "0");
   if (enforceGuestLimit && !isAuthenticated && guestCounter >= 5) {
     return NextResponse.json(
@@ -62,8 +67,8 @@ export async function POST(request: Request) {
   }
   
   // Fall back to cookie for guests or if DB lookup failed
-  if (!brandInfo) {
-    brandInfo = cookieStore?.get("guest_brand_info")?.value ?? null;
+  if (!brandInfo && cookieStore) {
+    brandInfo = cookieStore.get("guest_brand_info")?.value ?? null;
   }
 
   const directiveLines = [
@@ -82,13 +87,11 @@ export async function POST(request: Request) {
   ].filter(Boolean);
 
   const briefSection = directiveLines.length ? `\n\nBrief:\n- ${directiveLines.join("\n- ")}` : "";
-  
-  // Append brand info to user prompt if available
-  const brandSection = brandInfo ? `\n\nIMPORTANT: The following brand information has already been defined. Use this information directly - DO NOT ask the user for brand details, names, or other information that is already provided below:\n\nBrand Context:\n${brandInfo}\n\nUse the brand guidelines, vocabulary, tone, style preferences, and all details above when writing. If brand name, products, services, or other details are mentioned in the brand context, use them directly without asking the user.` : "";
-  const userPrompt = `${prompt}${briefSection}${brandSection}`;
+  const brandSection = brandInfo ? `\n\nBrand Summary (follow this precisely):\n${brandInfo}` : "";
+  const userPrompt = `${prompt}${brandSection}${briefSection}`;
 
   try {
-    const systemPrompt = buildSystemPrompt(); // Brand info is now in user prompt
+    const systemPrompt = buildSystemPrompt(brandInfo);
     
     // Generate the main content
     const contentResponse = await openai.responses.create({
