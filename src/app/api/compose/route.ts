@@ -13,7 +13,8 @@ const systemPrompt = `VITAL RULES FOR ALL OUTPUT:
 3. DO NOT REPEAT SOMETHING THAT MEANS ESSENTIALLY THE SAME THING BUT IN DIFFERENT WORDS. 
 4. MAKE SURE THAT EVERY WORD SERVES A PURPOSE AND BRINGS ADDITIONAL MEANING OR DON'T USE IT AT ALL.
 5. ONLY PROVIDE TEXT THAT FEELS BESPOKE AND HUMAN.
-6. All missing info should be formatted in [] like [brand name], etc. Don't guess product name, service name, business name etc.`;
+6. All missing info should be formatted in [] like [brand name], etc. Don't guess product name, service name, business name etc.
+7. DO NOT use emojis unless the user EXPLICITLY asks you to.`;
 
 export async function POST(request: Request) {
   const session = await auth();

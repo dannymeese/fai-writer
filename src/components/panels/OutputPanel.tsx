@@ -16,6 +16,20 @@ type OutputPanelProps = {
   onPlaceholderUpdate: (outputId: string, placeholderId: string, value: string | null) => void;
 };
 
+type PendingAction = {
+  outputId: string;
+  type: "copy" | "download";
+};
+
+function hasPendingPlaceholders(output: WriterOutput): boolean {
+  const meta = output.placeholderMeta ?? [];
+  if (!meta.length) return false;
+  return meta.some((placeholder) => {
+    const value = output.placeholderValues?.[placeholder.id];
+    return !value || !value.trim();
+  });
+}
+
 export default function OutputPanel({
   outputs,
   onCopy,
@@ -25,6 +39,8 @@ export default function OutputPanel({
   canSaveStyle = true,
   onPlaceholderUpdate
 }: OutputPanelProps) {
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+
   if (!outputs.length) {
     return (
       <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-brand-stroke/60 bg-brand-panel/60 p-8 text-center text-brand-muted">
@@ -37,56 +53,75 @@ export default function OutputPanel({
     <div className="space-y-6">
       {outputs.map((output) => (
         <div key={output.id} className="space-y-4">
-          <p className="text-center text-xs uppercase tracking-[0.2em] text-brand-muted">{formatTimestamp(output.createdAt)}</p>
+          <p className="text-center text-xs text-brand-muted">{formatTimestamp(output.createdAt)}</p>
           <div className="flex flex-col items-end gap-1">
             <p className="text-[9px] font-semibold uppercase text-brand-muted">YOU</p>
             <div className="max-w-xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/80 px-4 py-3 text-sm text-brand-text shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
-              <div className="mb-1 flex justify-end">
-                {output.prompt && (
+              <p className="text-brand-text/90">{output.prompt || "Prompt unavailable for this draft."}</p>
+              {output.prompt && (
+                <div className="mt-3 flex justify-end">
                   <button
                     type="button"
-                    className="text-xs font-semibold text-brand-blue hover:opacity-80"
+                    className="inline-flex items-center gap-2 rounded-full border border-brand-stroke/70 px-3 py-1.5 text-xs font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
                     onClick={() => onEdit(output)}
                   >
                     Edit &amp; resend
                   </button>
-                )}
-              </div>
-              <p className="text-brand-text/90">{output.prompt || "Prompt unavailable for this draft."}</p>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex flex-col gap-1">
             <p className="text-[9px] font-semibold uppercase text-brand-muted">FORGETABOUTIT WRITER PRO</p>
             <article className="max-w-3xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/90 p-6 text-brand-text shadow-[0_25px_80px_rgba(0,0,0,0.35)]">
-            <header className="mb-4">
-              <h2 className="font-display text-2xl text-brand-text">{output.title}</h2>
-            </header>
-            <div className="space-y-3 text-base leading-relaxed text-brand-text/90">
-              <OutputContent
-                output={output}
-                onPlaceholderUpdate={onPlaceholderUpdate}
-              />
-            </div>
-            <footer className="mt-6 flex flex-wrap items-center gap-3">
-              <ActionButton icon={<ClipboardDocumentIcon className="h-4 w-4" />} label="Copy to Clipboard" onClick={() => onCopy(output)} />
-              <ActionButton
-                icon={<ArrowDownTrayIcon className="h-4 w-4" />}
-                label="Download .docx"
-                onClick={() => onDownload(output)}
-              />
-              <ActionButton
-                icon={<BookmarkIcon className="h-4 w-4" />}
-                label="Save Writing Style"
-                disabled={!canSaveStyle}
-                onClick={() => onSaveStyle(output)}
-              />
-            </footer>
+              <div className="space-y-3 text-base leading-relaxed text-brand-text/90">
+                <OutputContent output={output} onPlaceholderUpdate={onPlaceholderUpdate} />
+              </div>
+              <footer className="mt-6 flex flex-wrap items-center gap-3">
+                <ActionButton icon={<ClipboardDocumentIcon className="h-4 w-4" />} label="Copy to Clipboard" onClick={() => handleAction("copy", output)} />
+                <ActionButton
+                  icon={<ArrowDownTrayIcon className="h-4 w-4" />}
+                  label="Download .docx"
+                  onClick={() => handleAction("download", output)}
+                />
+                <ActionButton
+                  icon={<BookmarkIcon className="h-4 w-4" />}
+                  label="Save Writing Style"
+                  disabled={!canSaveStyle}
+                  onClick={() => onSaveStyle(output)}
+                />
+              </footer>
+              {pendingAction?.outputId === output.id && (
+                <InlineConfirm action={pendingAction.type} onConfirm={() => confirmPending(output)} onCancel={() => setPendingAction(null)} />
+              )}
             </article>
           </div>
         </div>
       ))}
     </div>
   );
+
+  function handleAction(type: PendingAction["type"], output: WriterOutput) {
+    if (hasPendingPlaceholders(output)) {
+      setPendingAction({ outputId: output.id, type });
+      return;
+    }
+    triggerAction(type, output);
+  }
+
+  function confirmPending(output: WriterOutput) {
+    if (!pendingAction) return;
+    triggerAction(pendingAction.type, output);
+    setPendingAction(null);
+  }
+
+  function triggerAction(type: PendingAction["type"], output: WriterOutput) {
+    if (type === "copy") {
+      onCopy(output);
+    } else {
+      void onDownload(output);
+    }
+  }
 }
 
 function ActionButton({
@@ -113,6 +148,36 @@ function ActionButton({
   );
 }
 
+function InlineConfirm({
+  action,
+  onConfirm,
+  onCancel
+}: {
+  action: PendingAction["type"];
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const actionLabel = action === "copy" ? "Copy anyway" : "Download anyway";
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-brand-stroke/60 bg-brand-panel/70 px-4 py-3 text-sm text-brand-text">
+      <p className="flex-1 text-sm text-brand-muted">There are still placeholders in your text.</p>
+      <button
+        type="button"
+        className="rounded-full bg-brand-blue px-3 py-1 text-xs font-semibold text-white transition hover:bg-brand-blue/80"
+        onClick={onConfirm}
+      >
+        {actionLabel}
+      </button>
+      <button
+        type="button"
+        className="rounded-full border border-brand-stroke/60 px-3 py-1 text-xs font-semibold text-brand-text hover:border-brand-blue hover:text-brand-blue"
+        onClick={onCancel}
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
 type OutputContentProps = {
   output: WriterOutput;
   onPlaceholderUpdate: (outputId: string, placeholderId: string, value: string | null) => void;
@@ -252,7 +317,7 @@ function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
         />
         <span
           className="pointer-events-none absolute left-0 right-0"
-          style={{ bottom: "-4px", height: "3px", backgroundColor: value ? "#0f0" : "#ffffff" }}
+          style={{ bottom: "-4px", height: "3px", backgroundColor: draft.trim() ? "#0f0" : "#0000ff" }}
         />
         <button type="button" className="text-xs font-semibold text-white/80 hover:text-white" onClick={handleSubmit}>
           Done
@@ -261,7 +326,7 @@ function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     );
   }
 
-  const underlineColor = value ? "#0f0" : "#ffffff";
+  const underlineColor = value ? "#0f0" : "#0000ff";
 
   return (
     <button type="button" onClick={openEditor} className="relative inline-flex items-center gap-2 text-sm font-semibold text-white">

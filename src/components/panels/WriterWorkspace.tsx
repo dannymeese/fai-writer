@@ -78,15 +78,6 @@ function resolveOutputContent(output: WriterOutput): string {
   });
 }
 
-function hasPendingPlaceholders(output: WriterOutput): boolean {
-  const meta = output.placeholderMeta ?? [];
-  if (!meta.length) return false;
-  return meta.some((placeholder) => {
-    const value = output.placeholderValues?.[placeholder.id];
-    return !value || !value.trim();
-  });
-}
-
 export default function WriterWorkspace({ user, initialOutputs, isGuest = false }: WriterWorkspaceProps) {
   const guestLimitEnabled = process.env.NEXT_PUBLIC_ENFORCE_GUEST_LIMIT === "true";
   const [composeValue, setComposeValue] = useState("");
@@ -179,10 +170,6 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }
 
   async function handleCopy(output: WriterOutput) {
-    if (hasPendingPlaceholders(output)) {
-      const confirmed = window.confirm("There are still placeholders in your text. Continue?");
-      if (!confirmed) return;
-    }
     try {
       await navigator.clipboard.writeText(resolveOutputContent(output));
       setToast("Copied without any AI tells.");
@@ -192,10 +179,6 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }
 
   async function handleDownload(output: WriterOutput) {
-    if (hasPendingPlaceholders(output)) {
-      const confirmed = window.confirm("There are still placeholders in your text. Continue?");
-      if (!confirmed) return;
-    }
     const resolved = resolveOutputContent(output);
     const response = await fetch("/api/export", {
       method: "POST",
@@ -252,36 +235,11 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
 
   return (
     <div className="min-h-screen bg-brand-background pb-32 text-brand-text">
-      <header className="border-b border-brand-stroke/60 bg-brand-background/95 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-          <div>
-            <h1 className="font-display text-4xl text-brand-text">Hello {user.name}</h1>
-            {guestLimitEnabled && isGuest && (
-              <p className="mt-2 text-sm text-brand-muted">
-                First five outputs are on us. We’ll ask you to register after that.
-              </p>
-            )}
-          </div>
-          {isGuest ? (
-            <div className="flex gap-2">
-              <Link
-                href="/register"
-                className="rounded-full bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-blueHover"
-              >
-                Register free
-              </Link>
-              <Link
-                href="/sign-in"
-                className="rounded-full border border-brand-stroke/80 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
-              >
-                Sign in
-              </Link>
-            </div>
-          ) : (
-            <SignOutButton />
-          )}
+      {!isGuest && (
+        <div className="mx-auto flex max-w-6xl justify-end px-6 pt-6">
+          <SignOutButton />
         </div>
-      </header>
+      )}
       <main className="mx-auto max-w-5xl px-6 py-10">
         {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
         <OutputPanel
