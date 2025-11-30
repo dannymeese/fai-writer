@@ -55,10 +55,13 @@ export default function SettingsSheet({ open, onClose, settings, onChange, ancho
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ brandInfo: brandInput })
       });
-      if (response.ok) {
+      const data = await response.json();
+      if (response.ok && !data.error) {
         setBrandInput("");
         setBrandModalOpen(false);
         setHasBrand(true);
+      } else {
+        console.error("Failed to save brand info", data.error || "Unknown error");
       }
     } catch (error) {
       console.error("Failed to save brand info", error);
