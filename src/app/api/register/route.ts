@@ -16,19 +16,27 @@ export async function POST(request: Request) {
 
   const { name, email, password } = parsed.data;
 
-  const existing = await db.user.findUnique({ where: { email } });
-  if (existing) {
-    return NextResponse.json({ message: "Email already registered" }, { status: 409 });
-  }
-
-  const hashed = await hash(password, 12);
-  await db.user.create({
-    data: {
-      name,
-      email,
-      password: hashed
+  try {
+    const existing = await db.user.findUnique({ where: { email } });
+    if (existing) {
+      return NextResponse.json({ message: "Email already registered" }, { status: 409 });
     }
-  });
+
+    const hashed = await hash(password, 12);
+    await db.user.create({
+      data: {
+        name,
+        email,
+        password: hashed
+      }
+    });
+  } catch (error) {
+    console.error("register error", error);
+    return NextResponse.json(
+      { message: "Registration failed because the database is unavailable in this environment. Use guest mode instead." },
+      { status: 503 }
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }
