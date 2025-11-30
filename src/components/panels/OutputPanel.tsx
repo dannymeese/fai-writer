@@ -126,7 +126,7 @@ function LineWithPlaceholders({ line, outputId, values, onUpdate }: LineWithPlac
   const segments: Array<{ type: "text"; content: string } | { type: "placeholder"; key: string }> = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null = null;
-  const regex = /\{([^}]+)}/g;
+  const regex = /\[([^\]]+)]/g;
   while ((match = regex.exec(line)) !== null) {
     if (match.index > lastIndex) {
       segments.push({ type: "text", content: line.slice(lastIndex, match.index) });
@@ -182,7 +182,8 @@ function PlaceholderField({ outputId, placeholderKey, value, onUpdate }: Placeho
     }
   }, [value]);
 
-  const label = value || "Add Product Name +";
+  const keyLabel = placeholderKey || "missing info";
+  const label = value || `Enter ${keyLabel} +`;
 
   function handleSubmit() {
     const trimmed = draft.trim();
@@ -222,7 +223,7 @@ function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
           className="w-32 border-none bg-transparent text-white placeholder:text-white/50 focus:outline-none"
-          placeholder="Product name"
+          placeholder={keyLabel}
         />
         <button type="button" className="text-white/70 hover:text-white" onClick={handleSubmit}>
           Done

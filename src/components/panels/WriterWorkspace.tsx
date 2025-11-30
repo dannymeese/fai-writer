@@ -47,7 +47,7 @@ function ensurePlaceholderState(output: WriterOutput): WriterOutput {
 
 function resolveOutputContent(output: WriterOutput): string {
   const replacements = output.placeholderValues ?? {};
-  return output.content.replace(/\{([^}]+)}/g, (match, rawKey) => {
+  return output.content.replace(/\[([^\]]+)]/g, (match, rawKey) => {
     const key = rawKey.trim();
     if (!key) return match;
     const value = replacements[key];
