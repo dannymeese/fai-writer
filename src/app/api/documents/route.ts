@@ -24,9 +24,12 @@ export async function GET() {
       take: 25
     });
 
+    console.log("[documents][GET] Found", docs.length, "documents for user", session.user.id);
     return NextResponse.json(docs);
   } catch (error) {
     console.error("[documents][GET] failed", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error("[documents][GET] error details:", errorMessage);
     return NextResponse.json({ error: "Unable to load saved documents." }, { status: 500 });
   }
 }
@@ -52,6 +55,14 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Validate required fields for style documents
+    if (!parsed.data.title || !parsed.data.content) {
+      return NextResponse.json(
+        { error: "Title and content are required." },
+        { status: 400 }
+      );
+    }
+
     const doc = await db.document.create({
       data: {
         title: parsed.data.title,
@@ -64,14 +75,44 @@ export async function POST(request: Request) {
         benchmark: parsed.data.benchmark ?? undefined,
         avoidWords: parsed.data.avoidWords ?? undefined,
         writingStyle: parsed.data.writingStyle ?? undefined,
+        styleTitle: parsed.data.styleTitle ?? undefined,
+        starred: parsed.data.starred ?? false,
         ownerId: session.user.id
       } as any
+    });
+
+    console.log("[documents][POST] Successfully saved document:", {
+      id: doc.id,
+      title: doc.title,
+      hasStyleTitle: !!doc.styleTitle,
+      hasWritingStyle: !!doc.writingStyle
     });
 
     return NextResponse.json(doc);
   } catch (error) {
     console.error("[documents][POST] failed", error);
-    return NextResponse.json({ error: "Unable to save writing style." }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error("[documents][POST] error details:", {
+      message: errorMessage,
+      title: parsed.data.title,
+      styleTitle: parsed.data.styleTitle,
+      contentLength: parsed.data.content?.length,
+      hasWritingStyle: !!parsed.data.writingStyle,
+      writingStyleLength: parsed.data.writingStyle?.length
+    });
+    
+    // Check if it's a database constraint error
+    if (errorMessage.includes("Unique constraint") || errorMessage.includes("duplicate")) {
+      return NextResponse.json(
+        { error: "A style with this name already exists." },
+        { status: 409 }
+      );
+    }
+    
+    return NextResponse.json(
+      { error: "Unable to save writing style.", details: errorMessage },
+      { status: 500 }
+    );
   }
 }
 

@@ -156,3 +156,6 @@ Each route checks `auth()` (server-side NextAuth) where relevant, and respects t
 
 With this context you should be able to work on Forgetaboutit Writer confidently. If you add major features (e.g., multi-user chat, analytics), update this document so the next person inherits the breadcrumbs. Happy shipping! 🚀
 
+
+
+

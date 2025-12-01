@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpIcon } from "@heroicons/react/24/outline";
+import { ArrowUpIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { WrenchIcon } from "@heroicons/react/24/solid";
 import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -14,6 +14,11 @@ type ComposeBarProps = {
   inputRef?: React.RefObject<HTMLTextAreaElement>;
   compact?: boolean;
   hasCustomOptions?: boolean;
+  activeStyle?: {
+    id: string;
+    name: string;
+  } | null;
+  onClearStyle?: () => void;
 };
 
 export default function ComposeBar({
@@ -24,7 +29,9 @@ export default function ComposeBar({
   onToggleSettings,
   inputRef,
   compact = false,
-  hasCustomOptions = false
+  hasCustomOptions = false,
+  activeStyle = null,
+  onClearStyle
 }: ComposeBarProps) {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const sendButtonRef = useRef<HTMLButtonElement>(null);
@@ -84,6 +91,16 @@ export default function ComposeBar({
 
   const content = (
     <div className="flex w-full flex-col gap-2">
+      {activeStyle && (
+        <div className="inline-flex items-center gap-3 self-start rounded-full border border-white/40 bg-white/5 px-3 py-1 text-xs font-semibold uppercase text-white">
+          <span>{activeStyle.name}</span>
+          {onClearStyle && (
+            <button type="button" onClick={onClearStyle} aria-label="Remove selected style" className="text-white/80 hover:text-white">
+              <XMarkIcon className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      )}
       <div className="flex w-full items-stretch gap-1">
         <div className="flex flex-1 items-stretch overflow-hidden rounded-full border border-brand-stroke/80 bg-brand-ink focus-within:border-brand-blue">
           <button

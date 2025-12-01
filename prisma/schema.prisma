@@ -19,6 +19,7 @@ model User {
   documents     Document[]
   accounts      Account[]
   sessions      Session[]
+  tokenUsage    TokenUsage?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 }
@@ -35,6 +36,8 @@ model Document {
   benchmark   String?
   avoidWords  String?
   writingStyle String? @db.Text
+  styleTitle  String?
+  starred     Boolean  @default(false)
   owner       User     @relation(fields: [ownerId], references: [id])
   ownerId     String
   createdAt   DateTime @default(now())
@@ -72,6 +75,16 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model TokenUsage {
+  id        String   @id @default(cuid())
+  userId    String?  @unique
+  guestId   String?  @unique
+  tokens    Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 enum MarketTier {

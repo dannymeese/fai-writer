@@ -2,7 +2,8 @@
 
 import { cn, formatTimestamp } from "@/lib/utils";
 import { WriterOutput } from "@/types/writer";
-import { ClipboardDocumentIcon, ArrowDownTrayIcon, BookmarkIcon } from "@heroicons/react/24/outline";
+import { ClipboardDocumentIcon, ArrowDownTrayIcon, BookmarkIcon, StarIcon } from "@heroicons/react/24/outline";
+import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 import { useEffect, useState, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { ComposerSettingsInput } from "@/lib/validators";
@@ -13,6 +14,7 @@ type OutputPanelProps = {
   onDownload: (output: WriterOutput) => Promise<void>;
   onSaveStyle: (output: WriterOutput) => Promise<void>;
   onEdit: (output: WriterOutput) => void;
+  onStar?: (output: WriterOutput, starred: boolean) => void;
   canSaveStyle?: boolean;
   onPlaceholderUpdate: (outputId: string, placeholderId: string, value: string | null) => void;
   showEmptyState?: boolean;
@@ -39,6 +41,7 @@ export default function OutputPanel({
   onDownload,
   onSaveStyle,
   onEdit,
+  onStar,
   canSaveStyle = true,
   onPlaceholderUpdate,
   showEmptyState = true,
@@ -62,8 +65,26 @@ export default function OutputPanel({
           <div className="flex flex-col items-end gap-1">
             <p className="text-[9px] font-semibold uppercase text-brand-muted">YOU</p>
             <div className="max-w-xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/80 px-4 py-3 text-sm text-brand-text shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
-              <p className="text-brand-text/90">{output.prompt || "Prompt unavailable for this draft."}</p>
-              <SettingsTags settings={output.settings} hasBrand={hasBrand} />
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <p className="text-brand-text/90">{output.prompt || "Prompt unavailable for this draft."}</p>
+                  <SettingsTags settings={output.settings} hasBrand={hasBrand} />
+                </div>
+                {onStar && (
+                  <button
+                    type="button"
+                    onClick={() => onStar(output, !output.starred)}
+                    className="flex-shrink-0 text-brand-text/60 transition hover:text-yellow-400"
+                    aria-label={output.starred ? "Unstar" : "Star"}
+                  >
+                    {output.starred ? (
+                      <StarIconSolid className="h-5 w-5 text-yellow-400" />
+                    ) : (
+                      <StarIcon className="h-5 w-5" />
+                    )}
+                  </button>
+                )}
+              </div>
               {output.prompt && (
                 <div className="mt-3 flex justify-end">
                   <button
@@ -95,6 +116,27 @@ export default function OutputPanel({
                 </div>
               )}
               <footer className="mt-6 flex flex-wrap items-center gap-3">
+                {onStar && (
+                  <button
+                    type="button"
+                    onClick={() => onStar(output, !output.starred)}
+                    className="inline-flex items-center gap-2 rounded-full border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue disabled:cursor-not-allowed disabled:border-brand-stroke disabled:text-brand-muted"
+                    disabled={output.isPending}
+                    aria-label={output.starred ? "Unstar" : "Star"}
+                  >
+                    {output.starred ? (
+                      <>
+                        <StarIconSolid className="h-4 w-4 text-yellow-400" />
+                        Starred
+                      </>
+                    ) : (
+                      <>
+                        <StarIcon className="h-4 w-4" />
+                        Star
+                      </>
+                    )}
+                  </button>
+                )}
                 <ActionButton
                   icon={<ClipboardDocumentIcon className="h-4 w-4" />}
                   label="Copy to Clipboard"

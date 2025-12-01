@@ -2,27 +2,36 @@
 
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { SignOutButton } from "./SignOutButton";
+import { PencilSquareIcon } from "@heroicons/react/24/solid";
 
 export default function SiteHeader() {
   const { data: session, status } = useSession();
   const isAuthenticated = status === "authenticated" && Boolean(session?.user);
 
+  function handleNewThread() {
+    window.dispatchEvent(new Event("new-thread"));
+  }
+
   return (
     <header className="sticky top-0 z-40 border-b border-brand-stroke/60 bg-brand-background/95 px-4 py-4 backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4">
-        <div className="font-display text-3xl leading-tight sm:text-[36px]">
+        <Link href="/" className="font-display text-3xl leading-tight sm:text-[36px]">
           <span style={{ color: "#0000ff" }}>Forgetaboutit </span>
           <span style={{ color: "#ffffff" }}>Writer</span>
-        </div>
+        </Link>
         <div className="flex items-center gap-3">
+          <Link href="/membership" className="text-sm font-semibold text-white transition hover:text-brand-blue">
+            Membership
+          </Link>
           {isAuthenticated ? (
-            <>
-              <span className="text-sm font-semibold text-white">
-                {session?.user?.name ? `Hi, ${session.user.name}` : "Account"}
-              </span>
-              <SignOutButton />
-            </>
+            <button
+              type="button"
+              onClick={handleNewThread}
+              className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition hover:bg-brand-blue/90 hover:text-white"
+            >
+              <PencilSquareIcon className="h-4 w-4" />
+              New Thread
+            </button>
           ) : (
             <>
               <Link href="/sign-in" className="text-sm font-semibold text-white transition hover:text-brand-blue">

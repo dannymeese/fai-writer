@@ -31,7 +31,13 @@ export type ComposerSettingsInput = z.infer<typeof composerSettingsSchema>;
 export const composeRequestSchema = z.object({
   prompt: z.string().min(10, "Share more detail"),
   settings: composerSettingsSchema,
-  brandSummary: z.string().max(8000).optional()
+  brandSummary: z.string().max(8000).optional(),
+  styleGuide: z
+    .object({
+      name: z.string().min(1).max(80),
+      description: z.string().min(1).max(1500)
+    })
+    .optional()
 });
 
 export const documentSchema = z.object({
@@ -44,6 +50,8 @@ export const documentSchema = z.object({
   gradeLevel: z.string().max(32).nullable().optional(),
   benchmark: z.string().max(120).nullable().optional(),
   avoidWords: z.string().max(200).nullable().optional(),
-  writingStyle: z.string().nullable().optional()
+  writingStyle: z.string().nullable().optional(),
+  styleTitle: z.string().max(100).nullable().optional(),
+  starred: z.boolean().optional()
 });
 
