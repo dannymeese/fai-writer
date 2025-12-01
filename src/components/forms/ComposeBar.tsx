@@ -19,6 +19,7 @@ type ComposeBarProps = {
     name: string;
   } | null;
   onClearStyle?: () => void;
+  hasSelection?: boolean;
 };
 
 export default function ComposeBar({
@@ -31,34 +32,35 @@ export default function ComposeBar({
   compact = false,
   hasCustomOptions = false,
   activeStyle = null,
-  onClearStyle
+  onClearStyle,
+  hasSelection = false
 }: ComposeBarProps) {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const sendButtonRef = useRef<HTMLButtonElement>(null);
   const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = inputRef ?? internalTextareaRef;
-  const placeholderExamples = useMemo(
+  
+  const rewriteExamples = useMemo(
     () => [
-      "Draft a VC pitch for an organic dog food brand.",
-      "Rewrite the retention email below for premium spa guests:",
-      "Draft a college admissions essay about robotics.",
-      "Outline a medical paper on gene therapies.",
-      "Compose a heartfelt toast for a founder's retirement gala.",
-      "I need a keynote opener for a sustainability summit.",
-      "Turn these bullet points into a press release for a launch:",
-      "Explain quantum computing to luxury retail executives.",
-      "Revise a product update note for boutique hotel partners."
+      "Make it more concise",
+      "Add more detail and examples",
+      "Change tone to formal",
+      "Make it more conversational",
+      "Simplify the language"
     ],
     []
   );
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  
+  const [rewritePlaceholderIndex, setRewritePlaceholderIndex] = useState(0);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setPlaceholderIndex((prev) => (prev + 1) % placeholderExamples.length);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [placeholderExamples.length]);
+    if (hasSelection) {
+      const interval = setInterval(() => {
+        setRewritePlaceholderIndex((prev) => (prev + 1) % rewriteExamples.length);
+      }, 4000);
+      return () => clearInterval(interval);
+    }
+  }, [hasSelection, rewriteExamples.length]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -101,8 +103,22 @@ export default function ComposeBar({
           )}
         </div>
       )}
+      {hasSelection ? (
+        <p className="text-center text-xl font-semibold text-brand-blue">
+          How should I rewrite the selection?
+        </p>
+      ) : (
+        <p className="text-center text-xl font-semibold text-white">
+          What should I write?
+        </p>
+      )}
       <div className="flex w-full items-stretch gap-1">
-        <div className="flex flex-1 items-stretch overflow-hidden rounded-full border border-brand-stroke/80 bg-brand-ink focus-within:border-brand-blue">
+        <div className={cn(
+          "flex flex-1 items-stretch overflow-hidden rounded-full border bg-brand-ink transition-all",
+          hasSelection
+            ? "border-brand-blue/60 shadow-[0_0_20px_rgba(59,130,246,0.4)] focus-within:border-brand-blue focus-within:shadow-[0_0_25px_rgba(59,130,246,0.5)]"
+            : "border-brand-stroke/80 focus-within:border-brand-blue"
+        )}>
           <button
             type="button"
             aria-label="Open settings"
@@ -132,7 +148,7 @@ export default function ComposeBar({
                 }
               }
             }}
-            placeholder={placeholderExamples[placeholderIndex]}
+            placeholder={hasSelection ? rewriteExamples[rewritePlaceholderIndex] : ""}
             className="flex-1 resize-none border-none bg-transparent px-4 py-3 text-base text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:outline-none"
             rows={1}
           />
@@ -160,7 +176,7 @@ export default function ComposeBar({
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 border-t border-brand-stroke/60 bg-brand-panel/90 backdrop-blur-xl">
+    <div className="compose-bar fixed bottom-0 left-0 right-0 border-t border-brand-stroke/60 bg-brand-panel/90 backdrop-blur-xl">
       <div className="mx-auto w-full max-w-5xl px-4 py-4">{content}</div>
     </div>
   );

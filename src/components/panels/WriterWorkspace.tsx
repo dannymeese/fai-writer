@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { SignOutButton } from "../shared/SignOutButton";
 import OutputPanel from "./OutputPanel";
+import DocumentEditor from "../editors/DocumentEditor";
 import ComposeBar from "../forms/ComposeBar";
 import SettingsSheet from "../modals/SettingsSheet";
 import { ComposerSettingsInput } from "@/lib/validators";
@@ -18,7 +19,7 @@ type WriterWorkspaceProps = {
   isGuest?: boolean;
 };
 
-type SavedDraft = {
+type SavedDoc = {
   id: string;
   title: string;
   createdAt: string;
@@ -30,7 +31,7 @@ type SavedDraft = {
   starred?: boolean;
 };
 
-type SidebarTab = "drafts" | "starred" | "styles" | "brands";
+type SidebarTab = "docs" | "starred" | "styles" | "brands";
 
 type ActiveStyle = {
   id: string;
@@ -38,28 +39,28 @@ type ActiveStyle = {
   description: string;
 };
 
-const LOCAL_DRAFTS_KEY = "forgetaboutit_writer_drafts_v1";
+const LOCAL_DOCS_KEY = "forgetaboutit_writer_docs_v1";
 
 function canUseLocalStorage(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 }
 
-function readLocalDrafts(): SavedDraft[] {
+function readLocalDocs(): SavedDoc[] {
   if (!canUseLocalStorage()) return [];
   try {
-    const raw = window.localStorage.getItem(LOCAL_DRAFTS_KEY);
+    const raw = window.localStorage.getItem(LOCAL_DOCS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    const drafts: SavedDraft[] = [];
+    const docs: SavedDoc[] = [];
     for (const entry of parsed) {
       if (!entry || typeof entry !== "object") {
         continue;
       }
-      const safeEntry = entry as Partial<SavedDraft>;
-      drafts.push({
+      const safeEntry = entry as Partial<SavedDoc>;
+      docs.push({
         id: typeof safeEntry.id === "string" ? safeEntry.id : `local-${Date.now()}`,
-        title: typeof safeEntry.title === "string" ? safeEntry.title : "Untitled draft",
+        title: typeof safeEntry.title === "string" ? safeEntry.title : "Untitled doc",
         createdAt: typeof safeEntry.createdAt === "string" ? safeEntry.createdAt : new Date().toISOString(),
         prompt: typeof safeEntry.prompt === "string" ? safeEntry.prompt : "",
         content: typeof safeEntry.content === "string" ? safeEntry.content : "",
@@ -70,21 +71,21 @@ function readLocalDrafts(): SavedDraft[] {
             : safeEntry.writingStyle ?? null
       });
     }
-    return drafts.slice(0, 25);
+    return docs.slice(0, 25);
   } catch (error) {
-    console.error("read local drafts failed", error);
+    console.error("read local docs failed", error);
     return [];
   }
 }
 
-function persistLocalDraftEntry(draft: SavedDraft) {
+function persistLocalDocEntry(doc: SavedDoc) {
   if (!canUseLocalStorage()) return;
   try {
-    const existing = readLocalDrafts();
-    const next = [draft, ...existing.filter((entry) => entry.id !== draft.id)].slice(0, 25);
-    window.localStorage.setItem(LOCAL_DRAFTS_KEY, JSON.stringify(next));
+    const existing = readLocalDocs();
+    const next = [doc, ...existing.filter((entry) => entry.id !== doc.id)].slice(0, 25);
+    window.localStorage.setItem(LOCAL_DOCS_KEY, JSON.stringify(next));
   } catch (error) {
-    console.error("persist local drafts failed", error);
+    console.error("persist local docs failed", error);
   }
 }
 
@@ -240,36 +241,40 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [guestLimitReached, setGuestLimitReached] = useState(false);
   const [hasBrand, setHasBrand] = useState(false);
   const [brandSummary, setBrandSummary] = useState<string | null>(null);
-  const [savedDrafts, setSavedDrafts] = useState<SavedDraft[]>([]);
+  const [savedDocs, setSavedDocs] = useState<SavedDoc[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("drafts");
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("docs");
   const [activeStyle, setActiveStyle] = useState<ActiveStyle | null>(null);
   const [isDesktop, setIsDesktop] = useState(true);
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+  const [selectedText, setSelectedText] = useState<string | null>(null);
+  const [autosaveTimeout, setAutosaveTimeout] = useState<NodeJS.Timeout | null>(null);
+  const editorRef = useRef<any>(null); // Reference to the TipTap editor instance
   const composeInputRef = useRef<HTMLTextAreaElement>(null);
   const isAuthenticated = !isGuest;
 
-  const fetchSavedDrafts = useCallback(async () => {
+  const fetchSavedDocs = useCallback(async () => {
     if (!isAuthenticated) {
-      console.log("[fetchSavedDrafts] Skipping - not authenticated");
+      console.log("[fetchSavedDocs] Skipping - not authenticated");
       return;
     }
     try {
-      console.log("[fetchSavedDrafts] Fetching drafts...");
+      console.log("[fetchSavedDocs] Fetching docs...");
       const response = await fetch("/api/documents", { cache: "no-store" });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        console.warn("[fetchSavedDrafts] load drafts failed", response.status, payload);
-        const local = readLocalDrafts();
+        console.warn("[fetchSavedDocs] load docs failed", response.status, payload);
+        const local = readLocalDocs();
         if (local.length) {
-          setSavedDrafts(local);
+          setSavedDocs(local);
         }
         return;
       }
       const docs = await response.json();
-      console.log("[fetchSavedDrafts] fetched", docs.length, "documents from API");
-      const mapped: SavedDraft[] = (docs as any[]).map((doc) => ({
+      console.log("[fetchSavedDocs] fetched", docs.length, "documents from API");
+      const mapped: SavedDoc[] = (docs as any[]).map((doc) => ({
         id: doc.id,
-        title: doc.title ?? "Untitled draft",
+        title: doc.title ?? "Untitled doc",
         createdAt: doc.createdAt ?? new Date().toISOString(),
         prompt: doc.prompt ?? "",
         content: doc.content ?? "",
@@ -286,27 +291,27 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         starred: doc.starred ?? false
       }));
       mapped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      console.log("[fetchSavedDrafts] mapped documents:", mapped.length);
-      const drafts = mapped.filter((doc) => !isStyleDocument(doc));
+      console.log("[fetchSavedDocs] mapped documents:", mapped.length);
+      const regularDocs = mapped.filter((doc) => !isStyleDocument(doc));
       const styles = mapped.filter((doc) => isStyleDocument(doc));
-      console.log("[fetchSavedDrafts] classified - drafts:", drafts.length, "styles:", styles.length);
-      console.log("[fetchSavedDrafts] sample draft titles:", drafts.slice(0, 3).map(d => d.title));
+      console.log("[fetchSavedDocs] classified - docs:", regularDocs.length, "styles:", styles.length);
+      console.log("[fetchSavedDocs] sample doc titles:", regularDocs.slice(0, 3).map(d => d.title));
       if (mapped.length) {
-        setSavedDrafts(mapped);
-        console.log("[fetchSavedDrafts] Updated savedDrafts state with", mapped.length, "documents");
+        setSavedDocs(mapped);
+        console.log("[fetchSavedDocs] Updated savedDocs state with", mapped.length, "documents");
       } else {
-        const local = readLocalDrafts();
+        const local = readLocalDocs();
         if (local.length) {
-          setSavedDrafts(local);
+          setSavedDocs(local);
         } else {
-          setSavedDrafts([]);
+          setSavedDocs([]);
         }
       }
     } catch (error) {
-      console.error("[fetchSavedDrafts] fetch conversations error", error);
-      const local = readLocalDrafts();
+      console.error("[fetchSavedDocs] fetch docs error", error);
+      const local = readLocalDocs();
       if (local.length) {
-        setSavedDrafts(local);
+        setSavedDocs(local);
       }
     }
   }, [isAuthenticated]);
@@ -319,9 +324,9 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
 
   useEffect(() => {
     if (isAuthenticated) return;
-    const local = readLocalDrafts();
+    const local = readLocalDocs();
     if (local.length) {
-      setSavedDrafts(local);
+      setSavedDocs(local);
     }
   }, [isAuthenticated]);
 
@@ -362,8 +367,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }, []);
 
   useEffect(() => {
-    fetchSavedDrafts();
-  }, [fetchSavedDrafts]);
+    fetchSavedDocs();
+  }, [fetchSavedDocs]);
 
   async function handleSubmit() {
     if (!composeValue.trim()) return;
@@ -372,8 +377,117 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       return;
     }
     const currentPrompt = composeValue;
-    setComposeValue("");
     setLoading(true);
+
+    // If there's a selection, rewrite it instead of creating new content
+    if (selectedText && editorRef.current && activeDocument) {
+      try {
+        const response = await fetch("/api/rewrite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            selectedText,
+            instruction: currentPrompt,
+            brandSummary: brandSummary ?? undefined,
+            styleGuide: activeStyle
+              ? {
+                  name: activeStyle.name,
+                  description: activeStyle.description
+                }
+              : undefined
+          })
+        });
+
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          setToast(formatErrorMessage(errorPayload?.error, "Unable to rewrite selection."));
+          setLoading(false);
+          return;
+        }
+
+        const data = await response.json();
+        const rewrittenText = data.rewrittenText;
+
+        if (!rewrittenText) {
+          setToast("Rewrite returned empty result.");
+          setLoading(false);
+          return;
+        }
+
+        // Replace the selection in the editor
+        if (editorRef.current.replaceSelection) {
+          editorRef.current.replaceSelection(rewrittenText);
+        }
+
+        setComposeValue("");
+        setSelectedText(null);
+        setToast("Selection rewritten successfully.");
+        setLoading(false);
+        return;
+      } catch (error) {
+        console.error("Rewrite failed:", error);
+        setToast("Failed to rewrite selection. Please try again.");
+        setLoading(false);
+        return;
+      }
+    }
+
+    // If there's an active document and editor, insert at cursor position
+    if (activeDocument && editorRef.current && useMarkdownEditor) {
+      try {
+        const response = await fetch("/api/compose", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: currentPrompt,
+            settings: settings,
+            brandSummary: brandSummary ?? undefined,
+            styleGuide: activeStyle
+              ? {
+                  name: activeStyle.name,
+                  description: activeStyle.description
+                }
+              : undefined
+          })
+        });
+
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          if (response.status === 403 && guestLimitEnabled && errorPayload?.requireAuth) {
+            setGuestLimitReached(true);
+            setToast("You've reached the guest limit. Please register to continue.");
+          } else {
+            setToast(formatErrorMessage(errorPayload?.error));
+          }
+          setLoading(false);
+          return;
+        }
+
+        const data = await response.json();
+        const newContent = data.content;
+
+        // Insert at cursor position
+        if (editorRef.current.insertText) {
+          editorRef.current.insertText(newContent);
+        } else {
+          // Fallback: append to document
+          handleDocumentChange(activeDocument.content + "\n\n" + newContent);
+        }
+
+        setComposeValue("");
+        setToast("Content added at cursor position.");
+        setLoading(false);
+        return;
+      } catch (error) {
+        console.error("Insert failed:", error);
+        setToast("Failed to insert content. Please try again.");
+        setLoading(false);
+        return;
+      }
+    }
+
+    // Original behavior: create new document
+    setComposeValue("");
     const snapshotSettings = { ...settings };
     const styleGuidePayload = activeStyle
       ? {
@@ -436,17 +550,20 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         isPending: false
       });
       setOutputs((prev) => prev.map((entry) => (entry.id === tempId ? newOutput : entry)));
-      // Immediately fetch drafts - the document is already saved in the database
+      // Set as active document immediately
+      setActiveDocumentId(finalId);
+      
+      // Immediately fetch docs - the document is already saved in the database
       if (data.documentId) {
-        // Document was saved to database, fetch drafts immediately
-        fetchSavedDrafts();
+        // Document was saved to database, fetch docs immediately
+        fetchSavedDocs();
         // Also add a retry after a short delay in case of any race condition
         setTimeout(() => {
-          fetchSavedDrafts();
+          fetchSavedDocs();
         }, 1000);
       } else {
         // No documentId means it wasn't saved (guest or error), save locally
-        applyLocalDraft({
+        applyLocalDoc({
           id: finalId,
           title: newOutput.title,
           createdAt: newOutput.createdAt,
@@ -455,9 +572,9 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           settings: newOutput.settings,
           writingStyle: newOutput.writingStyle ?? null
         });
-        fetchSavedDrafts();
+        fetchSavedDocs();
       }
-      setToast("Draft ready with guardrails applied.");
+      setToast("Doc ready with guardrails applied.");
       if (guestLimitEnabled && isGuest && nextCount >= 5) {
         setGuestLimitReached(true);
       }
@@ -548,7 +665,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       hasWritingStyle: !!output.writingStyle
     });
 
-    const localStyleDraft: SavedDraft = {
+    const localStyleDoc: SavedDoc = {
       id: `${output.id}-style-${Date.now()}`,
       title: styleName,
       createdAt: new Date().toISOString(),
@@ -559,7 +676,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       styleTitle: styleName
     };
     if (guestLimitEnabled && isGuest) {
-      applyLocalDraft(localStyleDraft);
+      applyLocalDoc(localStyleDoc);
       setToast("Saved locally. Create an account to sync styles everywhere.");
       return;
     }
@@ -583,7 +700,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       });
     } catch (error) {
       console.error("save style network failure", error);
-      applyLocalDraft(localStyleDraft);
+      applyLocalDoc(localStyleDoc);
       setToast("Saved locally. We'll sync this style once you're back online.");
       return;
     }
@@ -598,47 +715,47 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         return;
       }
       // Only save locally for network/server errors
-      applyLocalDraft(localStyleDraft);
+      applyLocalDoc(localStyleDoc);
       setToast("Saved locally. We'll sync this style once you're connected.");
       return;
     }
     const remoteDoc = payload ?? null;
-    const hydratedStyleDraft: SavedDraft = {
-      ...localStyleDraft,
-      id: remoteDoc?.id ?? localStyleDraft.id,
-      createdAt: remoteDoc?.createdAt ?? localStyleDraft.createdAt
+    const hydratedStyleDoc: SavedDoc = {
+      ...localStyleDoc,
+      id: remoteDoc?.id ?? localStyleDoc.id,
+      createdAt: remoteDoc?.createdAt ?? localStyleDoc.createdAt
     };
-    applyLocalDraft(hydratedStyleDraft);
-    fetchSavedDrafts();
+    applyLocalDoc(hydratedStyleDoc);
+    fetchSavedDocs();
     setToast(`Saved "${styleName}".`);
   }
 
   const hasOutputs = outputs.length > 0;
 
-  const applyLocalDraft = useCallback((draft: SavedDraft) => {
-    persistLocalDraftEntry(draft);
-    setSavedDrafts((prev) => {
-      const next = [draft, ...prev.filter((entry) => entry.id !== draft.id)];
+  const applyLocalDoc = useCallback((doc: SavedDoc) => {
+    persistLocalDocEntry(doc);
+    setSavedDocs((prev) => {
+      const next = [doc, ...prev.filter((entry) => entry.id !== doc.id)];
       return next.slice(0, 25);
     });
   }, []);
 
-  const { draftDocuments, starredDocuments, styleDocuments } = useMemo(() => {
-    const drafts: SavedDraft[] = [];
-    const starred: SavedDraft[] = [];
-    const styles: SavedDraft[] = [];
-    savedDrafts.forEach((doc) => {
+  const { docDocuments, starredDocuments, styleDocuments } = useMemo(() => {
+    const docs: SavedDoc[] = [];
+    const starred: SavedDoc[] = [];
+    const styles: SavedDoc[] = [];
+    savedDocs.forEach((doc) => {
       if (doc.starred) {
         starred.push(doc);
       }
       if (isStyleDocument(doc)) {
         styles.push(doc);
       } else {
-        drafts.push(doc);
+        docs.push(doc);
       }
     });
-    return { draftDocuments: drafts, starredDocuments: starred, styleDocuments: styles };
-  }, [savedDrafts]);
+    return { docDocuments: docs, starredDocuments: starred, styleDocuments: styles };
+  }, [savedDocs]);
 
   async function handleStar(output: WriterOutput, starred: boolean) {
     if (!isAuthenticated || !output.id || output.id.startsWith("temp-")) {
@@ -668,31 +785,35 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         prev.map((entry) => (entry.id === output.id ? { ...entry, starred } : entry))
       );
 
-      // Refresh drafts to get updated starred status
-      fetchSavedDrafts();
+      // Refresh docs to get updated starred status
+      fetchSavedDocs();
     } catch (error) {
       console.error("star network failure", error);
       setToast("Unable to update star status. Please try again.");
     }
   }
 
-  function handleLoadConversation(draft: SavedDraft) {
+  function handleLoadDoc(doc: SavedDoc) {
     const restored = ensurePlaceholderState({
-      id: draft.id,
-      title: draft.title,
-      content: draft.content,
-      createdAt: draft.createdAt,
-      settings: draft.settings,
-      prompt: draft.prompt,
-      writingStyle: draft.writingStyle ?? null,
+      id: doc.id,
+      title: doc.title,
+      content: doc.content,
+      createdAt: doc.createdAt,
+      settings: doc.settings,
+      prompt: doc.prompt,
+      writingStyle: doc.writingStyle ?? null,
       placeholderValues: {}
     });
     setOutputs([restored]);
-    setComposeValue(draft.prompt ?? "");
+    setActiveDocumentId(doc.id);
+    setComposeValue("");
+    if (!isDesktop) {
+      setSidebarOpen(false);
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function handleApplyStyle(styleDoc: SavedDraft) {
+  function handleApplyStyle(styleDoc: SavedDoc) {
     const description = fallbackStyleDescription(styleDoc.writingStyle ?? null, styleDoc.content);
     setActiveStyle({
       id: styleDoc.id,
@@ -709,11 +830,12 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     setActiveStyle(null);
   }
 
-  const handleStartNewThread = useCallback(() => {
-    setSidebarTab("drafts");
+  const handleStartNewDoc = useCallback(() => {
+    setSidebarTab("docs");
     setSidebarOpen(true);
     setComposeValue("");
     setOutputs([]);
+    setActiveDocumentId(null);
     setActiveStyle(null);
     requestAnimationFrame(() => {
       composeInputRef.current?.focus();
@@ -722,10 +844,161 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }, []);
 
   useEffect(() => {
-    const listener = () => handleStartNewThread();
-    window.addEventListener("new-thread", listener);
-    return () => window.removeEventListener("new-thread", listener);
-  }, [handleStartNewThread]);
+    const listener = () => handleStartNewDoc();
+    window.addEventListener("new-doc", listener);
+    return () => window.removeEventListener("new-doc", listener);
+  }, [handleStartNewDoc]);
+
+  // Set active document when outputs change
+  useEffect(() => {
+    if (outputs.length > 0 && !activeDocumentId) {
+      setActiveDocumentId(outputs[0].id);
+    }
+  }, [outputs, activeDocumentId]);
+
+  // Handle document content changes with autosave
+  const handleDocumentChange = useCallback((content: string) => {
+    if (!activeDocumentId) return;
+    
+    // Update local state immediately
+    setOutputs((prev) =>
+      prev.map((output) =>
+        output.id === activeDocumentId ? { ...output, content } : output
+      )
+    );
+
+    // Clear existing autosave timeout
+    if (autosaveTimeout) {
+      clearTimeout(autosaveTimeout);
+    }
+
+    // Set new autosave timeout (debounce for 2 seconds)
+    const timeout = setTimeout(async () => {
+      if (!isAuthenticated || !activeDocumentId) {
+        // For guests, save locally - get current doc from state
+        setOutputs((currentOutputs) => {
+          const currentDoc = currentOutputs.find((o) => o.id === activeDocumentId);
+          if (currentDoc) {
+            persistLocalDocEntry({
+              id: activeDocumentId,
+              title: currentDoc.title,
+              createdAt: currentDoc.createdAt,
+              prompt: currentDoc.prompt,
+              content,
+              settings: currentDoc.settings,
+              writingStyle: currentDoc.writingStyle ?? null,
+              styleTitle: currentDoc.styleTitle ?? null,
+              starred: currentDoc.starred ?? false
+            });
+          }
+          return currentOutputs;
+        });
+        return;
+      }
+
+      // For authenticated users, save to database
+      try {
+        const response = await fetch(`/api/documents/${activeDocumentId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content })
+        });
+
+        if (!response.ok) {
+          console.error("Autosave failed:", await response.json().catch(() => null));
+        } else {
+          console.log("Document autosaved:", activeDocumentId);
+        }
+      } catch (error) {
+        console.error("Autosave error:", error);
+      }
+    }, 2000); // 2 second debounce
+
+    setAutosaveTimeout(timeout);
+  }, [activeDocumentId, isAuthenticated, autosaveTimeout]);
+
+  // Cleanup autosave timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (autosaveTimeout) {
+        clearTimeout(autosaveTimeout);
+      }
+    };
+  }, [autosaveTimeout]);
+
+  // Handle selection changes from editor
+  const handleSelectionChange = useCallback((text: string | null) => {
+    setSelectedText(text);
+  }, []);
+
+  // Store editor reference when ready
+  const handleEditorReady = useCallback((editor: any) => {
+    editorRef.current = editor;
+  }, []);
+
+  // Handle selection-based rewriting
+  const handleRewriteSelection = useCallback(async (selectedText: string, instruction: string) => {
+    if (!activeDocumentId) return;
+
+    try {
+      const response = await fetch("/api/rewrite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          selectedText,
+          instruction,
+          brandSummary: brandSummary ?? undefined,
+          styleGuide: activeStyle
+            ? {
+                name: activeStyle.name,
+                description: activeStyle.description
+              }
+            : undefined
+        })
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        setToast(formatErrorMessage(errorPayload?.error, "Unable to rewrite selection."));
+        return;
+      }
+
+      const data = await response.json();
+      const rewrittenText = data.rewrittenText;
+
+      if (!rewrittenText) {
+        setToast("Rewrite returned empty result.");
+        return;
+      }
+
+      // Update the document content by replacing the selected text
+      // Note: This is a simple string replace. For more complex scenarios,
+      // we could pass the editor instance and use its selection API
+      const currentOutput = outputs.find((o) => o.id === activeDocumentId);
+      if (currentOutput) {
+        // Find and replace the first occurrence of the selected text
+        const index = currentOutput.content.indexOf(selectedText);
+        if (index !== -1) {
+          const updatedContent =
+            currentOutput.content.slice(0, index) +
+            rewrittenText +
+            currentOutput.content.slice(index + selectedText.length);
+          handleDocumentChange(updatedContent);
+          setToast("Selection rewritten successfully.");
+        } else {
+          setToast("Could not find selected text in document.");
+        }
+      }
+    } catch (error) {
+      console.error("Rewrite failed:", error);
+      setToast("Failed to rewrite selection. Please try again.");
+    }
+  }, [activeDocumentId, brandSummary, activeStyle, outputs, handleDocumentChange]);
+
+  // Get the active document
+  const activeDocument = useMemo(() => {
+    return activeDocumentId ? outputs.find((o) => o.id === activeDocumentId) ?? null : null;
+  }, [activeDocumentId, outputs]);
 
     return (
     <div className="flex min-h-screen bg-brand-background text-brand-text">
@@ -741,7 +1014,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         <WorkspaceSidebar
               open={sidebarOpen}
           activeTab={sidebarTab}
-          drafts={draftDocuments}
+          docs={docDocuments}
           starred={starredDocuments}
           styles={styleDocuments}
           brandSummary={brandSummary}
@@ -751,7 +1024,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           bottomOffset={hasOutputs ? 140 : 32}
           isDesktop={isDesktop}
           activeStyleId={activeStyle?.id}
-          onSelect={handleLoadConversation}
+          onSelect={handleLoadDoc}
               onToggle={() => setSidebarOpen((prev) => !prev)}
           onOpen={() => setSidebarOpen(true)}
           onApplyStyle={handleApplyStyle}
@@ -759,82 +1032,39 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         />
       )}
       <div className="flex min-h-screen flex-1 flex-col pb-32">
-        <div
-          className={cn(
-            "flex-1 px-4 sm:px-6",
-            hasOutputs ? "py-8" : "flex items-center justify-center"
-          )}
-        >
-          {hasOutputs ? (
-            <div className="mx-auto w-full max-w-5xl">
-          {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
-          <OutputPanel
-            outputs={outputs}
-            onCopy={handleCopy}
-            onDownload={handleDownload}
-            onSaveStyle={handleSaveStyle}
-            onEdit={(output) => {
-              if (!output.prompt) {
-                return;
-              }
-              setComposeValue(output.prompt);
-              setSettings(normalizeSettings(output.settings));
-              requestAnimationFrame(() => {
-                if (composeInputRef.current) {
-                  composeInputRef.current.focus();
-                  const length = composeInputRef.current.value.length;
-                  composeInputRef.current.setSelectionRange(length, length);
-                }
-              });
-            }}
-            canSaveStyle={!guestLimitEnabled || !isGuest}
-            onStar={handleStar}
-            onPlaceholderUpdate={updatePlaceholder}
-            showEmptyState={hasOutputs}
-            hasBrand={hasBrand}
-          />
-        </div>
-          ) : (
-            <div className="flex w-full max-w-4xl flex-col items-center gap-5 text-white">
-              <p className="pb-10 text-[2rem] font-normal leading-none">What should I write?</p>
-              <ComposeBar
-                value={composeValue}
-                onChange={setComposeValue}
-                onSubmit={handleSubmit}
-                disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
-                onToggleSettings={(anchorRect) => {
-                  setSheetAnchor(anchorRect);
-                  setSheetOpen((prev) => !prev);
-                }}
-                compact
-                inputRef={composeInputRef}
-                hasCustomOptions={hasCustomOptions(settings) || hasBrand || Boolean(activeStyle)}
-                activeStyle={activeStyle}
-                onClearStyle={handleClearStyle}
-              />
-            </div>
-          )}
-        </div>
-        {hasOutputs && (
-          <div className="px-4 pb-10 sm:px-6">
-            <div className="mx-auto w-full max-w-5xl">
-      <ComposeBar
-        value={composeValue}
-        onChange={setComposeValue}
-        onSubmit={handleSubmit}
-        disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
-        onToggleSettings={(anchorRect) => {
-          setSheetAnchor(anchorRect);
-          setSheetOpen((prev) => !prev);
-        }}
-        inputRef={composeInputRef}
-            hasCustomOptions={hasCustomOptions(settings) || hasBrand || Boolean(activeStyle)}
-            activeStyle={activeStyle}
-            onClearStyle={handleClearStyle}
-      />
-            </div>
+        <div className="flex-1 px-4 py-8 sm:px-6">
+          <div className="mx-auto w-full max-w-5xl">
+            {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
+            <DocumentEditor
+              document={activeDocument}
+              onDocumentChange={handleDocumentChange}
+              onSelectionChange={handleSelectionChange}
+              onEditorReady={handleEditorReady}
+              loading={loading && activeDocument?.isPending}
+              brandSummary={brandSummary}
+              styleGuide={activeStyle ? { name: activeStyle.name, description: activeStyle.description } : null}
+            />
           </div>
-        )}
+        </div>
+        <div className="px-4 pb-10 sm:px-6">
+          <div className="mx-auto w-full max-w-5xl">
+            <ComposeBar
+              value={composeValue}
+              onChange={setComposeValue}
+              onSubmit={handleSubmit}
+              disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
+              onToggleSettings={(anchorRect) => {
+                setSheetAnchor(anchorRect);
+                setSheetOpen((prev) => !prev);
+              }}
+              inputRef={composeInputRef}
+              hasCustomOptions={hasCustomOptions(settings) || hasBrand || Boolean(activeStyle)}
+              activeStyle={activeStyle}
+              onClearStyle={handleClearStyle}
+              hasSelection={!!selectedText}
+            />
+          </div>
+        </div>
       </div>
       <SettingsSheet
         open={sheetOpen}
@@ -895,9 +1125,9 @@ function RegisterGate() {
 type WorkspaceSidebarProps = {
   open: boolean;
   activeTab: SidebarTab;
-  drafts: SavedDraft[];
-  starred: SavedDraft[];
-  styles: SavedDraft[];
+  docs: SavedDoc[];
+  starred: SavedDoc[];
+  styles: SavedDoc[];
   brandSummary: string | null;
   hasBrand: boolean;
   userName: string;
@@ -908,14 +1138,14 @@ type WorkspaceSidebarProps = {
   onToggle: () => void;
   onOpen: () => void;
   onTabChange: (tab: SidebarTab) => void;
-  onSelect: (draft: SavedDraft) => void;
-  onApplyStyle: (style: SavedDraft) => void;
+  onSelect: (doc: SavedDoc) => void;
+  onApplyStyle: (style: SavedDoc) => void;
 };
 
 function WorkspaceSidebar({
   open,
   activeTab,
-  drafts,
+  docs,
   starred,
   styles,
   brandSummary,
@@ -932,30 +1162,27 @@ function WorkspaceSidebar({
   onApplyStyle
 }: WorkspaceSidebarProps) {
   const tabs: { id: SidebarTab; label: string; icon: string }[] = [
-    { id: "drafts", label: "Drafts", icon: "draft" },
+    { id: "docs", label: "Docs", icon: "draft" },
     { id: "starred", label: "Starred", icon: "star" },
     { id: "styles", label: "Styles", icon: "brand_family" },
     { id: "brands", label: "Brands", icon: "storefront" }
   ];
 
-  function renderDraftList(items: SavedDraft[], emptyLabel: string) {
+  function renderDocList(items: SavedDoc[], emptyLabel: string) {
     if (!items.length) {
       return <p className="text-sm text-brand-muted">{emptyLabel}</p>;
     }
   return (
       <ul className="space-y-3 pr-2">
-        {items.map((draft) => (
-                  <li key={draft.id}>
+        {items.map((doc) => (
+                  <li key={doc.id}>
                     <button
                       type="button"
-                      onClick={() => onSelect(draft)}
+                      onClick={() => onSelect(doc)}
               className="w-full rounded-2xl border border-brand-stroke/40 bg-brand-background/60 px-3 py-3 text-left transition hover:border-white"
                     >
-                      <p className="text-sm font-semibold text-white">{draft.title || "Untitled draft"}</p>
-                      <p className="text-xs text-brand-muted">{formatTimestamp(draft.createdAt)}</p>
-                      {draft.prompt && (
-                        <p className="mt-1 line-clamp-2 text-xs text-brand-muted/80">{draft.prompt}</p>
-                      )}
+                      <p className="text-sm font-semibold text-white">{doc.title || "Untitled doc"}</p>
+                      <p className="text-xs text-brand-muted">{formatTimestamp(doc.createdAt)}</p>
                     </button>
                   </li>
                 ))}
@@ -963,7 +1190,7 @@ function WorkspaceSidebar({
     );
   }
 
-  function renderStyleList(items: SavedDraft[]) {
+  function renderStyleList(items: SavedDoc[]) {
     if (!items.length) {
       return <p className="text-sm text-brand-muted">Save a style from any output and it’ll appear here.</p>;
     }
@@ -994,11 +1221,11 @@ function WorkspaceSidebar({
   }
 
   function renderContent() {
-    if (activeTab === "drafts") {
-      return renderDraftList(drafts, "No drafts yet. Generate something to see it here.");
+    if (activeTab === "docs") {
+      return renderDocList(docs, "No docs yet. Generate something to see it here.");
     }
     if (activeTab === "starred") {
-      return renderDraftList(starred, "No starred items yet. Star outputs or inputs to see them here.");
+      return renderDocList(starred, "No starred items yet. Star docs to see them here.");
     }
     if (activeTab === "styles") {
       return renderStyleList(styles);
@@ -1102,13 +1329,13 @@ function WorkspaceSidebar({
   );
 }
 
-function isStyleDocument(draft: SavedDraft): boolean {
+function isStyleDocument(doc: SavedDoc): boolean {
   // A document is a style ONLY if:
   // 1. The title ends with " Style" (capital S)
   // 2. AND the styleTitle matches the title (meaning it was explicitly saved as a style)
-  // Regular conversations have styleTitle (AI-generated) but their title is from the prompt, so they won't match
-  const title = draft.title ?? "";
-  const styleTitle = draft.styleTitle ?? "";
+  // Regular docs have styleTitle (AI-generated) but their title is from the prompt, so they won't match
+  const title = doc.title ?? "";
+  const styleTitle = doc.styleTitle ?? "";
   const titleLower = title.toLowerCase();
   
   // Check if title ends with " Style" and matches the styleTitle

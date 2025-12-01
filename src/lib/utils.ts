@@ -6,7 +6,7 @@ export function cn(...inputs: (string | undefined | null | Record<string, boolea
 }
 
 export function smartTitleFromPrompt(prompt: string) {
-  const base = prompt.split(/[.!?]/)[0]?.trim() || "Untitled Draft";
+  const base = prompt.split(/[.!?]/)[0]?.trim() || "Untitled Doc";
   return base.length > 60 ? `${base.slice(0, 57)}...` : base;
 }
 

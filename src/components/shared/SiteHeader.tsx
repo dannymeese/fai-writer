@@ -8,8 +8,8 @@ export default function SiteHeader() {
   const { data: session, status } = useSession();
   const isAuthenticated = status === "authenticated" && Boolean(session?.user);
 
-  function handleNewThread() {
-    window.dispatchEvent(new Event("new-thread"));
+  function handleNewDoc() {
+    window.dispatchEvent(new Event("new-doc"));
   }
 
   return (
@@ -26,11 +26,11 @@ export default function SiteHeader() {
           {isAuthenticated ? (
             <button
               type="button"
-              onClick={handleNewThread}
+              onClick={handleNewDoc}
               className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition hover:bg-brand-blue/90 hover:text-white"
             >
               <PencilSquareIcon className="h-4 w-4" />
-              New Thread
+              New Doc
             </button>
           ) : (
             <>

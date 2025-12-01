@@ -59,3 +59,62 @@ textarea::placeholder {
   font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
 }
 
+/* TipTap Editor Styles */
+.ProseMirror {
+  caret-color: transparent; /* Hide native cursor since we use custom marker */
+  cursor: text;
+  position: relative;
+  z-index: 10; /* Ensure text is above selection overlays */
+}
+
+.ProseMirror:focus {
+  outline: none;
+}
+
+/* Blue selection - 100% opacity */
+.ProseMirror ::selection {
+  background-color: #00f;
+  color: #fff;
+}
+
+/* Keep selection visible even when editor doesn't have focus */
+.ProseMirror.has-persistent-selection ::selection {
+  background-color: #00f !important;
+  color: #fff !important;
+}
+
+/* Also style selected text nodes directly when persistent selection exists */
+.ProseMirror.has-persistent-selection {
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+}
+
+/* Custom cursor marker - always visible blue cursor */
+.custom-cursor-marker {
+  position: absolute;
+  width: 6px;
+  background-color: #00f;
+  pointer-events: none;
+  z-index: 1; /* Behind text */
+  animation: blink 1s infinite;
+}
+
+/* Custom selection overlay - behind text */
+.custom-selection-overlay {
+  position: absolute;
+  background-color: #00f;
+  pointer-events: none;
+  z-index: 0; /* Behind text */
+}
+
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
