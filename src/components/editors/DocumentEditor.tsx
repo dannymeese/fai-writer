@@ -171,7 +171,7 @@ export default function DocumentEditor({
         });
       },
       {
-        rootMargin: "-68px 0px 0px 0px", // Account for header height
+        rootMargin: "-100px 0px 0px 0px", // Account for header height (100px at top, 60px when scrolled)
         threshold: 0
       }
     );
@@ -553,7 +553,7 @@ export default function DocumentEditor({
       {/* Sticky Title Bar - appears when title scrolls out of view */}
       <div
         className={cn(
-          "sticky top-[68px] z-30 w-full transition-all duration-300 ease-in-out",
+          "sticky top-[60px] z-30 w-full transition-all duration-300 ease-in-out",
           isTitleSticky
             ? "translate-y-0 opacity-100"
             : "-translate-y-full opacity-0 pointer-events-none"
@@ -788,23 +788,6 @@ function TitleActionButtons({
 
   return (
     <div className="flex items-center gap-2">
-      <div className="relative">
-        <button
-          type="button"
-          className={baseButtonClass}
-          aria-haspopup="menu"
-          aria-label="Download document"
-          disabled={!hasContent}
-          onClick={(event) => {
-            if (hasContent) {
-              onToggleDownload?.(event);
-            }
-          }}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          <span className="material-symbols-outlined leading-none">download</span>
-        </button>
-      </div>
       <div className="relative" ref={containerRef}>
         <button
           type="button"
@@ -860,6 +843,23 @@ function TitleActionButtons({
           </div>
         )}
       </div>
+      <div className="relative">
+        <button
+          type="button"
+          className={baseButtonClass}
+          aria-haspopup="menu"
+          aria-label="Download document"
+          disabled={!hasContent}
+          onClick={(event) => {
+            if (hasContent) {
+              onToggleDownload?.(event);
+            }
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <span className="material-symbols-outlined leading-none">download</span>
+        </button>
+      </div>
       <button
         type="button"
         className={baseButtonClass}
@@ -873,9 +873,11 @@ function TitleActionButtons({
         }}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <span className="material-symbols-outlined leading-none">
-          {copyStatus === "copied" ? "task_alt" : "content_copy"}
-        </span>
+        {copyStatus === "copied" ? (
+          <span className="text-xs font-semibold">Copied</span>
+        ) : (
+          <span className="material-symbols-outlined leading-none">content_copy</span>
+        )}
       </button>
     </div>
   );

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { PencilSquareIcon, ArrowDownTrayIcon } from "@heroicons/react/24/solid";
 import { useState, useRef, useEffect } from "react";
+import { cn } from "@/lib/utils";
 
 type SiteHeaderProps = {
   onPanelToggle?: () => void;
@@ -15,7 +16,34 @@ export default function SiteHeader({ onPanelToggle, showPanelButton = false }: S
   const isAuthenticated = status === "authenticated" && Boolean(session?.user);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(true);
   const downloadMenuRef = useRef<HTMLDivElement>(null);
+  
+  // Check if desktop
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 1024px)");
+    const update = () => setIsDesktop(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener("change", update);
+    return () => mediaQuery.removeEventListener("change", update);
+  }, []);
+
+  // Listen for scroll to adjust header height
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY;
+      setIsScrolled(scrollY > 0);
+    };
+    
+    // Check initial scroll position
+    handleScroll();
+    
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
   
   // Listen for sidebar state changes to update icon
   useEffect(() => {
@@ -36,6 +64,8 @@ export default function SiteHeader({ onPanelToggle, showPanelButton = false }: S
     if (onPanelToggle) {
       onPanelToggle();
     } else {
+      // Update local state immediately so header transitions at the same time as content
+      setSidebarOpen((prev) => !prev);
       window.dispatchEvent(new Event("toggle-sidebar"));
     }
   }
@@ -71,9 +101,12 @@ export default function SiteHeader({ onPanelToggle, showPanelButton = false }: S
     };
   }, []);
 
+  const headerHeight = isScrolled ? '60px' : '100px';
+  const wordmarkSize = isScrolled ? '24px' : '34px';
+
   return (
-    <header className="sticky top-0 z-40 border-b border-brand-stroke/60 bg-brand-background/95 px-5 backdrop-blur-xl" style={{ height: '60px' }}>
-      <div className="mx-auto w-full h-full relative flex items-center" style={{ maxWidth: '1720px' }}>
+    <header className={cn("sticky top-0 z-40 border-b border-brand-stroke/60 bg-brand-background/60 px-5 backdrop-blur-[10px] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop && "lg:ml-[320px]")} style={{ height: headerHeight }}>
+      <div className="mx-auto w-full h-full relative flex items-center transition-all duration-300 ease-in-out" style={{ maxWidth: '1720px' }}>
         {isAuthenticated && (
           <button
             type="button"
@@ -82,11 +115,11 @@ export default function SiteHeader({ onPanelToggle, showPanelButton = false }: S
             aria-label="Toggle panel"
           >
             <span className="material-symbols-outlined text-xl">
-              {sidebarOpen ? "left_panel_close" : "left_panel_open"}
+              {sidebarOpen ? "chevron_left" : "menu"}
             </span>
           </button>
         )}
-        <Link href="/" className="font-display leading-none flex items-center absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ fontSize: '24px', lineHeight: '1', whiteSpace: 'pre' }}>
+        <Link href="/" className="font-display font-medium leading-none flex items-center absolute left-1/2 top-1/2 -translate-x-1/2 transition-all duration-150 ease-in-out" style={{ fontSize: wordmarkSize, lineHeight: '1', whiteSpace: 'pre', transform: 'translate(-50%, calc(-50% - 3px))' }}>
           <span style={{ color: "#0000ff" }}>Forgetaboutit</span>
           <span style={{ color: "#ffffff" }}> Writer</span>
         </Link>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
+import { Tab } from "@headlessui/react";
 import Link from "next/link";
 import { SignOutButton } from "../shared/SignOutButton";
 import DocumentEditor from "../editors/DocumentEditor";
@@ -1444,23 +1445,15 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     // Listen for sidebar toggle event from header
     useEffect(() => {
       const handleToggleSidebar = () => {
-        setSidebarOpen((prev) => {
-          const newState = !prev;
-          // Dispatch state change event for header icon update
-          window.dispatchEvent(new CustomEvent("sidebar-state-change", { detail: { open: newState } }));
-          return newState;
-        });
+        setSidebarOpen((prev) => !prev);
       };
       window.addEventListener("toggle-sidebar", handleToggleSidebar);
       return () => window.removeEventListener("toggle-sidebar", handleToggleSidebar);
     }, []);
     
-    // Dispatch initial sidebar state (use setTimeout to avoid render-time updates)
-    useEffect(() => {
-      const timeoutId = setTimeout(() => {
-        window.dispatchEvent(new CustomEvent("sidebar-state-change", { detail: { open: sidebarOpen } }));
-      }, 0);
-      return () => clearTimeout(timeoutId);
+    // Dispatch sidebar state changes synchronously so header animation stays in sync
+    useLayoutEffect(() => {
+      window.dispatchEvent(new CustomEvent("sidebar-state-change", { detail: { open: sidebarOpen } }));
     }, [sidebarOpen]);
 
     return (
@@ -1484,7 +1477,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           brandKeyMessaging={brandKeyMessaging}
           onRemoveKeyMessaging={handleRemoveKeyMessaging}
           userName={user.name}
-          topOffset={88}
+          topOffset={30}
           bottomOffset={hasOutputs ? 140 : 32}
           isDesktop={isDesktop}
           activeStyleId={activeStyle?.id}
@@ -1495,7 +1488,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           onTabChange={(tab) => setSidebarTab(tab)}
         />
       )}
-      <div className={cn("flex min-h-screen flex-1 flex-col pb-[350px] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop ? "lg:ml-[320px]" : "")}>
+      <div className={cn("flex min-h-screen flex-1 flex-col pb-[350px] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop && "lg:ml-[320px]")}>
         <div className="flex-1 px-4 py-8 sm:px-6">
           <div className="mx-auto w-full max-w-5xl">
             {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
@@ -1512,7 +1505,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             />
           </div>
         </div>
-        <div className="fixed bottom-[10px] left-0 right-0 px-[180px] pointer-events-none z-45">
+        <div className={cn("fixed bottom-[10px] left-0 right-0 px-[180px] pointer-events-none z-[60] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop && "lg:left-[320px]")}>
           <div className="mx-auto max-w-[680px] pointer-events-auto">
             <ComposeBar
               value={composeValue}
@@ -1636,6 +1629,15 @@ function WorkspaceSidebar({
     { id: "styles", label: "Styles", icon: "brand_family" },
     { id: "brands", label: "Brands", icon: "storefront" }
   ];
+  const selectedIndex = Math.max(
+    tabs.findIndex((tab) => tab.id === activeTab),
+    0
+  );
+
+  const handleTabChange = (index: number) => {
+    const nextTab = tabs[index]?.id ?? tabs[0].id;
+    onTabChange(nextTab);
+  };
 
   // Prevent focus stealing from sidebar buttons
   const handleButtonMouseDown = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
@@ -1698,64 +1700,56 @@ function WorkspaceSidebar({
     );
   }
 
-  function renderContent() {
-    if (activeTab === "docs") {
-      return renderDocList(docs, "No docs yet. Generate something to see it here.");
-    }
-    if (activeTab === "styles") {
-      return renderStyleList(styles);
-    }
-    if (activeTab === "brands") {
-      return (
-        <div className="space-y-4">
-          {hasBrand && brandSummary && (
-            <div className="rounded-2xl border border-brand-stroke/40 bg-brand-background/60 p-4 text-sm text-brand-muted/90">
-              <p className="text-base font-semibold text-white">Defined brand</p>
-              <p className="mt-2 whitespace-pre-line leading-relaxed">{brandSummary}</p>
-              <p className="mt-4 text-xs text-brand-muted">Update the brand summary inside Settings.</p>
-            </div>
-          )}
-          {brandKeyMessaging.length > 0 && (
-            <div>
-              <p className="mb-3 text-sm font-semibold text-white">Key Messaging</p>
-              <ul className="space-y-2">
-                {brandKeyMessaging.map((item) => (
-                  <li
-                    key={item.id}
-                    className="group flex items-start justify-between gap-2 rounded-xl border border-brand-stroke/40 bg-brand-background/60 p-3 transition hover:border-white"
+  function renderBrandsContent() {
+    return (
+      <div className="space-y-4">
+        {hasBrand && brandSummary && (
+          <div className="rounded-2xl border border-brand-stroke/40 bg-brand-background/60 p-4 text-sm text-brand-muted/90">
+            <p className="text-base font-semibold text-white">Defined brand</p>
+            <p className="mt-2 whitespace-pre-line leading-relaxed">{brandSummary}</p>
+            <p className="mt-4 text-xs text-brand-muted">Update the brand summary inside Settings.</p>
+          </div>
+        )}
+        {brandKeyMessaging.length > 0 && (
+          <div>
+            <p className="mb-3 text-sm font-semibold text-white">Key Messaging</p>
+            <ul className="space-y-2">
+              {brandKeyMessaging.map((item) => (
+                <li
+                  key={item.id}
+                  className="group flex items-start justify-between gap-2 rounded-xl border border-brand-stroke/40 bg-brand-background/60 p-3 transition hover:border-white"
+                >
+                  <p className="flex-1 text-sm text-brand-muted/90">{item.text}</p>
+                  <button
+                    type="button"
+                    onMouseDown={handleButtonMouseDown}
+                    onClick={() => onRemoveKeyMessaging(item.id)}
+                    className="opacity-0 transition group-hover:opacity-100"
+                    title="Remove"
+                    tabIndex={-1}
                   >
-                    <p className="flex-1 text-sm text-brand-muted/90">{item.text}</p>
-                    <button
-                      type="button"
-                      onMouseDown={handleButtonMouseDown}
-                      onClick={() => onRemoveKeyMessaging(item.id)}
-                      className="opacity-0 transition group-hover:opacity-100"
-                      title="Remove"
-                      tabIndex={-1}
-                    >
-                      <span className="material-symbols-outlined text-base text-brand-muted hover:text-white">
-                        close
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {!hasBrand && brandKeyMessaging.length === 0 && (
-            <p className="text-sm text-brand-muted">No brand defined yet. Add one inside Settings, or select text and click "Add to Brand" in the formatting toolbar.</p>
-          )}
-        </div>
-      );
-    }
-    return null;
+                    <span className="material-symbols-outlined text-base text-brand-muted hover:text-white">
+                      close
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {!hasBrand && brandKeyMessaging.length === 0 && (
+          <p className="text-sm text-brand-muted">
+            No brand defined yet. Add one inside Settings, or select text and click "Add to Brand" in the formatting toolbar.
+          </p>
+        )}
+      </div>
+    );
   }
 
-  const desktopStyle = isDesktop
+  const contentStyle = isDesktop && open
     ? {
         paddingTop: `${topOffset}px`,
-        paddingBottom: `${bottomOffset}px`,
-        minHeight: "100vh"
+        paddingBottom: `${bottomOffset}px`
       }
     : undefined;
 
@@ -1764,11 +1758,9 @@ function WorkspaceSidebar({
       className={cn(
         "flex flex-col text-brand-text transition-all duration-300",
         open
-          ? "bg-brand-panel/85 shadow-[0_30px_80px_rgba(0,0,0,0.5)] fixed inset-0 z-50 w-full px-5 py-6 lg:fixed lg:left-0 lg:top-0 lg:w-80 lg:h-screen lg:border-r lg:border-brand-stroke/40"
-          : "fixed left-4 top-[calc(88px+16px)] z-50 lg:hidden",
-        "lg:sticky lg:top-0"
+          ? "bg-brand-panel/85 shadow-[0_30px_80px_rgba(0,0,0,0.5)] fixed inset-0 z-50 w-full lg:fixed lg:left-0 lg:top-0 lg:bottom-0 lg:z-auto lg:w-80 lg:h-full lg:border-r lg:border-brand-stroke/40 lg:shadow-none"
+          : "fixed left-4 top-[calc(88px+16px)] z-50 lg:hidden"
       )}
-      style={desktopStyle}
       tabIndex={-1}
       onFocus={(e) => {
         // Prevent sidebar from receiving focus
@@ -1778,38 +1770,55 @@ function WorkspaceSidebar({
       }}
     >
       {open ? (
-        <>
-          <p className="text-xs font-semibold uppercase text-brand-muted">Workspace</p>
-          <div className="mt-4 grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))" }}>
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onMouseDown={handleButtonMouseDown}
-                onClick={() => onTabChange(tab.id)}
-                className={cn(
-                  "flex items-center justify-center gap-2 rounded-full border border-brand-stroke/60 px-3 py-2 text-xs font-semibold uppercase transition",
-                  activeTab === tab.id
-                    ? "bg-white/15 text-white"
-                    : "bg-transparent text-brand-muted hover:text-white"
-                )}
-                tabIndex={-1}
-              >
-                <span className="material-symbols-outlined text-base">{tab.icon}</span>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <div className="mt-6 flex-1 overflow-y-auto pr-1">{renderContent()}</div>
-          <div className="mt-auto w-full border-t border-brand-stroke/40 pt-4">
-            <div className="flex flex-col gap-3">
-              <p className="text-sm font-semibold text-brand-muted">Hi, {userName}</p>
-              <div className="flex justify-start">
+        <div className="flex h-full flex-col px-5 pb-6" style={contentStyle}>
+          <Tab.Group className="flex flex-1 flex-col min-h-0" selectedIndex={selectedIndex} onChange={handleTabChange}>
+            <Tab.List className="flex rounded-full bg-brand-background/40 p-1 text-xs font-semibold uppercase flex-shrink-0" style={{ marginTop: 0 }}>
+              {tabs.map((tab) => (
+                <Tab
+                  key={tab.id}
+                  className={({ selected }) =>
+                    cn(
+                      "flex flex-1 flex-col items-center justify-center gap-1 rounded-full px-2 py-3 transition focus:outline-none",
+                      selected
+                        ? "bg-white/15 text-white shadow-[0_15px_35px_rgba(0,0,0,0.45)]"
+                        : "text-brand-muted hover:text-white"
+                    )
+                  }
+                >
+                  <span className="material-symbols-outlined text-xl">{tab.icon}</span>
+                  <span>{tab.label}</span>
+                </Tab>
+              ))}
+            </Tab.List>
+            <div className="mt-6 flex-1 min-h-0 overflow-hidden">
+              <Tab.Panels className="h-full">
+                <Tab.Panel className="h-full overflow-y-auto pr-1 focus:outline-none">
+                  {renderDocList(docs, "No docs yet. Generate something to see it here.")}
+                </Tab.Panel>
+                <Tab.Panel className="h-full overflow-y-auto pr-1 focus:outline-none">
+                  {renderStyleList(styles)}
+                </Tab.Panel>
+                <Tab.Panel className="h-full overflow-y-auto pr-1 focus:outline-none">
+                  {renderBrandsContent()}
+                </Tab.Panel>
+              </Tab.Panels>
+            </div>
+          </Tab.Group>
+          <div className="mt-4 border-t border-brand-stroke/40 pt-4 flex-shrink-0">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <ProfileAvatar name={userName} size={48} />
+                <div>
+                  <p className="text-[10px] text-brand-muted">Working as</p>
+                  <p className="mt-0.5 text-base font-semibold text-white">{userName}</p>
+                </div>
+              </div>
+              <div className="flex-shrink-0">
                 <SignOutButton />
               </div>
             </div>
           </div>
-        </>
+        </div>
       ) : null}
     </aside>
   );
@@ -1835,5 +1844,51 @@ function isStyleDocument(doc: SavedDoc): boolean {
   }
   
   return false;
+}
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) {
+    return parts[0].charAt(0).toUpperCase();
+  }
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}
+
+function generateColorFromName(name: string): string {
+  // Generate a consistent color from the name using a simple hash
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  // Generate HSL values that work well with dark backgrounds
+  // We want colors that are vibrant but not too bright
+  const hue = Math.abs(hash) % 360;
+  
+  // Use a moderate saturation (50-70%) and lightness (45-55%) for good contrast on dark backgrounds
+  const saturation = 50 + (Math.abs(hash) % 20);
+  const lightness = 45 + (Math.abs(hash >> 8) % 10);
+  
+  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+}
+
+function ProfileAvatar({ name, size = 40 }: { name: string; size?: number }) {
+  const initials = getInitials(name);
+  const bgColor = generateColorFromName(name);
+  
+  return (
+    <div
+      className="flex items-center justify-center rounded-full font-semibold text-white"
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        backgroundColor: bgColor,
+        fontSize: `${size * 0.4}px`
+      }}
+    >
+      {initials}
+    </div>
+  );
 }
 

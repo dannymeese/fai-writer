@@ -1375,8 +1375,8 @@ export default function MarkdownEditor({
             type="button"
             onClick={() => handleFormat(() => editor.chain().focus().toggleBold().run())}
             className={cn(
-              "rounded-full p-2 transition hover:bg-brand-blue/20",
-              editor.isActive('bold') ? "bg-brand-blue/30 text-white" : "text-brand-muted hover:text-white"
+              "rounded-full p-2 transition hover:opacity-70",
+              editor.isActive('bold') ? "bg-white text-black" : "text-brand-muted"
             )}
             title="Bold"
           >
@@ -1388,8 +1388,8 @@ export default function MarkdownEditor({
             type="button"
             onClick={() => handleFormat(() => editor.chain().focus().toggleItalic().run())}
             className={cn(
-              "rounded-full p-2 transition hover:bg-brand-blue/20",
-              editor.isActive('italic') ? "bg-brand-blue/30 text-white" : "text-brand-muted hover:text-white"
+              "rounded-full p-2 transition hover:opacity-70",
+              editor.isActive('italic') ? "bg-white text-black" : "text-brand-muted"
             )}
             title="Italic"
           >
@@ -1425,10 +1425,10 @@ export default function MarkdownEditor({
                 }, 50);
               }}
               className={cn(
-                "rounded-full px-2 py-1 text-xs font-semibold transition hover:bg-brand-blue/20",
+                "rounded-full px-2 py-1 text-xs font-semibold transition hover:opacity-70",
                 editor.isActive('heading', { level: level as 1 | 2 | 3 }) 
-                  ? "bg-brand-blue/30 text-white" 
-                  : "text-brand-muted hover:text-white"
+                  ? "bg-white text-black" 
+                  : "text-brand-muted"
               )}
               title={`Heading ${level}`}
             >
@@ -1460,8 +1460,8 @@ export default function MarkdownEditor({
               }, 50);
             }}
             className={cn(
-              "rounded-full p-2 transition hover:bg-brand-blue/20",
-              editor.isActive('bulletList') ? "bg-brand-blue/30 text-white" : "text-brand-muted hover:text-white"
+              "rounded-full p-2 transition hover:opacity-70",
+              editor.isActive('bulletList') ? "bg-white text-black" : "text-brand-muted"
             )}
             title="Bullet List"
           >
@@ -1489,8 +1489,8 @@ export default function MarkdownEditor({
               }, 50);
             }}
             className={cn(
-              "rounded-full px-2 py-1 text-xs font-semibold transition hover:bg-brand-blue/20",
-              editor.isActive('orderedList') ? "bg-brand-blue/30 text-white" : "text-brand-muted hover:text-white"
+              "rounded-full px-2 py-1 text-xs font-semibold transition hover:opacity-70",
+              editor.isActive('orderedList') ? "bg-white text-black" : "text-brand-muted"
             )}
             title="Numbered List"
           >

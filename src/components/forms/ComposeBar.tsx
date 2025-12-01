@@ -235,7 +235,7 @@ export default function ComposeBar({
   }
 
   return (
-    <div className="compose-bar rounded-[32px] border border-brand-stroke/60 bg-[#0a0a0a] backdrop-blur-xl p-3">
+    <div className="compose-bar rounded-[32px] border border-brand-stroke/60 bg-[#0a0a0a]/90 backdrop-blur-[10px] p-3">
       {content}
     </div>
   );

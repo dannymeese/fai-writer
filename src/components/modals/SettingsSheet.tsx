@@ -259,7 +259,7 @@ export default function SettingsSheet({
             leaveTo="opacity-0 translate-y-4"
           >
             <Dialog.Panel
-              className="pointer-events-auto w-full max-w-lg rounded-3xl border border-brand-stroke/60 bg-brand-panel/95 p-6 text-brand-text shadow-[0_30px_80px_rgba(0,0,0,0.55)]"
+              className="pointer-events-auto w-full max-w-lg rounded-3xl border border-brand-stroke/60 bg-[#0a0a0a]/90 backdrop-blur-[10px] p-6 text-brand-text"
               style={
                 anchorRect
                   ? {
@@ -314,7 +314,7 @@ export default function SettingsSheet({
                       className={cn(
                         "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
                         !settings.gradeLevel
-                          ? "border-brand-blue bg-brand-blue/20 text-white"
+                          ? "border-white bg-white text-black"
                           : "border-brand-stroke/70 bg-brand-ink text-brand-muted hover:border-brand-blue hover:text-white"
                       )}
                     >
@@ -368,7 +368,7 @@ export default function SettingsSheet({
                             className={cn(
                               "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
                               settings.gradeLevel === level.value
-                                ? "border-brand-blue bg-brand-blue/20 text-white"
+                                ? "border-white bg-white text-black"
                                 : "border-brand-stroke/70 bg-brand-ink text-brand-muted hover:border-brand-blue hover:text-white"
                             )}
                           >
@@ -401,7 +401,7 @@ export default function SettingsSheet({
                       className={cn(
                         "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
                         !settings.marketTier
-                          ? "border-brand-blue bg-brand-blue/20 text-white"
+                          ? "border-white bg-white text-black"
                           : "border-brand-stroke/70 bg-brand-ink text-brand-muted hover:border-brand-blue hover:text-white"
                       )}
                     >
@@ -428,7 +428,7 @@ export default function SettingsSheet({
                           className={cn(
                             "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
                             settings.marketTier === tier
-                              ? "border-brand-blue bg-brand-blue/20 text-white"
+                              ? "border-white bg-white text-black"
                               : "border-brand-stroke/70 bg-brand-ink text-brand-muted hover:border-brand-blue hover:text-white"
                           )}
                         >
