@@ -132,7 +132,7 @@ export async function POST(request: Request) {
   const styleSection = styleGuide
     ? `\n\nWriting Style (${styleGuide.name}):\n${styleGuide.description}\n\nMirror the cadence, vocabulary, and structure of the style described above in every sentence.`
     : "";
-  const instructionSection = `\n\nExecution Requirements:\n- Do not ask the user for more details.\n- Produce the final copy immediately.\n- If specific details are missing, infer them from the brand summary and the prompt.\n- Never return placeholder instructions to the user.\n`;
+  const instructionSection = `\n\nExecution Requirements:\n- Do not ask the user for more details.\n- Produce the final copy immediately.\n- If specific details are missing, infer them from the brand summary and the prompt.\n- Never return placeholder instructions to the user.\n- Output ONLY in markdown format. Use markdown syntax for headings (# for H1, ## for H2, ### for H3), bold (**text**), italic (*text*), lists (- or 1.), etc.\n`;
   const userPrompt = `${prompt}${brandSection}${styleSection}${instructionSection}${briefSection}`;
   const wantsExtendedRules = /(?:long|full|detailed|extended)\s+rules?/i.test(prompt);
 

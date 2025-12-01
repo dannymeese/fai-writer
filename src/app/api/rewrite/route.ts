@@ -47,9 +47,9 @@ export async function POST(request: Request) {
     ? `\n\nWriting Style (${styleGuide.name}):\n${styleGuide.description}\n\nMirror this style in the rewritten text.`
     : "";
 
-  const systemPrompt = `${SHORT_RULES}\n\nYou are rewriting a selected portion of text based on user instructions. Return ONLY the rewritten text, nothing else. Do not include explanations, quotes, or markdown formatting.`;
+  const systemPrompt = `${SHORT_RULES}\n\nYou are rewriting a selected portion of text based on user instructions. Return ONLY the rewritten text in markdown format. Preserve any markdown formatting (headings, bold, italic, lists) that exists in the original text.`;
 
-  const userPrompt = `Rewrite the following selected text according to this instruction: "${instruction}"\n\nSelected text to rewrite:\n${selectedText}${contextSection}${brandSection}${styleSection}\n\nReturn ONLY the rewritten text that replaces the selected portion.`;
+  const userPrompt = `Rewrite the following selected text according to this instruction: "${instruction}"\n\nSelected text to rewrite:\n${selectedText}${contextSection}${brandSection}${styleSection}\n\nReturn ONLY the rewritten text in markdown format that replaces the selected portion. Preserve markdown syntax for headings (# ## ###), bold (**text**), italic (*text*), and lists.`;
 
   try {
     const response = await openai.responses.create({

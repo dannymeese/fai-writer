@@ -94,7 +94,7 @@ textarea::placeholder {
 /* Custom cursor marker - always visible blue cursor */
 .custom-cursor-marker {
   position: absolute;
-  width: 6px;
+  width: 2px;
   background-color: #00f;
   pointer-events: none;
   z-index: 1; /* Behind text */
@@ -116,5 +116,47 @@ textarea::placeholder {
   51%, 100% {
     opacity: 0;
   }
+}
+
+/* Ensure TipTap headings and lists are visible */
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3,
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6 {
+  color: white !important;
+  font-weight: bold;
+}
+
+.ProseMirror h1 { font-size: 1.875rem; margin-top: 2rem; margin-bottom: 1rem; line-height: 1.2; }
+.ProseMirror h2 { font-size: 1.5rem; margin-top: 1.5rem; margin-bottom: 0.75rem; line-height: 1.3; }
+.ProseMirror h3 { font-size: 1.25rem; margin-top: 1rem; margin-bottom: 0.5rem; line-height: 1.4; }
+.ProseMirror h4 { font-size: 1.125rem; margin-top: 0.75rem; margin-bottom: 0.5rem; }
+.ProseMirror h5 { font-size: 1rem; margin-top: 0.5rem; margin-bottom: 0.25rem; }
+.ProseMirror h6 { font-size: 0.875rem; margin-top: 0.5rem; margin-bottom: 0.25rem; }
+
+.ProseMirror ul,
+.ProseMirror ol {
+  list-style-position: outside;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+
+.ProseMirror ul {
+  list-style-type: disc;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.ProseMirror li {
+  color: rgba(255, 255, 255, 0.9) !important;
+  margin: 0.25rem 0;
+}
+
+.ProseMirror li::marker {
+  color: white !important;
 }
 
