@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -21,7 +21,7 @@ export async function PATCH(
     );
   }
 
-  const { id } = params;
+  const { id } = await params;
   const body = await request.json().catch(() => null);
 
   if (!body || typeof body !== "object") {

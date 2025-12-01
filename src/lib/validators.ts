@@ -28,6 +28,12 @@ export const composerSettingsSchema = z.object({
 
 export type ComposerSettingsInput = z.infer<typeof composerSettingsSchema>;
 
+const editorContextSchema = z.object({
+  before: z.string().max(2000).optional().nullable(),
+  after: z.string().max(2000).optional().nullable(),
+  selection: z.string().max(2000).optional().nullable()
+});
+
 export const composeRequestSchema = z.object({
   prompt: z.string().min(10, "Share more detail"),
   settings: composerSettingsSchema,
@@ -37,12 +43,13 @@ export const composeRequestSchema = z.object({
       name: z.string().min(1).max(80),
       description: z.string().min(1).max(1500)
     })
-    .optional()
+    .optional(),
+  editorContext: editorContextSchema.optional()
 });
 
 export const documentSchema = z.object({
   title: z.string().min(1),
-  content: z.string().min(1),
+  content: z.string().min(0),
   tone: z.string().optional().nullable(),
   prompt: z.string().optional(),
   characterLength: z.number().int().positive().max(2000).nullable().optional(),

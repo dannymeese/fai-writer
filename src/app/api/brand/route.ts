@@ -117,3 +117,28 @@ export async function GET() {
   return NextResponse.json({ brandInfo: guestBrandInfo ?? null });
 }
 
+export async function DELETE() {
+  const session = await auth();
+  const isAuthenticated = Boolean(session?.user?.id);
+  const response = NextResponse.json({ success: true });
+
+  if (isAuthenticated && session?.user?.id && prisma) {
+    try {
+      await prisma.user.update({
+        where: { id: session.user.id },
+        data: { brandInfo: null }
+      });
+    } catch (error) {
+      console.error("Failed to clear brand info from database", error);
+      return NextResponse.json({ error: "Unable to clear brand information." }, { status: 500 });
+    }
+  }
+
+  response.cookies.set("guest_brand_info", "", {
+    maxAge: 0,
+    path: "/"
+  });
+
+  return response;
+}
+

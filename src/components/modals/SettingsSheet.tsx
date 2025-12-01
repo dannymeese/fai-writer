@@ -35,6 +35,7 @@ export default function SettingsSheet({
   const [brandInput, setBrandInput] = useState("");
   const [brandProcessing, setBrandProcessing] = useState(false);
   const [hasBrand, setHasBrand] = useState(initialBrandDefined);
+  const [clearingBrand, setClearingBrand] = useState(false);
 
   useEffect(() => {
     setHasBrand(initialBrandDefined);
@@ -85,6 +86,24 @@ export default function SettingsSheet({
       console.error("Failed to save brand info", error);
     } finally {
       setBrandProcessing(false);
+    }
+  }
+
+  async function handleClearBrand() {
+    setClearingBrand(true);
+    try {
+      const response = await fetch("/api/brand", { method: "DELETE" });
+      if (!response.ok) {
+        console.error("Failed to clear brand info");
+        return;
+      }
+      setBrandInput("");
+      setHasBrand(false);
+      onBrandUpdate?.(null);
+    } catch (error) {
+      console.error("Failed to clear brand info", error);
+    } finally {
+      setClearingBrand(false);
     }
   }
 
@@ -221,6 +240,16 @@ export default function SettingsSheet({
                   >
                     {hasBrand ? "Update Brand" : "Define Brand"}
                   </button>
+                  {hasBrand && (
+                    <button
+                      type="button"
+                      onClick={handleClearBrand}
+                      disabled={clearingBrand}
+                      className="mt-2 w-full rounded-lg border border-brand-stroke/60 px-4 py-2 text-xs font-semibold text-brand-muted transition hover:border-brand-blue hover:text-brand-blue disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {clearingBrand ? "Clearing..." : "Clear Custom Brand"}
+                    </button>
+                  )}
                 </div>
                </div>
              </Dialog.Panel>

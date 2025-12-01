@@ -10,6 +10,17 @@ export function smartTitleFromPrompt(prompt: string) {
   return base.length > 60 ? `${base.slice(0, 57)}...` : base;
 }
 
+export function deriveTitleFromContent(content?: string | null, fallbackTitle?: string | null, maxLength = 80) {
+  const normalize = (value?: string | null) => (value ?? "").replace(/\s+/g, " ").trim();
+  const normalizedContent = normalize(content);
+  const normalizedFallback = normalize(fallbackTitle);
+  const base = normalizedContent || normalizedFallback || "Untitled doc";
+  if (base.length <= maxLength) {
+    return base;
+  }
+  return `${base.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
 export function formatTimestamp(date: Date | string) {
   const dt = typeof date === "string" ? new Date(date) : date;
   return dt.toLocaleString(undefined, {

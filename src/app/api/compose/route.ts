@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { prompt, settings, brandSummary, styleGuide } = parsed.data;
+  const { prompt, settings, brandSummary, styleGuide, editorContext } = parsed.data;
   const effectiveMarketTier = settings.marketTier ?? null;
 
   if (!process.env.OPENAI_API_KEY) {
@@ -132,8 +132,22 @@ export async function POST(request: Request) {
   const styleSection = styleGuide
     ? `\n\nWriting Style (${styleGuide.name}):\n${styleGuide.description}\n\nMirror the cadence, vocabulary, and structure of the style described above in every sentence.`
     : "";
-  const instructionSection = `\n\nExecution Requirements:\n- Do not ask the user for more details.\n- Produce the final copy immediately.\n- If specific details are missing, infer them from the brand summary and the prompt.\n- Never return placeholder instructions to the user.\n- Output ONLY in markdown format. Use markdown syntax for headings (# for H1, ## for H2, ### for H3), bold (**text**), italic (*text*), lists (- or 1.), etc.\n`;
-  const userPrompt = `${prompt}${brandSection}${styleSection}${instructionSection}${briefSection}`;
+  const editorContextLines: string[] = [];
+  if (editorContext?.before) {
+    editorContextLines.push(`Text before cursor:\n${editorContext.before}`);
+  }
+  if (editorContext?.selection) {
+    editorContextLines.push(`Selected text (if any):\n${editorContext.selection}`);
+  }
+  if (editorContext?.after) {
+    editorContextLines.push(`Text after cursor:\n${editorContext.after}`);
+  }
+  const editorContextSection = editorContextLines.length
+    ? `\n\nEditor Cursor Context:\n${editorContextLines.join("\n\n")}\n\nUse this context to understand what surrounds the cursor so that instructions like "fill in the blank" or "finish the sentence" align with the existing copy. Continue directly after the "before" text without repeating or paraphrasing it, and flow cleanly into the "after" text if it exists. Only produce the missing connective copy.`
+    : "";
+
+  const instructionSection = `\n\nExecution Requirements:\n- Do not ask the user for more details.\n- Produce the final copy immediately.\n- If specific details are missing, infer them from the brand summary and the prompt.\n- When editor context is provided, start precisely after the "before" text and transition into the "after" text without repeating either.\n- Never return placeholder instructions to the user.\n- Output ONLY in markdown format. Use markdown syntax for headings (# for H1, ## for H2, ### for H3), bold (**text**), italic (*text*), lists (- or 1.), etc.\n`;
+  const userPrompt = `${prompt}${editorContextSection}${brandSection}${styleSection}${instructionSection}${briefSection}`;
   const wantsExtendedRules = /(?:long|full|detailed|extended)\s+rules?/i.test(prompt);
 
   try {

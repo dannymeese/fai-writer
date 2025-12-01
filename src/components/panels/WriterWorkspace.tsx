@@ -9,7 +9,7 @@ import ComposeBar from "../forms/ComposeBar";
 import SettingsSheet from "../modals/SettingsSheet";
 import { ComposerSettingsInput } from "@/lib/validators";
 import { OutputPlaceholder, WriterOutput } from "@/types/writer";
-import { cn, formatTimestamp, smartTitleFromPrompt } from "@/lib/utils";
+import { cn, formatTimestamp, smartTitleFromPrompt, deriveTitleFromContent } from "@/lib/utils";
 
 type WriterWorkspaceProps = {
   user: {
@@ -40,6 +40,7 @@ type ActiveStyle = {
 };
 
 const LOCAL_DOCS_KEY = "forgetaboutit_writer_docs_v1";
+const EDITOR_CONTEXT_WINDOW = 600;
 
 function canUseLocalStorage(): boolean {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
@@ -250,8 +251,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [autosaveTimeout, setAutosaveTimeout] = useState<NodeJS.Timeout | null>(null);
   const editorRef = useRef<any>(null); // Reference to the TipTap editor instance
+  const outputsRef = useRef<WriterOutput[]>(outputs);
   const composeInputRef = useRef<HTMLTextAreaElement>(null);
   const isAuthenticated = !isGuest;
+
+  useEffect(() => {
+    outputsRef.current = outputs;
+  }, [outputs]);
 
   const fetchSavedDocs = useCallback(async () => {
     if (!isAuthenticated) {
@@ -378,9 +384,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     }
     const currentPrompt = composeValue;
     setLoading(true);
+    const editorContext = collectEditorContext();
 
     // If there's a selection, rewrite it instead of creating new content
     if (selectedText && editorRef.current && activeDocument) {
+      // Store the selection range before making the API call
+      const selectionRange = editorRef.current.getSelectionRange ? editorRef.current.getSelectionRange() : null;
+      
       try {
         const response = await fetch("/api/rewrite", {
           method: "POST",
@@ -414,9 +424,9 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           return;
         }
 
-        // Replace the selection in the editor
+        // Replace the exact selection in the editor using the stored range
         if (editorRef.current.replaceSelection) {
-          editorRef.current.replaceSelection(rewrittenText);
+          editorRef.current.replaceSelection(rewrittenText, selectionRange || undefined);
         }
 
         setComposeValue("");
@@ -433,7 +443,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     }
 
     // If there's an active document and editor, insert at cursor position
-    if (activeDocument && editorRef.current && useMarkdownEditor) {
+    if (activeDocument && editorRef.current) {
       try {
         const response = await fetch("/api/compose", {
           method: "POST",
@@ -447,7 +457,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
                   name: activeStyle.name,
                   description: activeStyle.description
                 }
-              : undefined
+              : undefined,
+            editorContext: editorContext ?? undefined
           })
         });
 
@@ -517,7 +528,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           prompt: currentPrompt,
           settings: snapshotSettings,
           brandSummary: brandSummary ?? undefined,
-          styleGuide: styleGuidePayload
+          styleGuide: styleGuidePayload,
+          editorContext: editorContext ?? undefined
         })
       });
       if (!response.ok) {
@@ -793,26 +805,6 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     }
   }
 
-  function handleLoadDoc(doc: SavedDoc) {
-    const restored = ensurePlaceholderState({
-      id: doc.id,
-      title: doc.title,
-      content: doc.content,
-      createdAt: doc.createdAt,
-      settings: doc.settings,
-      prompt: doc.prompt,
-      writingStyle: doc.writingStyle ?? null,
-      placeholderValues: {}
-    });
-    setOutputs([restored]);
-    setActiveDocumentId(doc.id);
-    setComposeValue("");
-    if (!isDesktop) {
-      setSidebarOpen(false);
-    }
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
   function handleApplyStyle(styleDoc: SavedDoc) {
     const description = fallbackStyleDescription(styleDoc.writingStyle ?? null, styleDoc.content);
     setActiveStyle({
@@ -830,18 +822,245 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     setActiveStyle(null);
   }
 
-  const handleStartNewDoc = useCallback(() => {
+  const resolveDocumentTitle = useCallback((doc: WriterOutput, contentValue: string) => {
+    const isStyleEntry =
+      Boolean(doc.styleTitle) &&
+      typeof doc.title === "string" &&
+      doc.title.trim().length > 0 &&
+      doc.title === doc.styleTitle;
+    if (isStyleEntry) {
+      return doc.title || doc.styleTitle || "Custom Style";
+    }
+    const normalizedContent = contentValue || doc.content || "";
+    const fallback = doc.title?.trim() || doc.prompt || "Untitled doc";
+    return deriveTitleFromContent(normalizedContent, fallback);
+  }, []);
+
+  const collectEditorContext = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor?.state) {
+      return null;
+    }
+    try {
+      const { state } = editor;
+      const { from, to } = state.selection;
+      const docSize = state.doc.content.size;
+      const beforeStart = Math.max(0, from - EDITOR_CONTEXT_WINDOW);
+      const afterEnd = Math.min(docSize, to + EDITOR_CONTEXT_WINDOW);
+      const before = state.doc.textBetween(beforeStart, from, "\n").trim();
+      const after = state.doc.textBetween(to, afterEnd, "\n").trim();
+      const selectionText = from !== to ? state.doc.textBetween(from, to, "\n").trim() : "";
+
+      const payload = {
+        before: before || undefined,
+        after: after || undefined,
+        selection: selectionText || undefined
+      };
+
+      if (!payload.before && !payload.after && !payload.selection) {
+        return null;
+      }
+      return payload;
+    } catch (error) {
+      console.error("collectEditorContext failed", error);
+      return null;
+    }
+  }, []);
+
+  const buildDocumentPayload = useCallback((doc: WriterOutput, contentValue: string) => {
+    const settingsPayload = doc.settings ?? defaultSettings;
+    const resolvedTitle = resolveDocumentTitle(doc, contentValue);
+    return {
+      title: resolvedTitle,
+      content: contentValue,
+      tone: settingsPayload.marketTier ?? null,
+      prompt: doc.prompt || "",
+      characterLength: settingsPayload.characterLength ?? null,
+      wordLength: settingsPayload.wordLength ?? null,
+      gradeLevel: settingsPayload.gradeLevel ?? null,
+      benchmark: settingsPayload.benchmark ?? null,
+      avoidWords: settingsPayload.avoidWords ?? null,
+      writingStyle: doc.writingStyle ?? null,
+      styleTitle: doc.styleTitle ?? null,
+      starred: doc.starred ?? false
+    };
+  }, [resolveDocumentTitle]);
+
+  const persistDocumentToServer = useCallback(
+    async (doc: WriterOutput, contentValue: string) => {
+      const resolvedTitle = resolveDocumentTitle(doc, contentValue);
+      if (!isAuthenticated) {
+        // Guests: save locally
+        persistLocalDocEntry({
+          id: doc.id,
+          title: resolvedTitle,
+          createdAt: doc.createdAt,
+          prompt: doc.prompt,
+          content: contentValue,
+          settings: doc.settings,
+          writingStyle: doc.writingStyle ?? null,
+          styleTitle: doc.styleTitle ?? null,
+          starred: doc.starred ?? false
+        });
+        return doc.id;
+      }
+
+      // First try to patch existing document
+      if (doc.id) {
+        try {
+          const patchResponse = await fetch(`/api/documents/${doc.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: contentValue })
+          });
+
+          if (patchResponse.ok) {
+            return doc.id;
+          }
+
+          if (patchResponse.status !== 404) {
+            const errorPayload = await patchResponse.json().catch(() => null);
+            console.error("Autosave patch failed:", patchResponse.status, errorPayload);
+            return null;
+          }
+        } catch (error) {
+          console.error("Autosave patch error:", error);
+        }
+      }
+
+      // If patch failed (likely 404) or doc has no id, create it
+      try {
+        const payload = buildDocumentPayload(doc, contentValue);
+        const createResponse = await fetch("/api/documents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!createResponse.ok) {
+          const errorPayload = await createResponse.json().catch(() => null);
+          console.error("Document creation failed:", createResponse.status, errorPayload);
+          return null;
+        }
+
+        const created = await createResponse.json();
+        fetchSavedDocs();
+        return created.id as string;
+      } catch (error) {
+        console.error("Document creation error:", error);
+        return null;
+      }
+    },
+    [buildDocumentPayload, fetchSavedDocs, isAuthenticated, resolveDocumentTitle]
+  );
+
+  // Save current document immediately (without debounce)
+  const saveCurrentDocument = useCallback(
+    async (documentId: string | null, documentContent: string) => {
+      if (!documentId) return;
+      const currentDoc = outputsRef.current.find((o) => o.id === documentId);
+      if (!currentDoc) return;
+      const savedId = await persistDocumentToServer(currentDoc, documentContent);
+      if (savedId && savedId !== documentId) {
+        setOutputs((prev) =>
+          prev.map((entry) => (entry.id === documentId ? { ...entry, id: savedId } : entry))
+        );
+        setActiveDocumentId(savedId);
+      }
+    },
+    [persistDocumentToServer]
+  );
+
+  const handleLoadDoc = useCallback(
+    async (doc: SavedDoc) => {
+      if (activeDocumentId && activeDocumentId !== doc.id) {
+        const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
+        if (currentDoc && currentDoc.content.trim()) {
+          await saveCurrentDocument(activeDocumentId, currentDoc.content);
+        }
+      }
+
+      const restored = ensurePlaceholderState({
+        id: doc.id,
+        title: doc.title,
+        content: doc.content,
+        createdAt: doc.createdAt,
+        settings: doc.settings,
+        prompt: doc.prompt,
+        writingStyle: doc.writingStyle ?? null,
+        placeholderValues: {}
+      });
+
+      setOutputs([restored]);
+      setActiveDocumentId(doc.id);
+      setSelectedText(null);
+      setComposeValue("");
+      if (!isDesktop) {
+        setSidebarOpen(false);
+      }
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    [activeDocumentId, isDesktop, saveCurrentDocument]
+  );
+
+  const handleStartNewDoc = useCallback(async () => {
+    // Save and close current document if there is one
+    if (activeDocumentId) {
+      const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
+      if (currentDoc && currentDoc.content.trim()) {
+        await saveCurrentDocument(activeDocumentId, currentDoc.content);
+      }
+    }
+    
+    // Clear existing autosave timeout since we're creating a new doc
+    if (autosaveTimeout) {
+      clearTimeout(autosaveTimeout);
+      setAutosaveTimeout(null);
+    }
+
+    // Create a fresh document entry
+    let baseDoc: WriterOutput = ensurePlaceholderState({
+      id: crypto.randomUUID(),
+      title: "Untitled doc",
+      content: "",
+      createdAt: new Date().toISOString(),
+      settings: normalizeSettings(defaultSettings),
+      prompt: "",
+      writingStyle: null,
+      styleTitle: null,
+      starred: false
+    });
+
+    if (isAuthenticated) {
+      const createdId = await persistDocumentToServer(baseDoc, "");
+      if (createdId) {
+        baseDoc = { ...baseDoc, id: createdId };
+      }
+    } else {
+      persistLocalDocEntry({
+        id: baseDoc.id,
+        title: baseDoc.title,
+        createdAt: baseDoc.createdAt,
+        prompt: baseDoc.prompt,
+        content: "",
+        settings: baseDoc.settings,
+        writingStyle: baseDoc.writingStyle
+      });
+    }
+    
+    // Close any open docs and open the new one
+    setOutputs([baseDoc]);
+    setActiveDocumentId(baseDoc.id);
+    setSelectedText(null);
     setSidebarTab("docs");
     setSidebarOpen(true);
     setComposeValue("");
-    setOutputs([]);
-    setActiveDocumentId(null);
     setActiveStyle(null);
     requestAnimationFrame(() => {
       composeInputRef.current?.focus();
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
-  }, []);
+  }, [activeDocumentId, autosaveTimeout, isAuthenticated, persistDocumentToServer, saveCurrentDocument]);
 
   useEffect(() => {
     const listener = () => handleStartNewDoc();
@@ -857,65 +1076,42 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }, [outputs, activeDocumentId]);
 
   // Handle document content changes with autosave
-  const handleDocumentChange = useCallback((content: string) => {
-    if (!activeDocumentId) return;
-    
-    // Update local state immediately
-    setOutputs((prev) =>
-      prev.map((output) =>
-        output.id === activeDocumentId ? { ...output, content } : output
-      )
-    );
+  const handleDocumentChange = useCallback(
+    (content: string) => {
+      if (!activeDocumentId) return;
+      
+      // Update local state immediately
+      setOutputs((prev) =>
+        prev.map((output) =>
+          output.id === activeDocumentId ? { ...output, content } : output
+        )
+      );
 
-    // Clear existing autosave timeout
-    if (autosaveTimeout) {
-      clearTimeout(autosaveTimeout);
-    }
-
-    // Set new autosave timeout (debounce for 2 seconds)
-    const timeout = setTimeout(async () => {
-      if (!isAuthenticated || !activeDocumentId) {
-        // For guests, save locally - get current doc from state
-        setOutputs((currentOutputs) => {
-          const currentDoc = currentOutputs.find((o) => o.id === activeDocumentId);
-          if (currentDoc) {
-            persistLocalDocEntry({
-              id: activeDocumentId,
-              title: currentDoc.title,
-              createdAt: currentDoc.createdAt,
-              prompt: currentDoc.prompt,
-              content,
-              settings: currentDoc.settings,
-              writingStyle: currentDoc.writingStyle ?? null,
-              styleTitle: currentDoc.styleTitle ?? null,
-              starred: currentDoc.starred ?? false
-            });
-          }
-          return currentOutputs;
-        });
-        return;
+      // Clear existing autosave timeout
+      if (autosaveTimeout) {
+        clearTimeout(autosaveTimeout);
       }
 
-      // For authenticated users, save to database
-      try {
-        const response = await fetch(`/api/documents/${activeDocumentId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content })
-        });
+      // Set new autosave timeout (debounce for 2 seconds)
+      const timeout = setTimeout(async () => {
+        const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
+        if (!currentDoc) return;
 
-        if (!response.ok) {
-          console.error("Autosave failed:", await response.json().catch(() => null));
-        } else {
-          console.log("Document autosaved:", activeDocumentId);
+        const savedId = await persistDocumentToServer(currentDoc, content);
+        if (savedId && savedId !== activeDocumentId) {
+          setOutputs((prev) =>
+            prev.map((entry) =>
+              entry.id === activeDocumentId ? { ...entry, id: savedId } : entry
+            )
+          );
+          setActiveDocumentId(savedId);
         }
-      } catch (error) {
-        console.error("Autosave error:", error);
-      }
-    }, 2000); // 2 second debounce
+      }, 2000); // 2 second debounce
 
-    setAutosaveTimeout(timeout);
-  }, [activeDocumentId, isAuthenticated, autosaveTimeout]);
+      setAutosaveTimeout(timeout);
+    },
+    [activeDocumentId, autosaveTimeout, persistDocumentToServer]
+  );
 
   // Cleanup autosave timeout on unmount
   useEffect(() => {
@@ -1062,6 +1258,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               activeStyle={activeStyle}
               onClearStyle={handleClearStyle}
               hasSelection={!!selectedText}
+              selectedText={selectedText}
             />
           </div>
         </div>

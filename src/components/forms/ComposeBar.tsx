@@ -20,6 +20,7 @@ type ComposeBarProps = {
   } | null;
   onClearStyle?: () => void;
   hasSelection?: boolean;
+  selectedText?: string | null;
 };
 
 export default function ComposeBar({
@@ -33,7 +34,8 @@ export default function ComposeBar({
   hasCustomOptions = false,
   activeStyle = null,
   onClearStyle,
-  hasSelection = false
+  hasSelection = false,
+  selectedText = null
 }: ComposeBarProps) {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const sendButtonRef = useRef<HTMLButtonElement>(null);
@@ -104,9 +106,16 @@ export default function ComposeBar({
         </div>
       )}
       {hasSelection ? (
-        <p className="text-center text-xl font-semibold text-brand-blue">
-          How should I rewrite the selection?
-        </p>
+        <>
+          {selectedText && (
+            <p className="text-center text-sm text-brand-muted">
+              {selectedText.length} character{selectedText.length !== 1 ? 's' : ''} selected
+            </p>
+          )}
+          <p className="text-center text-xl font-semibold text-brand-blue">
+            How should I rewrite the selection?
+          </p>
+        </>
       ) : (
         <p className="text-center text-xl font-semibold text-white">
           What should I write?

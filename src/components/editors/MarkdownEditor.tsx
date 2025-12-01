@@ -37,11 +37,42 @@ export default function MarkdownEditor({
   const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
   const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0 });
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const isInternalUpdateRef = useRef(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const isUpdatingToolbarRef = useRef(false);
+  const toolbarSizeRef = useRef({ width: 360, height: 48 });
+  const persistentSelectionRef = useRef<{ from: number; to: number } | null>(null);
+  const lastSelectionRef = useRef<{ from: number; to: number } | null>(null);
+  const TOOLBAR_GAP_PX = 10;
+  const MAX_OVERLAY_SEGMENTS = 200;
+  const MAX_OVERLAY_HEIGHT_PX = 3200;
+  const shortcutCodeMap: Record<string, "copy" | "cut" | "paste" | "selectAll"> = {
+    KeyC: "copy",
+    KeyX: "cut",
+    KeyV: "paste",
+    KeyP: "paste",
+    KeyA: "selectAll"
+  };
+  const shortcutKeyMap: Record<string, "copy" | "cut" | "paste" | "selectAll"> = {
+    c: "copy",
+    x: "cut",
+    v: "paste",
+    p: "paste",
+    a: "selectAll"
+  };
   
   // Initialize markdown parser
   const md = useRef(new MarkdownIt({ html: true, breaks: true })).current;
+  const setPersistentSelectionState = useCallback(
+    (range: { from: number; to: number } | null) => {
+      setPersistentSelection(range);
+      persistentSelectionRef.current = range;
+    },
+    []
+  );
+  const updateLastSelectionRange = useCallback((range: { from: number; to: number }) => {
+    lastSelectionRef.current = range;
+  }, []);
 
   // Ensure we're on the client before initializing the editor
   useEffect(() => {
@@ -72,6 +103,9 @@ export default function MarkdownEditor({
     editable,
     immediatelyRender: false, // Prevent SSR hydration issues
     onUpdate: ({ editor }) => {
+      // Mark this as an internal update to prevent cursor reset
+      isInternalUpdateRef.current = true;
+      
       // Convert HTML to markdown for storage
       const html = editor.getHTML();
       
@@ -148,10 +182,11 @@ export default function MarkdownEditor({
         )
       },
       handleKeyDown: (view, event) => {
-        // CMD/CTRL + A, C, V, X are handled natively by TipTap and browser
-        // Don't interfere with these shortcuts - let them work as expected
+        // Allow all keyboard shortcuts to work natively
+        // TipTap handles CMD/CTRL+A, C, V, X by default
+        // Return false to let TipTap/browser handle the event
         return false;
-      }
+      },
     }
   });
 
@@ -161,6 +196,11 @@ export default function MarkdownEditor({
       onReady(editor);
     }
   }, [editor, onReady]);
+  useEffect(() => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    lastSelectionRef.current = { from, to };
+  }, [editor]);
 
   // Track if input is focused
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -344,21 +384,17 @@ export default function MarkdownEditor({
       const containerRect = editorContainerRef.current.getBoundingClientRect();
       
       // Position toolbar above the selection, centered horizontally
-      // Use the top of the first line of selection
       const selectionTop = startCoords.top;
       const selectionLeft = Math.min(startCoords.left, endCoords.left);
       const selectionRight = Math.max(startCoords.right, endCoords.right);
       const selectionCenter = (selectionLeft + selectionRight) / 2;
+      const selectionTopRelative = selectionTop - containerRect.top;
       
-      // Approximate toolbar width and height (will be adjusted after render)
-      const toolbarWidth = 400;
-      const toolbarHeight = 40; // Approximate height
+      const toolbarWidth = toolbarRef.current?.offsetWidth || toolbarSizeRef.current.width;
       const left = selectionCenter - containerRect.left - toolbarWidth / 2;
-      // Position toolbar 10px above the top line of the selection
-      // selectionTop is relative to viewport, so subtract container top to get relative position
-      const top = selectionTop - containerRect.top - toolbarHeight - 10;
+      const clampedLeft = Math.max(10, Math.min(left, containerRect.width - toolbarWidth - 10));
       
-      setToolbarPosition({ top: Math.max(10, top), left: Math.max(10, left) });
+      setToolbarPosition({ top: Math.max(0, selectionTopRelative), left: clampedLeft });
       setShowFormattingToolbar(true);
       
       // Reset flag after a short delay to allow state updates
@@ -415,18 +451,16 @@ export default function MarkdownEditor({
         const selectionLeft = Math.min(startCoords.left, endCoords.left);
         const selectionRight = Math.max(startCoords.right, endCoords.right);
         const selectionCenter = (selectionLeft + selectionRight) / 2;
+        const selectionTopRelative = selectionTop - containerRect.top;
         
-        const toolbarWidth = toolbarRef.current.offsetWidth || 400;
-        const toolbarHeight = toolbarRef.current.offsetHeight || 40;
-        const left = selectionCenter - containerRect.left - toolbarWidth / 2;
-        
-        // Position toolbar 10px above the top line of the selection
-        const top = selectionTop - containerRect.top - toolbarHeight - 10;
-        const finalTop = Math.max(10, top);
+        const measuredWidth = toolbarRef.current.offsetWidth || toolbarSizeRef.current.width;
+        const measuredHeight = toolbarRef.current.offsetHeight || toolbarSizeRef.current.height;
+        toolbarSizeRef.current = { width: measuredWidth, height: measuredHeight };
+        const left = selectionCenter - containerRect.left - measuredWidth / 2;
         
         setToolbarPosition({ 
-          top: finalTop, 
-          left: Math.max(10, Math.min(left, containerRect.width - toolbarWidth - 10)) 
+          top: Math.max(0, selectionTopRelative), 
+          left: Math.max(10, Math.min(left, containerRect.width - measuredWidth - 10)) 
         });
       } catch (error) {
         console.error("Error in refinePosition:", error);
@@ -447,6 +481,29 @@ export default function MarkdownEditor({
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, [showFormattingToolbar, editor]);
+
+  useEffect(() => {
+    if (!showFormattingToolbar || !toolbarRef.current) {
+      return;
+    }
+    if (typeof ResizeObserver === "undefined") {
+      toolbarSizeRef.current = {
+        width: toolbarRef.current.offsetWidth,
+        height: toolbarRef.current.offsetHeight
+      };
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      toolbarSizeRef.current = {
+        width: entry.contentRect.width,
+        height: entry.contentRect.height
+      };
+    });
+    observer.observe(toolbarRef.current);
+    return () => observer.disconnect();
+  }, [showFormattingToolbar]);
 
   // Handle selection changes and maintain persistent selection
   useEffect(() => {
@@ -472,22 +529,26 @@ export default function MarkdownEditor({
         
         if (selectionStart !== selectionEnd) {
           // Store persistent selection (always use normalized order)
-          setPersistentSelection({ from: selectionStart, to: selectionEnd });
+          const normalizedRange = { from: selectionStart, to: selectionEnd };
+          updateLastSelectionRange(normalizedRange);
+          setPersistentSelectionState(normalizedRange);
           const selectedText = editor.state.doc.textBetween(selectionStart, selectionEnd);
           onSelectionChange(selectedText);
-          // Debounce toolbar position update to prevent freezing
+          // Debounce toolbar position update to prevent freezing - increased delay
           setTimeout(() => {
             try {
               updateToolbarPosition();
             } catch (error) {
               console.error("Error updating toolbar position in handleMouseUp:", error);
             }
-          }, 10);
+          }, 100);
         } else {
+          // Always track the most recent caret position
+          updateLastSelectionRange({ from: selectionStart, to: selectionEnd });
           // Only clear if user explicitly cleared (clicked in editor without selecting)
           const editorElement = editor.view.dom;
           if (window.document.activeElement === editorElement) {
-            setPersistentSelection(null);
+            setPersistentSelectionState(null);
             onSelectionChange(null);
             setShowFormattingToolbar(false);
           }
@@ -505,17 +566,19 @@ export default function MarkdownEditor({
       
       if (selectionStart !== selectionEnd) {
         // Store persistent selection (always use normalized order)
-        setPersistentSelection({ from: selectionStart, to: selectionEnd });
+        const normalizedRange = { from: selectionStart, to: selectionEnd };
+        updateLastSelectionRange(normalizedRange);
+        setPersistentSelectionState(normalizedRange);
         const selectedText = editor.state.doc.textBetween(selectionStart, selectionEnd);
         onSelectionChange(selectedText);
-        // Debounce toolbar position update to prevent freezing
+        // Debounce toolbar position update to prevent freezing - increased delay
         setTimeout(() => {
           try {
             updateToolbarPosition();
           } catch (error) {
             console.error("Error updating toolbar position in handleSelectionUpdate:", error);
           }
-        }, 10);
+        }, 100);
       } else {
         // Only clear persistent selection if user clicked directly in editor
         // Don't clear if focus was lost due to clicking input field
@@ -525,8 +588,9 @@ export default function MarkdownEditor({
                                activeElement.closest('.compose-bar');
         
         // Only clear if editor has focus (user clicked in editor) and not if input is focused
+        updateLastSelectionRange({ from: selectionStart, to: selectionEnd });
         if (window.document.activeElement === editorElement && !isInputFocused) {
-          setPersistentSelection(null);
+          setPersistentSelectionState(null);
           onSelectionChange(null);
           setShowFormattingToolbar(false);
         }
@@ -540,10 +604,82 @@ export default function MarkdownEditor({
       // We'll use CSS to keep it styled
     };
     
-    const handleClickInEditor = (e: MouseEvent) => {
-      // If user clicks in editor, allow normal selection behavior
-      // This will update persistentSelection through handleSelectionUpdate
+    // Add global keyboard shortcut handler so editor commands work even when focus moves elsewhere
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) {
+        return;
+      }
+      const action =
+        shortcutCodeMap[e.code as keyof typeof shortcutCodeMap] ||
+        shortcutKeyMap[e.key.toLowerCase() as keyof typeof shortcutKeyMap];
+      if (!action) {
+        return;
+      }
+
+      const persistentRange = persistentSelectionRef.current;
+      const lastRange = lastSelectionRef.current;
+
+      if ((action === "copy" || action === "cut") && !persistentRange) {
+        return;
+      }
+      if (action === "paste" && !lastRange) {
+        return;
+      }
+
+      const target = e.target as HTMLElement | null;
+      if (target && editor.view.dom.contains(target)) {
+        return;
+      }
+
+      const isTextInput =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        Boolean(target?.isContentEditable);
+
+      let hasActiveInputSelection = false;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        if (typeof target.selectionStart === "number" && typeof target.selectionEnd === "number") {
+          hasActiveInputSelection = target.selectionStart !== target.selectionEnd;
+        }
+      } else if (isTextInput && target) {
+        const selection = window.getSelection();
+        hasActiveInputSelection = Boolean(selection && selection.toString().length && target.contains(selection.anchorNode));
+      }
+
+      if (isTextInput) {
+        if (hasActiveInputSelection && action !== "paste") {
+          return;
+        }
+        if (action === "paste" && !persistentRange) {
+          return;
+        }
+      }
+
+      const ensureEditorFocus = () => {
+        if (!editor.isFocused) {
+          editor.commands.focus();
+        }
+      };
+
+      if (action === "selectAll") {
+        ensureEditorFocus();
+        return;
+      }
+
+      ensureEditorFocus();
+
+      if ((action === "copy" || action === "cut") && persistentRange) {
+        editor.commands.setTextSelection(persistentRange);
+      } else if (action === "paste") {
+        const rangeToRestore = persistentRange || lastRange;
+        if (rangeToRestore) {
+          editor.commands.setTextSelection(rangeToRestore);
+        }
+      }
+      // Let the browser perform the actual clipboard operation after we've restored focus/selection
     };
+    
+    window.document.addEventListener('keydown', handleGlobalKeyDown, true);
 
     editor.on("selectionUpdate", handleSelectionUpdate);
     const editorElement = editor.view.dom;
@@ -580,6 +716,7 @@ export default function MarkdownEditor({
       editorElement.removeEventListener("mousedown", handleMouseDown);
       editorElement.removeEventListener("mouseup", handleMouseUp);
       editorElement.removeEventListener("blur", handleBlur);
+      window.document.removeEventListener('keydown', handleGlobalKeyDown);
       if (scrollContainer) {
         scrollContainer.removeEventListener('scroll', handleScroll);
       }
@@ -610,11 +747,18 @@ export default function MarkdownEditor({
         // Get editor container for relative positioning
         const editorElement = editor.view.dom;
         const editorContainer = editorElement.closest('.overflow-auto') || editorElement.parentElement;
-        const containerRect = editorContainer?.getBoundingClientRect() || { left: 0, top: 0 };
+        const containerRect = editorContainer?.getBoundingClientRect() || { left: 0, top: 0, height: 0 };
 
         // Get coordinates for start and end of selection
         const startCoords = editor.view.coordsAtPos(from);
         const endCoords = editor.view.coordsAtPos(to);
+
+        const selectionHeight = Math.abs((endCoords.bottom ?? endCoords.top) - startCoords.top);
+        const lineHeightBase = Math.max((startCoords.bottom ?? startCoords.top) - startCoords.top, 1);
+        const estimatedSegments = Math.ceil(selectionHeight / lineHeightBase);
+        if (selectionHeight > MAX_OVERLAY_HEIGHT_PX || estimatedSegments > MAX_OVERLAY_SEGMENTS) {
+          return;
+        }
 
         // Handle single-line selection
         if (Math.abs(startCoords.top - endCoords.top) < 5) {
@@ -653,6 +797,7 @@ export default function MarkdownEditor({
           const containerLeft = containerRect.left;
           const containerTop = containerRect.top;
           const containerWidth = editorRect.width;
+          const lineHeight = lineHeightBase;
           
           // Create overlay for first line (from start to end of line)
           const firstRelativeLeft = startCoords.left - containerLeft;
@@ -678,7 +823,6 @@ export default function MarkdownEditor({
           
           // Create overlays for middle lines (full width)
           let currentTop = startCoords.bottom;
-          const lineHeight = startCoords.bottom - startCoords.top;
           
           while (currentTop + lineHeight < endCoords.top) {
             const relativeTop = currentTop - containerTop;
@@ -771,6 +915,12 @@ export default function MarkdownEditor({
   useEffect(() => {
     if (!editor) return;
     
+    // Skip if this update came from the editor itself (user typing)
+    if (isInternalUpdateRef.current) {
+      isInternalUpdateRef.current = false;
+      return;
+    }
+    
     // Convert markdown to HTML for TipTap
     const html = md.render(content || '');
     
@@ -779,7 +929,18 @@ export default function MarkdownEditor({
     
     // Only update if content actually changed (avoid infinite loops)
     if (html !== currentHtml && content !== '') {
+      // Preserve cursor position when syncing from parent
+      const { from } = editor.state.selection;
       editor.commands.setContent(html, false); // false = don't emit update event
+      // Restore cursor position after content update
+      try {
+        const docSize = editor.state.doc.content.size;
+        const newPos = Math.min(from, docSize);
+        editor.commands.setTextSelection(newPos);
+      } catch (error) {
+        // If cursor position is invalid, just set to end
+        console.error("Error restoring cursor position:", error);
+      }
     } else if (content === '' && currentHtml !== '<p></p>') {
       editor.commands.setContent('', false);
     }
@@ -805,12 +966,29 @@ export default function MarkdownEditor({
       (editor as any).insertText = (text: string) => {
         editor.commands.insertContent(text);
       };
-      (editor as any).replaceSelection = (text: string) => {
-        const { from, to } = editor.state.selection;
+      (editor as any).replaceSelection = (text: string, selectionRange?: { from: number; to: number }) => {
+        // Use provided range if available, otherwise use current selection
+        const range = selectionRange || editor.state.selection;
+        const { from, to } = range;
+        
+        // Always set selection to the exact range first (this ensures we're replacing the right text)
+        editor.commands.setTextSelection({ from, to });
+        
+        // Delete the exact selection range if there's a selection
         if (from !== to) {
-          editor.commands.deleteRange({ from, to });
+          editor.commands.deleteSelection();
         }
-        editor.commands.insertContent(text);
+        
+        // Insert the new content at the current cursor position (which is now at 'from' after deletion)
+        editor.commands.insertContent(text, {
+          parseOptions: {
+            preserveWhitespace: 'full'
+          }
+        });
+      };
+      (editor as any).getSelectionRange = () => {
+        const { from, to } = editor.state.selection;
+        return { from, to };
       };
       (editor as any).getSelectedText = () => {
         const { from, to } = editor.state.selection;
@@ -821,15 +999,24 @@ export default function MarkdownEditor({
 
   // Formatting button handlers
   const handleFormat = useCallback((command: () => boolean) => {
-    if (!editor) return;
-    // Ensure editor has focus before applying formatting
-    editor.commands.focus();
-    const result = command();
-    // Keep selection after formatting
-    setTimeout(() => {
-      updateToolbarPosition();
-    }, 10);
-    return result;
+    if (!editor) return false;
+    try {
+      // Ensure editor has focus before applying formatting
+      editor.commands.focus();
+      const result = command();
+      // Keep selection after formatting - debounced to prevent freezing
+      setTimeout(() => {
+        try {
+          updateToolbarPosition();
+        } catch (error) {
+          console.error("Error updating toolbar after format:", error);
+        }
+      }, 50);
+      return result;
+    } catch (error) {
+      console.error("Error in handleFormat:", error);
+      return false;
+    }
   }, [editor, updateToolbarPosition]);
 
   // Don't render editor until mounted on client
@@ -853,6 +1040,7 @@ export default function MarkdownEditor({
           style={{
             top: `${toolbarPosition.top}px`,
             left: `${toolbarPosition.left}px`,
+            transform: `translateY(calc(-100% - ${TOOLBAR_GAP_PX}px))`,
           }}
         >
           {/* Bold */}
@@ -889,9 +1077,25 @@ export default function MarkdownEditor({
             <button
               key={level}
               type="button"
-              onClick={() => {
-                editor.chain().focus().setHeading({ level: level as 1 | 2 | 3 }).run();
-                updateToolbarPosition();
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const isActive = editor.isActive('heading', { level: level as 1 | 2 | 3 });
+                if (isActive) {
+                  // If already this heading level, toggle it off (convert to paragraph)
+                  editor.chain().focus().setParagraph().run();
+                } else {
+                  // Set to this heading level
+                  editor.chain().focus().setHeading({ level: level as 1 | 2 | 3 }).run();
+                }
+                // Update toolbar position after a delay
+                setTimeout(() => {
+                  try {
+                    updateToolbarPosition();
+                  } catch (error) {
+                    console.error("Error updating toolbar after heading change:", error);
+                  }
+                }, 50);
               }}
               className={cn(
                 "rounded-full px-2 py-1 text-xs font-semibold transition hover:bg-brand-blue/20",
@@ -911,9 +1115,22 @@ export default function MarkdownEditor({
           {/* Bullet List */}
           <button
             type="button"
-            onClick={() => {
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              // If ordered list is active, toggle it off first
+              if (editor.isActive('orderedList')) {
+                editor.chain().focus().toggleOrderedList().run();
+              }
+              // Then toggle bullet list
               editor.chain().focus().toggleBulletList().run();
-              updateToolbarPosition();
+              setTimeout(() => {
+                try {
+                  updateToolbarPosition();
+                } catch (error) {
+                  console.error("Error updating toolbar after bullet list:", error);
+                }
+              }, 50);
             }}
             className={cn(
               "rounded-full p-2 transition hover:bg-brand-blue/20",
@@ -927,9 +1144,22 @@ export default function MarkdownEditor({
           {/* Ordered List */}
           <button
             type="button"
-            onClick={() => {
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              // If bullet list is active, toggle it off first
+              if (editor.isActive('bulletList')) {
+                editor.chain().focus().toggleBulletList().run();
+              }
+              // Then toggle ordered list
               editor.chain().focus().toggleOrderedList().run();
-              updateToolbarPosition();
+              setTimeout(() => {
+                try {
+                  updateToolbarPosition();
+                } catch (error) {
+                  console.error("Error updating toolbar after ordered list:", error);
+                }
+              }, 50);
             }}
             className={cn(
               "rounded-full px-2 py-1 text-xs font-semibold transition hover:bg-brand-blue/20",

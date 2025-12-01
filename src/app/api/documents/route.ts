@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { documentSchema } from "@/lib/validators";
+import { deriveTitleFromContent } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -55,17 +56,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Validate required fields for style documents
-    if (!parsed.data.title || !parsed.data.content) {
-      return NextResponse.json(
-        { error: "Title and content are required." },
-        { status: 400 }
-      );
-    }
+    const autoTitle = parsed.data.styleTitle
+      ? parsed.data.title
+      : deriveTitleFromContent(parsed.data.content, parsed.data.title);
 
     const doc = await db.document.create({
       data: {
-        title: parsed.data.title,
+        title: autoTitle,
         content: parsed.data.content,
         tone: parsed.data.tone ?? undefined,
         prompt: parsed.data.prompt ?? undefined,
