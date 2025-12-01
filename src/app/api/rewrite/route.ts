@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import { auth } from "@/auth";
 import { z } from "zod";
+import { getOpenAIClient } from "@/lib/openai";
 
 const rewriteRequestSchema = z.object({
   selectedText: z.string().min(1),
@@ -32,11 +32,13 @@ export async function POST(request: Request) {
 
   const { selectedText, instruction, context, brandSummary, styleGuide } = parsed.data;
 
-  if (!process.env.OPENAI_API_KEY) {
+  let openai;
+  try {
+    openai = getOpenAIClient();
+  } catch (error) {
+    console.error("rewrite openai init failed", error);
     return NextResponse.json({ error: "OPENAI_API_KEY missing" }, { status: 500 });
   }
-
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   // Build the rewrite prompt
   const contextSection = context ? `\n\nContext (surrounding text):\n${context}` : "";

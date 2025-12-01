@@ -8,6 +8,9 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      zIndex: {
+        '45': '45',
+      },
       colors: {
         brand: {
           background: "#000000",

@@ -8,39 +8,40 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?
-  marketTier    MarketTier @default(MASS)
-  brandInfo     String?   @db.Text
-  documents     Document[]
-  accounts      Account[]
-  sessions      Session[]
-  tokenUsage    TokenUsage?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id                String              @id @default(cuid())
+  name              String?
+  email             String?             @unique
+  emailVerified     DateTime?
+  image             String?
+  password          String?
+  marketTier        MarketTier          @default(MASS)
+  brandName         String?             @db.VarChar(100)
+  brandInfo         String?             @db.VarChar(400)
+  documents         Document[]
+  accounts          Account[]
+  sessions          Session[]
+  tokenUsage        TokenUsage?
+  brandKeyMessaging BrandKeyMessaging[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 }
 
 model Document {
-  id          String   @id @default(cuid())
-  title       String
-  content     String   @db.LongText
-  tone        String?
-  prompt      String?  @db.Text
+  id              String   @id @default(cuid())
+  title           String   @db.VarChar(255)
+  content         String   @db.LongText
+  tone            String?
+  prompt          String?  @db.Text
   characterLength Int?
-  wordLength  Int?
-  gradeLevel  String?
-  benchmark   String?
-  avoidWords  String?
-  writingStyle String? @db.Text
-  styleTitle  String?
-  starred     Boolean  @default(false)
-  owner       User     @relation(fields: [ownerId], references: [id])
-  ownerId     String
-  createdAt   DateTime @default(now())
+  wordLength      Int?
+  gradeLevel      String?
+  benchmark       String?
+  avoidWords      String?
+  writingStyle    String?  @db.Text
+  styleTitle      String?  @db.VarChar(100)
+  owner           User     @relation(fields: [ownerId], references: [id])
+  ownerId         String
+  createdAt       DateTime @default(now())
 }
 
 model Account {
@@ -87,10 +88,20 @@ model TokenUsage {
   user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model BrandKeyMessaging {
+  id        String   @id @default(cuid())
+  text      String   @db.VarChar(500)
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+}
+
 enum MarketTier {
   MASS
   PREMIUM
   LUXURY
   UHNW
 }
-

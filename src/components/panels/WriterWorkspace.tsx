@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { SignOutButton } from "../shared/SignOutButton";
-import OutputPanel from "./OutputPanel";
 import DocumentEditor from "../editors/DocumentEditor";
 import ComposeBar from "../forms/ComposeBar";
 import SettingsSheet from "../modals/SettingsSheet";
@@ -28,10 +27,9 @@ type SavedDoc = {
   settings: ComposerSettingsInput;
   writingStyle?: string | null;
   styleTitle?: string | null;
-  starred?: boolean;
 };
 
-type SidebarTab = "docs" | "starred" | "styles" | "brands";
+type SidebarTab = "docs" | "styles" | "brands";
 
 type ActiveStyle = {
   id: string;
@@ -242,6 +240,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [guestLimitReached, setGuestLimitReached] = useState(false);
   const [hasBrand, setHasBrand] = useState(false);
   const [brandSummary, setBrandSummary] = useState<string | null>(null);
+  const [brandKeyMessaging, setBrandKeyMessaging] = useState<Array<{ id: string; text: string; createdAt: string }>>([]);
   const [savedDocs, setSavedDocs] = useState<SavedDoc[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("docs");
@@ -250,6 +249,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [autosaveTimeout, setAutosaveTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [titleAutosaveTimeout, setTitleAutosaveTimeout] = useState<NodeJS.Timeout | null>(null);
   const editorRef = useRef<any>(null); // Reference to the TipTap editor instance
   const outputsRef = useRef<WriterOutput[]>(outputs);
   const composeInputRef = useRef<HTMLTextAreaElement>(null);
@@ -293,8 +293,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           avoidWords: doc.avoidWords ?? null
         }),
         writingStyle: doc.writingStyle ?? null,
-        styleTitle: doc.styleTitle ?? null,
-        starred: doc.starred ?? false
+        styleTitle: doc.styleTitle ?? null
       }));
       mapped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       console.log("[fetchSavedDocs] mapped documents:", mapped.length);
@@ -371,6 +370,55 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     }
     checkBrand();
   }, []);
+
+  // Fetch brand key messaging items
+  const fetchBrandKeyMessaging = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const response = await fetch("/api/brand/key-messaging");
+      if (response.ok) {
+        const data = await response.json();
+        setBrandKeyMessaging(data.items || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch brand key messaging items", error);
+    }
+  }, [isAuthenticated]);
+
+  // Fetch key messaging items on mount and when brands tab is opened
+  useEffect(() => {
+    if (isAuthenticated && sidebarTab === "brands") {
+      fetchBrandKeyMessaging();
+    }
+  }, [isAuthenticated, sidebarTab, fetchBrandKeyMessaging]);
+
+  // Listen for new items being added
+  useEffect(() => {
+    const handleBrandKeyMessagingAdded = () => {
+      fetchBrandKeyMessaging();
+    };
+    window.addEventListener("brand-key-messaging-added", handleBrandKeyMessagingAdded);
+    return () => {
+      window.removeEventListener("brand-key-messaging-added", handleBrandKeyMessagingAdded);
+    };
+  }, [fetchBrandKeyMessaging]);
+
+  // Handle removing a key messaging item
+  const handleRemoveKeyMessaging = useCallback(async (id: string) => {
+    if (!isAuthenticated) return;
+    try {
+      const response = await fetch(`/api/brand/key-messaging?id=${id}`, {
+        method: "DELETE"
+      });
+      if (response.ok) {
+        await fetchBrandKeyMessaging();
+      } else {
+        console.error("Failed to remove key messaging item");
+      }
+    } catch (error) {
+      console.error("Error removing key messaging item", error);
+    }
+  }, [isAuthenticated, fetchBrandKeyMessaging]);
 
   useEffect(() => {
     fetchSavedDocs();
@@ -752,58 +800,18 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     });
   }, []);
 
-  const { docDocuments, starredDocuments, styleDocuments } = useMemo(() => {
+  const { docDocuments, styleDocuments } = useMemo(() => {
     const docs: SavedDoc[] = [];
-    const starred: SavedDoc[] = [];
     const styles: SavedDoc[] = [];
     savedDocs.forEach((doc) => {
-      if (doc.starred) {
-        starred.push(doc);
-      }
       if (isStyleDocument(doc)) {
         styles.push(doc);
       } else {
         docs.push(doc);
       }
     });
-    return { docDocuments: docs, starredDocuments: starred, styleDocuments: styles };
+    return { docDocuments: docs, styleDocuments: styles };
   }, [savedDocs]);
-
-  async function handleStar(output: WriterOutput, starred: boolean) {
-    if (!isAuthenticated || !output.id || output.id.startsWith("temp-")) {
-      // For local/guest, just update the output state
-      setOutputs((prev) =>
-        prev.map((entry) => (entry.id === output.id ? { ...entry, starred } : entry))
-      );
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/documents/${output.id}/star`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ starred })
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        console.warn("star failed", response.status, payload);
-        setToast(formatErrorMessage(payload?.error, "Unable to update star status."));
-        return;
-      }
-
-      // Update the output state
-      setOutputs((prev) =>
-        prev.map((entry) => (entry.id === output.id ? { ...entry, starred } : entry))
-      );
-
-      // Refresh docs to get updated starred status
-      fetchSavedDocs();
-    } catch (error) {
-      console.error("star network failure", error);
-      setToast("Unable to update star status. Please try again.");
-    }
-  }
 
   function handleApplyStyle(styleDoc: SavedDoc) {
     const description = fallbackStyleDescription(styleDoc.writingStyle ?? null, styleDoc.content);
@@ -842,14 +850,117 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       return null;
     }
     try {
-      const { state } = editor;
+      const { state, view } = editor;
       const { from, to } = state.selection;
       const docSize = state.doc.content.size;
       const beforeStart = Math.max(0, from - EDITOR_CONTEXT_WINDOW);
       const afterEnd = Math.min(docSize, to + EDITOR_CONTEXT_WINDOW);
-      const before = state.doc.textBetween(beforeStart, from, "\n").trim();
-      const after = state.doc.textBetween(to, afterEnd, "\n").trim();
-      const selectionText = from !== to ? state.doc.textBetween(from, to, "\n").trim() : "";
+      
+      // Helper function to convert HTML to markdown
+      const htmlToMarkdown = (html: string): string => {
+        if (!html) return '';
+        const tempDiv = window.document.createElement('div');
+        tempDiv.innerHTML = html;
+        
+        function convertNode(node: Node): string {
+          if (node.nodeType === Node.TEXT_NODE) {
+            return node.textContent || '';
+          }
+          
+          if (node.nodeType !== Node.ELEMENT_NODE) {
+            return '';
+          }
+          
+          const el = node as HTMLElement;
+          const tagName = el.tagName.toLowerCase();
+          const children = Array.from(el.childNodes).map(convertNode).join('');
+          
+          switch (tagName) {
+            case 'h1': return `# ${children}\n\n`;
+            case 'h2': return `## ${children}\n\n`;
+            case 'h3': return `### ${children}\n\n`;
+            case 'h4': return `#### ${children}\n\n`;
+            case 'h5': return `##### ${children}\n\n`;
+            case 'h6': return `###### ${children}\n\n`;
+            case 'p': return `${children}\n\n`;
+            case 'strong':
+            case 'b': return `**${children}**`;
+            case 'em':
+            case 'i': return `*${children}*`;
+            case 'code': return `\`${children}\``;
+            case 'pre': return `\`\`\`\n${children}\n\`\`\`\n\n`;
+            case 'ul': return `${children}\n`;
+            case 'ol': return `${children}\n`;
+            case 'li': return `- ${children}\n`;
+            case 'br': return '\n';
+            case 'blockquote': return `> ${children}\n\n`;
+            default: return children;
+          }
+        }
+        
+        return Array.from(tempDiv.childNodes)
+          .map(convertNode)
+          .join('')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+      };
+      
+      // Get slices for each range
+      const beforeSlice = state.doc.slice(beforeStart, from);
+      const afterSlice = state.doc.slice(to, afterEnd);
+      const selectionSlice = from !== to ? state.doc.slice(from, to) : null;
+      
+      // Use ProseMirror's DOMSerializer to serialize slices to HTML
+      let beforeHtml = '';
+      let afterHtml = '';
+      let selectionHtml = '';
+      
+      try {
+        // Access DOMSerializer from ProseMirror (available via TipTap)
+        // @ts-ignore - DOMSerializer is available on the schema
+        const serializer = view.state.schema.cached.domSerializer || (() => {
+          // Create serializer if not cached
+          const { DOMSerializer } = require('@tiptap/pm/model');
+          return DOMSerializer.fromSchema(state.schema);
+        })();
+        
+        if (beforeSlice && beforeSlice.content.size > 0) {
+          const fragment = serializer.serializeFragment(beforeSlice.content, { document: window.document });
+          beforeHtml = Array.from(fragment.childNodes)
+            .map((node: any) => node.outerHTML || node.textContent || '')
+            .join('');
+        }
+        
+        if (afterSlice && afterSlice.content.size > 0) {
+          const fragment = serializer.serializeFragment(afterSlice.content, { document: window.document });
+          afterHtml = Array.from(fragment.childNodes)
+            .map((node: any) => node.outerHTML || node.textContent || '')
+            .join('');
+        }
+        
+        if (selectionSlice && selectionSlice.content.size > 0) {
+          const fragment = serializer.serializeFragment(selectionSlice.content, { document: window.document });
+          selectionHtml = Array.from(fragment.childNodes)
+            .map((node: any) => node.outerHTML || node.textContent || '')
+            .join('');
+        }
+      } catch (serializeError) {
+        // Fallback to plain text if serialization fails
+        console.warn("Failed to serialize to HTML, using plain text", serializeError);
+        const before = state.doc.textBetween(beforeStart, from, "\n").trim();
+        const after = state.doc.textBetween(to, afterEnd, "\n").trim();
+        const selectionText = from !== to ? state.doc.textBetween(from, to, "\n").trim() : "";
+        return {
+          before: before || undefined,
+          after: after || undefined,
+          selection: selectionText || undefined
+        };
+      }
+      
+      // Convert HTML to markdown
+      const before = beforeHtml ? htmlToMarkdown(beforeHtml).trim() : '';
+      const after = afterHtml ? htmlToMarkdown(afterHtml).trim() : '';
+      const selectionText = selectionHtml ? htmlToMarkdown(selectionHtml).trim() : "";
 
       const payload = {
         before: before || undefined,
@@ -863,7 +974,24 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       return payload;
     } catch (error) {
       console.error("collectEditorContext failed", error);
-      return null;
+      // Fallback to plain text on error
+      try {
+        const { state } = editor;
+        const { from, to } = state.selection;
+        const docSize = state.doc.content.size;
+        const beforeStart = Math.max(0, from - EDITOR_CONTEXT_WINDOW);
+        const afterEnd = Math.min(docSize, to + EDITOR_CONTEXT_WINDOW);
+        const before = state.doc.textBetween(beforeStart, from, "\n").trim();
+        const after = state.doc.textBetween(to, afterEnd, "\n").trim();
+        const selectionText = from !== to ? state.doc.textBetween(from, to, "\n").trim() : "";
+        return {
+          before: before || undefined,
+          after: after || undefined,
+          selection: selectionText || undefined
+        };
+      } catch (fallbackError) {
+        return null;
+      }
     }
   }, []);
 
@@ -881,8 +1009,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       benchmark: settingsPayload.benchmark ?? null,
       avoidWords: settingsPayload.avoidWords ?? null,
       writingStyle: doc.writingStyle ?? null,
-      styleTitle: doc.styleTitle ?? null,
-      starred: doc.starred ?? false
+      styleTitle: doc.styleTitle ?? null
     };
   }, [resolveDocumentTitle]);
 
@@ -899,8 +1026,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           content: contentValue,
           settings: doc.settings,
           writingStyle: doc.writingStyle ?? null,
-          styleTitle: doc.styleTitle ?? null,
-          starred: doc.starred ?? false
+          styleTitle: doc.styleTitle ?? null
         });
         return doc.id;
       }
@@ -938,8 +1064,28 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         });
 
         if (!createResponse.ok) {
-          const errorPayload = await createResponse.json().catch(() => null);
-          console.error("Document creation failed:", createResponse.status, errorPayload);
+          let errorPayload: any = {};
+          let errorText: string = "";
+          try {
+            errorPayload = await createResponse.json();
+          } catch (e) {
+            // If JSON parsing fails, try to get text
+            try {
+              errorText = await createResponse.text();
+            } catch (textError) {
+              errorText = "Unable to read error response";
+            }
+          }
+          console.error("Document creation failed:", {
+            status: createResponse.status,
+            statusText: createResponse.statusText,
+            error: errorPayload,
+            errorText: errorText || undefined,
+            payloadSize: JSON.stringify(payload).length,
+            title: payload.title,
+            contentLength: payload.content?.length,
+            payloadKeys: Object.keys(payload)
+          });
           return null;
         }
 
@@ -1027,8 +1173,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       settings: normalizeSettings(defaultSettings),
       prompt: "",
       writingStyle: null,
-      styleTitle: null,
-      starred: false
+      styleTitle: null
     });
 
     if (isAuthenticated) {
@@ -1075,9 +1220,87 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     }
   }, [outputs, activeDocumentId]);
 
+  // Handle document title changes with autosave
+  const handleTitleChange = useCallback(
+    (title: string) => {
+      if (!activeDocumentId) return;
+      
+      // Update local state immediately
+      setOutputs((prev) =>
+        prev.map((output) =>
+          output.id === activeDocumentId ? { ...output, title } : output
+        )
+      );
+
+      // Clear existing title autosave timeout
+      if (titleAutosaveTimeout) {
+        clearTimeout(titleAutosaveTimeout);
+      }
+
+      // Set new autosave timeout (debounce for 2 seconds)
+      const timeout = setTimeout(async () => {
+        const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
+        if (!currentDoc) return;
+
+        try {
+          const patchResponse = await fetch(`/api/documents/${activeDocumentId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title })
+          });
+
+          if (patchResponse.ok) {
+            // Title saved successfully
+            return;
+          }
+
+          if (patchResponse.status !== 404) {
+            const errorPayload = await patchResponse.json().catch(() => null);
+            console.error("Title autosave failed:", patchResponse.status, errorPayload);
+          }
+        } catch (error) {
+          console.error("Title autosave error:", error);
+        }
+      }, 2000); // 2 second debounce
+
+      setTitleAutosaveTimeout(timeout);
+    },
+    [activeDocumentId, titleAutosaveTimeout]
+  );
+
   // Handle document content changes with autosave
   const handleDocumentChange = useCallback(
-    (content: string) => {
+    async (content: string) => {
+      // If no active document but there's content, create one automatically
+      if (!activeDocumentId && content.trim()) {
+        const newDoc: WriterOutput = ensurePlaceholderState({
+          id: crypto.randomUUID(),
+          title: "Untitled doc",
+          content: content.trim(),
+          createdAt: new Date().toISOString(),
+          settings: normalizeSettings(defaultSettings),
+          prompt: "",
+          writingStyle: null,
+          styleTitle: null
+        });
+        
+        // Add to outputs and set as active
+        setOutputs([newDoc]);
+        setActiveDocumentId(newDoc.id);
+        
+        // Immediately save to server (no debounce for initial creation)
+        const savedId = await persistDocumentToServer(newDoc, content.trim());
+        if (savedId && savedId !== newDoc.id) {
+          setOutputs((prev) =>
+            prev.map((entry) =>
+              entry.id === newDoc.id ? { ...entry, id: savedId } : entry
+            )
+          );
+          setActiveDocumentId(savedId);
+        }
+        return;
+      }
+      
       if (!activeDocumentId) return;
       
       // Update local state immediately
@@ -1110,17 +1333,20 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
 
       setAutosaveTimeout(timeout);
     },
-    [activeDocumentId, autosaveTimeout, persistDocumentToServer]
+    [activeDocumentId, autosaveTimeout, persistDocumentToServer, isAuthenticated]
   );
 
-  // Cleanup autosave timeout on unmount
+  // Cleanup autosave timeouts on unmount
   useEffect(() => {
     return () => {
       if (autosaveTimeout) {
         clearTimeout(autosaveTimeout);
       }
+      if (titleAutosaveTimeout) {
+        clearTimeout(titleAutosaveTimeout);
+      }
     };
-  }, [autosaveTimeout]);
+  }, [autosaveTimeout, titleAutosaveTimeout]);
 
   // Handle selection changes from editor
   const handleSelectionChange = useCallback((text: string | null) => {
@@ -1196,6 +1422,47 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     return activeDocumentId ? outputs.find((o) => o.id === activeDocumentId) ?? null : null;
   }, [activeDocumentId, outputs]);
 
+  const documentHorizontalPadding = useMemo(() => {
+    const basePadding = 180;
+    const desktopSidebarOffsetActive = sidebarOpen && isAuthenticated && isDesktop;
+    if (!desktopSidebarOffsetActive) {
+      return { left: basePadding, right: basePadding };
+    }
+    // Sidebar is 320px wide (lg:w-80), content is pushed 320px (lg:ml-[320px])
+    // To have equal visible margins (180px on both sides):
+    // - Right margin: 180px (basePadding)
+    // - Left visible margin: from viewport edge to document content = 180px
+    // - Content starts at 320px from left, so we need 180px left padding
+    // - This creates: 320px (sidebar) + 180px (padding) = 500px from left edge
+    // - But wait, the visible margin is just the padding (180px), which matches right side
+    return {
+      left: basePadding,
+      right: basePadding
+    };
+  }, [sidebarOpen, isAuthenticated, isDesktop]);
+
+    // Listen for sidebar toggle event from header
+    useEffect(() => {
+      const handleToggleSidebar = () => {
+        setSidebarOpen((prev) => {
+          const newState = !prev;
+          // Dispatch state change event for header icon update
+          window.dispatchEvent(new CustomEvent("sidebar-state-change", { detail: { open: newState } }));
+          return newState;
+        });
+      };
+      window.addEventListener("toggle-sidebar", handleToggleSidebar);
+      return () => window.removeEventListener("toggle-sidebar", handleToggleSidebar);
+    }, []);
+    
+    // Dispatch initial sidebar state (use setTimeout to avoid render-time updates)
+    useEffect(() => {
+      const timeoutId = setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("sidebar-state-change", { detail: { open: sidebarOpen } }));
+      }, 0);
+      return () => clearTimeout(timeoutId);
+    }, [sidebarOpen]);
+
     return (
     <div className="flex min-h-screen bg-brand-background text-brand-text">
       {sidebarOpen && !isDesktop && (
@@ -1211,10 +1478,11 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               open={sidebarOpen}
           activeTab={sidebarTab}
           docs={docDocuments}
-          starred={starredDocuments}
           styles={styleDocuments}
           brandSummary={brandSummary}
           hasBrand={hasBrand}
+          brandKeyMessaging={brandKeyMessaging}
+          onRemoveKeyMessaging={handleRemoveKeyMessaging}
           userName={user.name}
           topOffset={88}
           bottomOffset={hasOutputs ? 140 : 32}
@@ -1227,28 +1495,31 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           onTabChange={(tab) => setSidebarTab(tab)}
         />
       )}
-      <div className="flex min-h-screen flex-1 flex-col pb-32">
+      <div className={cn("flex min-h-screen flex-1 flex-col pb-[350px] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop ? "lg:ml-[320px]" : "")}>
         <div className="flex-1 px-4 py-8 sm:px-6">
           <div className="mx-auto w-full max-w-5xl">
             {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
             <DocumentEditor
               document={activeDocument}
               onDocumentChange={handleDocumentChange}
+              onTitleChange={handleTitleChange}
               onSelectionChange={handleSelectionChange}
               onEditorReady={handleEditorReady}
               loading={loading && activeDocument?.isPending}
               brandSummary={brandSummary}
               styleGuide={activeStyle ? { name: activeStyle.name, description: activeStyle.description } : null}
+              horizontalPadding={documentHorizontalPadding}
             />
           </div>
         </div>
-        <div className="px-4 pb-10 sm:px-6">
-          <div className="mx-auto w-full max-w-5xl">
+        <div className="fixed bottom-[10px] left-0 right-0 px-[180px] pointer-events-none z-45">
+          <div className="mx-auto max-w-[680px] pointer-events-auto">
             <ComposeBar
               value={composeValue}
               onChange={setComposeValue}
               onSubmit={handleSubmit}
               disabled={loading || (guestLimitEnabled && isGuest && guestLimitReached)}
+              loading={loading}
               onToggleSettings={(anchorRect) => {
                 setSheetAnchor(anchorRect);
                 setSheetOpen((prev) => !prev);
@@ -1323,10 +1594,11 @@ type WorkspaceSidebarProps = {
   open: boolean;
   activeTab: SidebarTab;
   docs: SavedDoc[];
-  starred: SavedDoc[];
   styles: SavedDoc[];
   brandSummary: string | null;
   hasBrand: boolean;
+  brandKeyMessaging: Array<{ id: string; text: string; createdAt: string }>;
+  onRemoveKeyMessaging: (id: string) => void;
   userName: string;
   topOffset: number;
   bottomOffset: number;
@@ -1343,10 +1615,11 @@ function WorkspaceSidebar({
   open,
   activeTab,
   docs,
-  starred,
   styles,
   brandSummary,
   hasBrand,
+  brandKeyMessaging,
+  onRemoveKeyMessaging,
   userName,
   topOffset,
   bottomOffset,
@@ -1360,10 +1633,14 @@ function WorkspaceSidebar({
 }: WorkspaceSidebarProps) {
   const tabs: { id: SidebarTab; label: string; icon: string }[] = [
     { id: "docs", label: "Docs", icon: "draft" },
-    { id: "starred", label: "Starred", icon: "star" },
     { id: "styles", label: "Styles", icon: "brand_family" },
     { id: "brands", label: "Brands", icon: "storefront" }
   ];
+
+  // Prevent focus stealing from sidebar buttons
+  const handleButtonMouseDown = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+  }, []);
 
   function renderDocList(items: SavedDoc[], emptyLabel: string) {
     if (!items.length) {
@@ -1375,8 +1652,10 @@ function WorkspaceSidebar({
                   <li key={doc.id}>
                     <button
                       type="button"
+                      onMouseDown={handleButtonMouseDown}
                       onClick={() => onSelect(doc)}
               className="w-full rounded-2xl border border-brand-stroke/40 bg-brand-background/60 px-3 py-3 text-left transition hover:border-white"
+                      tabIndex={-1}
                     >
                       <p className="text-sm font-semibold text-white">{doc.title || "Untitled doc"}</p>
                       <p className="text-xs text-brand-muted">{formatTimestamp(doc.createdAt)}</p>
@@ -1389,7 +1668,7 @@ function WorkspaceSidebar({
 
   function renderStyleList(items: SavedDoc[]) {
     if (!items.length) {
-      return <p className="text-sm text-brand-muted">Save a style from any output and it’ll appear here.</p>;
+      return <p className="text-sm text-brand-muted">Save a style from any output and it'll appear here.</p>;
     }
     return (
       <ul className="space-y-3 pr-2">
@@ -1397,11 +1676,13 @@ function WorkspaceSidebar({
           <li key={style.id}>
             <button
               type="button"
+              onMouseDown={handleButtonMouseDown}
               onClick={() => onApplyStyle(style)}
               className={cn(
                 "w-full rounded-2xl border border-brand-stroke/40 bg-brand-background/60 px-3 py-3 text-left transition hover:border-white",
                 activeStyleId === style.id ? "border-white bg-white/10" : undefined
               )}
+              tabIndex={-1}
             >
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold text-white">{style.title || "Saved Style"}</p>
@@ -1421,22 +1702,53 @@ function WorkspaceSidebar({
     if (activeTab === "docs") {
       return renderDocList(docs, "No docs yet. Generate something to see it here.");
     }
-    if (activeTab === "starred") {
-      return renderDocList(starred, "No starred items yet. Star docs to see them here.");
-    }
     if (activeTab === "styles") {
       return renderStyleList(styles);
     }
-    if (hasBrand && brandSummary) {
+    if (activeTab === "brands") {
       return (
-        <div className="rounded-2xl border border-brand-stroke/40 bg-brand-background/60 p-4 text-sm text-brand-muted/90">
-          <p className="text-base font-semibold text-white">Defined brand</p>
-          <p className="mt-2 whitespace-pre-line leading-relaxed">{brandSummary}</p>
-          <p className="mt-4 text-xs text-brand-muted">Update the brand summary inside Settings.</p>
+        <div className="space-y-4">
+          {hasBrand && brandSummary && (
+            <div className="rounded-2xl border border-brand-stroke/40 bg-brand-background/60 p-4 text-sm text-brand-muted/90">
+              <p className="text-base font-semibold text-white">Defined brand</p>
+              <p className="mt-2 whitespace-pre-line leading-relaxed">{brandSummary}</p>
+              <p className="mt-4 text-xs text-brand-muted">Update the brand summary inside Settings.</p>
+            </div>
+          )}
+          {brandKeyMessaging.length > 0 && (
+            <div>
+              <p className="mb-3 text-sm font-semibold text-white">Key Messaging</p>
+              <ul className="space-y-2">
+                {brandKeyMessaging.map((item) => (
+                  <li
+                    key={item.id}
+                    className="group flex items-start justify-between gap-2 rounded-xl border border-brand-stroke/40 bg-brand-background/60 p-3 transition hover:border-white"
+                  >
+                    <p className="flex-1 text-sm text-brand-muted/90">{item.text}</p>
+                    <button
+                      type="button"
+                      onMouseDown={handleButtonMouseDown}
+                      onClick={() => onRemoveKeyMessaging(item.id)}
+                      className="opacity-0 transition group-hover:opacity-100"
+                      title="Remove"
+                      tabIndex={-1}
+                    >
+                      <span className="material-symbols-outlined text-base text-brand-muted hover:text-white">
+                        close
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {!hasBrand && brandKeyMessaging.length === 0 && (
+            <p className="text-sm text-brand-muted">No brand defined yet. Add one inside Settings, or select text and click "Add to Brand" in the formatting toolbar.</p>
+          )}
         </div>
       );
     }
-    return <p className="text-sm text-brand-muted">No brand defined yet. Add one inside Settings.</p>;
+    return null;
   }
 
   const desktopStyle = isDesktop
@@ -1450,26 +1762,21 @@ function WorkspaceSidebar({
   return (
     <aside
       className={cn(
-        "flex flex-col bg-brand-panel/85 text-brand-text shadow-[0_30px_80px_rgba(0,0,0,0.5)] transition-all duration-300 lg:border-r lg:border-brand-stroke/40",
+        "flex flex-col text-brand-text transition-all duration-300",
         open
-          ? "fixed inset-0 z-40 w-full px-5 py-6 lg:static lg:w-80"
-          : "fixed left-4 top-[calc(88px+16px)] z-40 w-14 items-center rounded-3xl border border-brand-stroke/60 px-0 py-4 lg:static lg:w-20 lg:items-center lg:rounded-none lg:border-r lg:border-brand-stroke/40 lg:px-0 lg:py-6",
-        "lg:sticky lg:top-0 lg:h-screen"
+          ? "bg-brand-panel/85 shadow-[0_30px_80px_rgba(0,0,0,0.5)] fixed inset-0 z-50 w-full px-5 py-6 lg:fixed lg:left-0 lg:top-0 lg:w-80 lg:h-screen lg:border-r lg:border-brand-stroke/40"
+          : "fixed left-4 top-[calc(88px+16px)] z-50 lg:hidden",
+        "lg:sticky lg:top-0"
       )}
       style={desktopStyle}
+      tabIndex={-1}
+      onFocus={(e) => {
+        // Prevent sidebar from receiving focus
+        if (e.target === e.currentTarget) {
+          e.currentTarget.blur();
+        }
+      }}
     >
-      <div className={cn("mb-6 flex w-full", open ? "justify-end" : "justify-center")}>
-        <button
-          type="button"
-          aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
-          onClick={onToggle}
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-brand-stroke/60 bg-brand-background text-brand-text shadow"
-        >
-          <span className="material-symbols-outlined text-[1.4rem] text-white">
-            {open ? "left_panel_close" : "left_panel_open"}
-          </span>
-        </button>
-      </div>
       {open ? (
         <>
           <p className="text-xs font-semibold uppercase text-brand-muted">Workspace</p>
@@ -1478,6 +1785,7 @@ function WorkspaceSidebar({
               <button
                 key={tab.id}
                 type="button"
+                onMouseDown={handleButtonMouseDown}
                 onClick={() => onTabChange(tab.id)}
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-full border border-brand-stroke/60 px-3 py-2 text-xs font-semibold uppercase transition",
@@ -1485,6 +1793,7 @@ function WorkspaceSidebar({
                     ? "bg-white/15 text-white"
                     : "bg-transparent text-brand-muted hover:text-white"
                 )}
+                tabIndex={-1}
               >
                 <span className="material-symbols-outlined text-base">{tab.icon}</span>
                 {tab.label}
@@ -1492,36 +1801,16 @@ function WorkspaceSidebar({
             ))}
           </div>
           <div className="mt-6 flex-1 overflow-y-auto pr-1">{renderContent()}</div>
-        </>
-      ) : (
-        <div className="hidden flex-1 flex-col items-center gap-6 lg:flex">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                onTabChange(tab.id);
-                onOpen();
-              }}
-              className="flex h-32 w-16 flex-col items-center justify-center gap-2 rounded-3xl border border-brand-stroke/60 px-1 text-[10px] font-semibold uppercase text-brand-muted transition hover:text-white"
-              aria-label={`Open ${tab.label}`}
-            >
-              <span className="material-symbols-outlined text-lg text-white">{tab.icon}</span>
-              <span className="text-[9px] tracking-wide text-center text-white">{tab.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-      {open && (
-        <div className="mt-auto w-full border-t border-brand-stroke/40 pt-4">
-          <div className="flex flex-col gap-3">
-            <p className="text-sm font-semibold text-brand-muted">Hi, {userName}</p>
-            <div className="flex justify-start">
-              <SignOutButton />
+          <div className="mt-auto w-full border-t border-brand-stroke/40 pt-4">
+            <div className="flex flex-col gap-3">
+              <p className="text-sm font-semibold text-brand-muted">Hi, {userName}</p>
+              <div className="flex justify-start">
+                <SignOutButton />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        </>
+      ) : null}
     </aside>
   );
 }

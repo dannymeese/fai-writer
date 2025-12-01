@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import { cookies } from "next/headers";
 import { auth } from "@/auth";
 import { composeRequestSchema } from "@/lib/validators";
 import { prisma } from "@/lib/prisma";
 import { smartTitleFromPrompt } from "@/lib/utils";
+import { getOpenAIClient } from "@/lib/openai";
 
 const TOKEN_LIMIT = Number(process.env.LLM_TOKEN_LIMIT ?? "500000");
 type CookieStore = Awaited<ReturnType<typeof cookies>>;
@@ -16,7 +16,7 @@ const SHORT_RULES =
 const EXTENDED_RULES = `VITAL RULES FOR ALL OUTPUT:
 
 1. DO NOT USE EM DASHES OR EN DASHES.
-2. DO NOT WRITE WITH ANY AI WRITING TELLS OR RED FLAGS.
+2. DO NOT WRITE WITH ANY AI WRITING TELLS OR RED FLAGS, ESPECIALLY NOT "NOT _, but _"-esque phrasing.
 3. DO NOT REPEAT SOMETHING THAT MEANS ESSENTIALLY THE SAME THING BUT IN DIFFERENT WORDS. 
 4. MAKE SURE THAT EVERY WORD SERVES A PURPOSE AND BRINGS ADDITIONAL MEANING OR DON'T USE IT AT ALL.
 5. ONLY PROVIDE TEXT THAT FEELS BESPOKE AND HUMAN.
@@ -57,11 +57,13 @@ export async function POST(request: Request) {
   const { prompt, settings, brandSummary, styleGuide, editorContext } = parsed.data;
   const effectiveMarketTier = settings.marketTier ?? null;
 
-  if (!process.env.OPENAI_API_KEY) {
+  let openai;
+  try {
+    openai = getOpenAIClient();
+  } catch (error) {
+    console.error("compose openai init failed", error);
     return NextResponse.json({ error: "OPENAI_API_KEY missing" }, { status: 500 });
   }
-
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   let usageContext: UsageContext | null = null;
   if (prisma && TOKEN_LIMIT > 0) {
@@ -100,7 +102,15 @@ export async function POST(request: Request) {
   
   // Fall back to cookie for guests or if DB lookup failed
   if (!brandInfo) {
-    brandInfo = cookieStore.get("guest_brand_info")?.value ?? null;
+    const guestBrandValue = cookieStore.get("guest_brand_info")?.value ?? null;
+    if (guestBrandValue) {
+      try {
+        const parsed = JSON.parse(guestBrandValue);
+        brandInfo = typeof parsed === "string" ? parsed : parsed?.brandInfo ?? null;
+      } catch {
+        brandInfo = guestBrandValue;
+      }
+    }
   }
 
   const wantsLongForm = /\b(long|longer|lengthy|detailed|essay|story|paragraphs?|pages?|novella|novel)\b/i.test(prompt);

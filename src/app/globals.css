@@ -160,3 +160,55 @@ textarea::placeholder {
   color: white !important;
 }
 
+.ProseMirror p {
+  line-height: 32px !important;
+  margin-bottom: 32px !important;
+  margin-top: 0 !important;
+}
+
+.ProseMirror p:last-child {
+  margin-bottom: 0 !important;
+}
+
+.ProseMirror br {
+  line-height: 32px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Shimmer animation */
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.shimmer-loading {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 255, 0.3) 50%,
+    transparent 100%
+  );
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite;
+}
+
+
+/* Loading pills */
+.loading-pill {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 255, 0.2) 0%,
+    rgba(0, 0, 255, 0.4) 50%,
+    rgba(0, 0, 255, 0.2) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 9999px;
+  height: 1.25rem;
+}
+

@@ -34,7 +34,6 @@ This document is the “what I wish I knew” guide for whoever inherits this re
 | `src/components/panels/WriterWorkspace.tsx` | Main client workspace: header, conversation history, compose bar, brief controls, toast. |
 | `src/components/forms/ComposeBar.tsx` | Textarea + wrench icon + send button anchored to the bottom of the viewport. |
 | `src/components/modals/SettingsSheet.tsx` | Brief controls popover; slides from the wrench anchor, no page dimming. |
-| `src/components/panels/OutputPanel.tsx` | Chat-style conversation UI showing “You” prompt and “Forgetaboutit” response boxes. |
 | `src/components/shared/SiteHeader.tsx` / `SiteFooter.tsx` | Exact clones of forgetaboutit.ai branding (logo, CTA, footer nav + newsletter). |
 | `src/lib/validators.ts` | Zod schemas used by brief controls and API routes; defines optional settings. |
 | `src/lib/auth.ts` | Central NextAuth config; toggles Prisma adapter/providers based on DB availability. |

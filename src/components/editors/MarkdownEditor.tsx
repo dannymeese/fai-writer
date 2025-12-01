@@ -3,7 +3,7 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import { useEffect, useCallback, useState, useRef } from "react";
+import { useEffect, useCallback, useState, useRef, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import MarkdownIt from "markdown-it";
 import { 
@@ -13,6 +13,24 @@ import {
   LinkIcon
 } from "@heroicons/react/24/outline";
 
+const TOOLBAR_GAP_PX = 10;
+const MAX_OVERLAY_SEGMENTS = 200;
+const MAX_OVERLAY_HEIGHT_PX = 3200;
+const SHORTCUT_CODE_MAP: Record<string, "copy" | "cut" | "paste" | "selectAll"> = {
+  KeyC: "copy",
+  KeyX: "cut",
+  KeyV: "paste",
+  KeyP: "paste",
+  KeyA: "selectAll"
+} as const;
+const SHORTCUT_KEY_MAP: Record<string, "copy" | "cut" | "paste" | "selectAll"> = {
+  c: "copy",
+  x: "cut",
+  v: "paste",
+  p: "paste",
+  a: "selectAll"
+} as const;
+
 type MarkdownEditorProps = {
   content: string;
   onChange: (content: string) => void;
@@ -21,6 +39,11 @@ type MarkdownEditorProps = {
   editable?: boolean;
   className?: string;
   onReady?: (editor: ReturnType<typeof useEditor>) => void;
+  hasBrand?: boolean;
+  horizontalPadding?: {
+    left?: number;
+    right?: number;
+  };
 };
 
 export default function MarkdownEditor({
@@ -30,39 +53,39 @@ export default function MarkdownEditor({
   placeholder = "Start writing...",
   editable = true,
   className,
-  onReady
+  onReady,
+  hasBrand = false,
+  horizontalPadding
 }: MarkdownEditorProps) {
-  const [mounted, setMounted] = useState(false);
   const [persistentSelection, setPersistentSelection] = useState<{ from: number; to: number } | null>(null);
   const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
   const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0 });
+  const [addingToBrand, setAddingToBrand] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const addToBrandButtonRef = useRef<HTMLButtonElement>(null);
   const isInternalUpdateRef = useRef(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const isUpdatingToolbarRef = useRef(false);
   const toolbarSizeRef = useRef({ width: 360, height: 48 });
   const persistentSelectionRef = useRef<{ from: number; to: number } | null>(null);
   const lastSelectionRef = useRef<{ from: number; to: number } | null>(null);
-  const TOOLBAR_GAP_PX = 10;
-  const MAX_OVERLAY_SEGMENTS = 200;
-  const MAX_OVERLAY_HEIGHT_PX = 3200;
-  const shortcutCodeMap: Record<string, "copy" | "cut" | "paste" | "selectAll"> = {
-    KeyC: "copy",
-    KeyX: "cut",
-    KeyV: "paste",
-    KeyP: "paste",
-    KeyA: "selectAll"
-  };
-  const shortcutKeyMap: Record<string, "copy" | "cut" | "paste" | "selectAll"> = {
-    c: "copy",
-    x: "cut",
-    v: "paste",
-    p: "paste",
-    a: "selectAll"
-  };
   
-  // Initialize markdown parser
-  const md = useRef(new MarkdownIt({ html: true, breaks: true })).current;
+  // Initialize markdown parser with proper configuration
+  const md = useMemo(() => {
+    const parser = new MarkdownIt({ 
+      html: true, 
+      breaks: true,
+      linkify: true
+    });
+    return parser;
+  }, []);
+  
+  // Convert initial markdown content to HTML for TipTap
+  const initialHtml = useMemo(() => {
+    if (!content) return '';
+    return md.render(content);
+  }, [content, md]);
+  
   const setPersistentSelectionState = useCallback(
     (range: { from: number; to: number } | null) => {
       setPersistentSelection(range);
@@ -72,11 +95,6 @@ export default function MarkdownEditor({
   );
   const updateLastSelectionRange = useCallback((range: { from: number; to: number }) => {
     lastSelectionRef.current = range;
-  }, []);
-
-  // Ensure we're on the client before initializing the editor
-  useEffect(() => {
-    setMounted(true);
   }, []);
 
   const editor = useEditor({
@@ -99,7 +117,7 @@ export default function MarkdownEditor({
         placeholder
       })
     ],
-    content,
+    content: initialHtml,
     editable,
     immediatelyRender: false, // Prevent SSR hydration issues
     onUpdate: ({ editor }) => {
@@ -165,13 +183,13 @@ export default function MarkdownEditor({
       attributes: {
         class: cn(
           "prose prose-invert prose-lg max-w-none focus:outline-none",
-          "prose-h1:text-white prose-h1:text-3xl prose-h1:font-bold prose-h1:mt-8 prose-h1:mb-4 prose-h1:leading-tight",
-          "prose-h2:text-white prose-h2:text-2xl prose-h2:font-bold prose-h2:mt-6 prose-h2:mb-3 prose-h2:leading-tight",
-          "prose-h3:text-white prose-h3:text-xl prose-h3:font-bold prose-h3:mt-4 prose-h3:mb-2 prose-h3:leading-tight",
+          "prose-h1:text-white prose-h1:text-[40pt] prose-h1:font-bold prose-h1:mt-8 prose-h1:mb-4 prose-h1:leading-tight",
+          "prose-h2:text-white prose-h2:text-[32pt] prose-h2:font-bold prose-h2:mt-6 prose-h2:mb-3 prose-h2:leading-tight",
+          "prose-h3:text-white prose-h3:text-[24pt] prose-h3:font-bold prose-h3:mt-4 prose-h3:mb-2 prose-h3:leading-tight",
           "prose-h4:text-white prose-h4:text-lg prose-h4:font-semibold prose-h4:mt-3 prose-h4:mb-2",
           "prose-h5:text-white prose-h5:text-base prose-h5:font-semibold prose-h5:mt-2 prose-h5:mb-1",
           "prose-h6:text-white prose-h6:text-sm prose-h6:font-semibold prose-h6:mt-2 prose-h6:mb-1",
-          "prose-p:text-brand-text/90 prose-p:my-2 prose-p:leading-relaxed",
+          "prose-p:text-brand-text/90 prose-p:text-[20pt] prose-p:mb-[32px] prose-p:mt-0 prose-p:leading-[32px]",
           "prose-strong:text-white prose-strong:font-semibold",
           "prose-code:text-brand-blue prose-pre:bg-brand-panel prose-pre:text-brand-text",
           "prose-blockquote:border-brand-blue prose-blockquote:text-brand-muted",
@@ -229,6 +247,10 @@ export default function MarkdownEditor({
     };
   }, []);
 
+  // Resolve horizontal padding values
+  const resolvedMarginLeft = horizontalPadding?.left ?? 180;
+  const resolvedMarginRight = horizontalPadding?.right ?? 180;
+
   // Custom cursor marker that's always visible
   useEffect(() => {
     if (!editor) return;
@@ -256,7 +278,7 @@ export default function MarkdownEditor({
       // Get editor container position
       const editorElement = editor.view.dom;
       const editorContainer = editorElement.closest('.overflow-auto') || editorElement.parentElement;
-      const containerRect = editorContainer?.getBoundingClientRect() || { left: 0, top: 0 };
+      const containerRect = editorContainer?.getBoundingClientRect() || { left: 0, top: 0, width: 0 };
 
       // Create or update cursor marker
       if (!cursorMarker) {
@@ -272,8 +294,15 @@ export default function MarkdownEditor({
       // Make cursor solid (no animation) when input is focused
       const animation = isInputFocused ? 'none' : 'blink 1s infinite';
 
-      // Calculate position relative to container
-      const relativeLeft = coords.left - containerRect.left;
+      // Calculate position relative to container using dynamic margins
+      let relativeLeft = coords.left - containerRect.left;
+      
+      // Constrain cursor to content area (never in margins)
+      if (relativeLeft < resolvedMarginLeft) {
+        relativeLeft = resolvedMarginLeft;
+      } else if (relativeLeft > containerRect.width - resolvedMarginRight) {
+        relativeLeft = containerRect.width - resolvedMarginRight;
+      }
       
       // Center cursor vertically with a capital X
       // Capital X center is typically around 35-40% down from the top of the line
@@ -330,10 +359,20 @@ export default function MarkdownEditor({
       scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
     }
 
+    // Update on window resize (for when sidebar toggles)
+    const handleResize = () => {
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+      }
+      animationFrame = requestAnimationFrame(updateCursorMarker);
+    };
+    window.addEventListener('resize', handleResize);
+
     return () => {
       editor.off("selectionUpdate", handleSelectionUpdate);
       editor.off("update", handleUpdate);
-      scrollContainer.removeEventListener('scroll', handleScroll);
+      scrollContainer?.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
       if (animationFrame) {
         cancelAnimationFrame(animationFrame);
       }
@@ -341,7 +380,7 @@ export default function MarkdownEditor({
         cursorMarker.remove();
       }
     };
-  }, [editor, isInputFocused]);
+  }, [editor, isInputFocused, resolvedMarginLeft, resolvedMarginRight]);
 
   // Update formatting toolbar position (with guard to prevent concurrent updates)
   const updateToolbarPosition = useCallback(() => {
@@ -511,9 +550,113 @@ export default function MarkdownEditor({
 
     let isDragging = false;
     let dragTimeout: NodeJS.Timeout | null = null;
+    let dragStartInMargin = false;
+    let marginDragStartPos: { x: number; y: number } | null = null;
 
-    const handleMouseDown = () => {
+    const handleMouseDown = (e: MouseEvent) => {
       isDragging = true;
+      
+      // Check if mousedown started in margins
+      const editorElement = editor.view.dom;
+      const editorContainer = editorElement.closest('.overflow-auto');
+      if (!editorContainer) return;
+      
+      const containerRect = editorContainer.getBoundingClientRect();
+      const marginLeft = resolvedMarginLeft;
+      const marginRight = containerRect.width - resolvedMarginRight;
+      
+      // Check if click is in left or right margin
+      if (e.clientX < containerRect.left + marginLeft || e.clientX > containerRect.left + marginRight) {
+        dragStartInMargin = true;
+        marginDragStartPos = { x: e.clientX, y: e.clientY };
+        // Focus editor
+        editor.commands.focus();
+        
+        // Find the line at the Y position where user clicked
+        const clickY = e.clientY;
+        const isLeftMargin = e.clientX < containerRect.left + marginLeft;
+        
+        // Use TipTap's posAtCoords to find the document position at the click point
+        // Use different X coordinates for left vs right margin to get accurate line detection
+        // For left margin, use a point near the left edge; for right margin, use a point near the right edge
+        const contentX = isLeftMargin
+          ? containerRect.left + marginLeft + 10  // Small offset from left edge
+          : containerRect.left + marginRight - 10; // Small offset from right edge
+        
+        const pos = editor.view.posAtCoords({ left: contentX, top: clickY });
+        
+        if (pos !== null) {
+          // Find the start and end of the line/block containing this position
+          const $pos = editor.state.doc.resolve(pos.pos);
+          
+          // Find the block node (paragraph, heading, etc.) that contains this position
+          let blockStart = pos.pos;
+          let blockEnd = pos.pos;
+          
+          // Walk up the document structure to find the block boundaries
+          for (let depth = $pos.depth; depth >= 0; depth--) {
+            const node = $pos.node(depth);
+            if (node.type.isBlock) {
+              blockStart = $pos.start(depth);
+              blockEnd = $pos.end(depth);
+              break;
+            }
+          }
+          
+          // For inline content, find the actual line boundaries within the block
+          // Get the text content of the block and find line breaks
+          const blockText = editor.state.doc.textBetween(blockStart, blockEnd, "\n");
+          const relativePos = pos.pos - blockStart;
+          
+          // Find the start of the current line within the block
+          const textBefore = blockText.substring(0, relativePos);
+          const lastNewline = textBefore.lastIndexOf('\n');
+          const lineStartInBlock = lastNewline === -1 ? 0 : lastNewline + 1;
+          
+          // Find the end of the current line within the block
+          const textAfter = blockText.substring(relativePos);
+          const nextNewline = textAfter.indexOf('\n');
+          // lineEndInBlock is relative to blockStart, so we need to add relativePos to get the offset from blockStart
+          const lineEndInBlock = nextNewline === -1 ? blockText.length : relativePos + nextNewline;
+          
+          // Calculate absolute positions
+          const absoluteLineStart = blockStart + lineStartInBlock;
+          const absoluteLineEnd = blockStart + lineEndInBlock;
+          
+          // Set cursor to start or end of line based on which margin was clicked
+          if (isLeftMargin) {
+            editor.commands.setTextSelection(absoluteLineStart);
+          } else {
+            // For right margin, make sure we're at the end of the line, not before a newline
+            // If the line ends with a newline, position before it; otherwise at the end
+            const finalPos = absoluteLineEnd;
+            editor.commands.setTextSelection(finalPos);
+          }
+        }
+      } else {
+        dragStartInMargin = false;
+        marginDragStartPos = null;
+      }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging || !dragStartInMargin || !marginDragStartPos) return;
+      
+      const editorElement = editor.view.dom;
+      const editorContainer = editorElement.closest('.overflow-auto');
+      if (!editorContainer) return;
+      
+      const containerRect = editorContainer.getBoundingClientRect();
+      const marginLeft = resolvedMarginLeft;
+      const marginRight = containerRect.width - resolvedMarginRight;
+      
+      // If still in margin, don't update selection
+      if (e.clientX < containerRect.left + marginLeft || e.clientX > containerRect.left + marginRight) {
+        return;
+      }
+      
+      // Now in content area - allow normal selection
+      dragStartInMargin = false;
     };
 
     const handleMouseUp = () => {
@@ -532,7 +675,19 @@ export default function MarkdownEditor({
           const normalizedRange = { from: selectionStart, to: selectionEnd };
           updateLastSelectionRange(normalizedRange);
           setPersistentSelectionState(normalizedRange);
-          const selectedText = editor.state.doc.textBetween(selectionStart, selectionEnd);
+          // Get HTML to preserve <br> tags from soft returns and <p> tags from hard returns, then convert to text
+          const slice = editor.state.doc.slice(selectionStart, selectionEnd);
+          const fragment = editor.view.state.schema.cached.domSerializer?.serializeFragment(slice.content, { document: window.document }) || document.createDocumentFragment();
+          const tempDiv = document.createElement('div');
+          tempDiv.appendChild(fragment.cloneNode(true));
+          // Convert <p> tags to newlines (hard returns/paragraphs) - replace closing </p> with newline
+          tempDiv.innerHTML = tempDiv.innerHTML.replace(/<\/p>/gi, '\n</p>');
+          // Convert <br> tags to newlines (soft returns)
+          tempDiv.querySelectorAll('br').forEach(br => {
+            br.replaceWith('\n');
+          });
+          // Get plain text (newlines from both <p> and <br> tags are now preserved)
+          const selectedText = tempDiv.textContent || '';
           onSelectionChange(selectedText);
           // Debounce toolbar position update to prevent freezing - increased delay
           setTimeout(() => {
@@ -569,7 +724,19 @@ export default function MarkdownEditor({
         const normalizedRange = { from: selectionStart, to: selectionEnd };
         updateLastSelectionRange(normalizedRange);
         setPersistentSelectionState(normalizedRange);
-        const selectedText = editor.state.doc.textBetween(selectionStart, selectionEnd);
+        // Get HTML to preserve <br> tags from soft returns and <p> tags from hard returns, then convert to text
+        const slice = editor.state.doc.slice(selectionStart, selectionEnd);
+        const fragment = editor.view.state.schema.cached.domSerializer?.serializeFragment(slice.content, { document: window.document }) || document.createDocumentFragment();
+        const tempDiv = document.createElement('div');
+        tempDiv.appendChild(fragment.cloneNode(true));
+        // Convert <p> tags to newlines (hard returns/paragraphs) - replace closing </p> with newline
+        tempDiv.innerHTML = tempDiv.innerHTML.replace(/<\/p>/gi, '\n</p>');
+        // Convert <br> tags to newlines (soft returns)
+        tempDiv.querySelectorAll('br').forEach(br => {
+          br.replaceWith('\n');
+        });
+        // Get plain text (newlines from both <p> and <br> tags are now preserved)
+        const selectedText = tempDiv.textContent || '';
         onSelectionChange(selectedText);
         // Debounce toolbar position update to prevent freezing - increased delay
         setTimeout(() => {
@@ -601,17 +768,62 @@ export default function MarkdownEditor({
     const handleBlur = () => {
       // When editor loses focus, maintain the selection visually
       // The selection state is already stored in persistentSelection
-      // We'll use CSS to keep it styled
+      // Check if there's a current selection and preserve it if input is being focused
+      const { from, to } = editor.state.selection;
+      if (from !== to) {
+        // There's still a selection when blurring - preserve it
+        const selectionStart = Math.min(from, to);
+        const selectionEnd = Math.max(from, to);
+        const normalizedRange = { from: selectionStart, to: selectionEnd };
+        const activeElement = window.document.activeElement;
+        const isInputFocused = activeElement instanceof HTMLTextAreaElement && 
+                               activeElement.closest('.compose-bar');
+        
+        // If input is being focused, preserve the selection
+        if (isInputFocused) {
+          updateLastSelectionRange(normalizedRange);
+          setPersistentSelectionState(normalizedRange);
+          
+          // Get selected text and notify parent
+          const slice = editor.state.doc.slice(selectionStart, selectionEnd);
+          const fragment = editor.view.state.schema.cached.domSerializer?.serializeFragment(slice.content, { document: window.document }) || document.createDocumentFragment();
+          const tempDiv = document.createElement('div');
+          tempDiv.appendChild(fragment.cloneNode(true));
+          tempDiv.innerHTML = tempDiv.innerHTML.replace(/<\/p>/gi, '\n</p>');
+          tempDiv.querySelectorAll('br').forEach(br => {
+            br.replaceWith('\n');
+          });
+          const selectedText = tempDiv.textContent || '';
+          onSelectionChange(selectedText);
+        }
+      }
     };
     
-    // Add global keyboard shortcut handler so editor commands work even when focus moves elsewhere
+    // Add global keyboard shortcut handler - only handle shortcuts when editor is focused
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) {
         return;
       }
+      
+      // Only handle shortcuts if the editor is focused or the target is within the editor
+      const target = e.target as HTMLElement | null;
+      const isEditorFocused = editor.isFocused || (target && editor.view.dom.contains(target));
+      
+      // If editor is not focused and target is a text input (like compose bar), let browser handle it
+      if (!isEditorFocused) {
+        const isTextInput =
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          Boolean(target?.isContentEditable);
+        
+        if (isTextInput) {
+          return; // Let browser handle shortcuts in text inputs when editor is not focused
+        }
+      }
+      
       const action =
-        shortcutCodeMap[e.code as keyof typeof shortcutCodeMap] ||
-        shortcutKeyMap[e.key.toLowerCase() as keyof typeof shortcutKeyMap];
+        SHORTCUT_CODE_MAP[e.code as keyof typeof SHORTCUT_CODE_MAP] ||
+        SHORTCUT_KEY_MAP[e.key.toLowerCase() as keyof typeof SHORTCUT_KEY_MAP];
       if (!action) {
         return;
       }
@@ -626,33 +838,9 @@ export default function MarkdownEditor({
         return;
       }
 
-      const target = e.target as HTMLElement | null;
-      if (target && editor.view.dom.contains(target)) {
+      // If target is not in editor, don't handle (let browser handle it)
+      if (target && !editor.view.dom.contains(target)) {
         return;
-      }
-
-      const isTextInput =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        Boolean(target?.isContentEditable);
-
-      let hasActiveInputSelection = false;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-        if (typeof target.selectionStart === "number" && typeof target.selectionEnd === "number") {
-          hasActiveInputSelection = target.selectionStart !== target.selectionEnd;
-        }
-      } else if (isTextInput && target) {
-        const selection = window.getSelection();
-        hasActiveInputSelection = Boolean(selection && selection.toString().length && target.contains(selection.anchorNode));
-      }
-
-      if (isTextInput) {
-        if (hasActiveInputSelection && action !== "paste") {
-          return;
-        }
-        if (action === "paste" && !persistentRange) {
-          return;
-        }
       }
 
       const ensureEditorFocus = () => {
@@ -663,6 +851,34 @@ export default function MarkdownEditor({
 
       if (action === "selectAll") {
         ensureEditorFocus();
+        // Explicitly call selectAll to ensure it happens
+        editor.commands.selectAll();
+        // After TipTap selects all, capture the selection and make it persistent
+        // Use setTimeout to let TipTap's selectAll complete first
+        setTimeout(() => {
+          const { from, to } = editor.state.selection;
+          if (from !== to) {
+            const selectionStart = Math.min(from, to);
+            const selectionEnd = Math.max(from, to);
+            const normalizedRange = { from: selectionStart, to: selectionEnd };
+            updateLastSelectionRange(normalizedRange);
+            setPersistentSelectionState(normalizedRange);
+            
+            // Also get the selected text and notify parent
+            const slice = editor.state.doc.slice(selectionStart, selectionEnd);
+            const fragment = editor.view.state.schema.cached.domSerializer?.serializeFragment(slice.content, { document: window.document }) || document.createDocumentFragment();
+            const tempDiv = document.createElement('div');
+            tempDiv.appendChild(fragment.cloneNode(true));
+            tempDiv.innerHTML = tempDiv.innerHTML.replace(/<\/p>/gi, '\n</p>');
+            tempDiv.querySelectorAll('br').forEach(br => {
+              br.replaceWith('\n');
+            });
+            const selectedText = tempDiv.textContent || '';
+            onSelectionChange(selectedText);
+          }
+        }, 10);
+        // Prevent default to avoid double selection
+        e.preventDefault();
         return;
       }
 
@@ -683,6 +899,14 @@ export default function MarkdownEditor({
 
     editor.on("selectionUpdate", handleSelectionUpdate);
     const editorElement = editor.view.dom;
+    const editorContainer = editorElement.closest('.overflow-auto');
+    
+    // Listen on container to catch margin clicks
+    if (editorContainer) {
+      editorContainer.addEventListener("mousedown", handleMouseDown);
+      editorContainer.addEventListener("mousemove", handleMouseMove);
+      editorContainer.addEventListener("mouseup", handleMouseUp);
+    }
     editorElement.addEventListener("mousedown", handleMouseDown);
     editorElement.addEventListener("mouseup", handleMouseUp);
     editorElement.addEventListener("blur", handleBlur);
@@ -713,17 +937,29 @@ export default function MarkdownEditor({
 
     return () => {
       editor.off("selectionUpdate", handleSelectionUpdate);
+      if (editorContainer) {
+        editorContainer.removeEventListener("mousedown", handleMouseDown);
+        editorContainer.removeEventListener("mousemove", handleMouseMove);
+        editorContainer.removeEventListener("mouseup", handleMouseUp);
+      }
       editorElement.removeEventListener("mousedown", handleMouseDown);
       editorElement.removeEventListener("mouseup", handleMouseUp);
       editorElement.removeEventListener("blur", handleBlur);
       window.document.removeEventListener('keydown', handleGlobalKeyDown);
-      if (scrollContainer) {
-        scrollContainer.removeEventListener('scroll', handleScroll);
-      }
+      scrollContainer?.removeEventListener('scroll', handleScroll);
       if (dragTimeout) clearTimeout(dragTimeout);
       if (scrollTimeout) clearTimeout(scrollTimeout);
     };
-  }, [editor, onSelectionChange, updateToolbarPosition]);
+  }, [
+    editor,
+    onSelectionChange,
+    setPersistentSelectionState,
+    updateLastSelectionRange,
+    updateToolbarPosition,
+    showFormattingToolbar,
+    resolvedMarginLeft,
+    resolvedMarginRight
+  ]);
 
   // Custom selection overlay that persists even when editor loses focus
   useEffect(() => {
@@ -748,6 +984,8 @@ export default function MarkdownEditor({
         const editorElement = editor.view.dom;
         const editorContainer = editorElement.closest('.overflow-auto') || editorElement.parentElement;
         const containerRect = editorContainer?.getBoundingClientRect() || { left: 0, top: 0, height: 0 };
+        const marginLeft = resolvedMarginLeft;
+        const marginRight = resolvedMarginRight;
 
         // Get coordinates for start and end of selection
         const startCoords = editor.view.coordsAtPos(from);
@@ -762,9 +1000,15 @@ export default function MarkdownEditor({
 
         // Handle single-line selection
         if (Math.abs(startCoords.top - endCoords.top) < 5) {
-          const left = Math.min(startCoords.left, endCoords.left);
+          let left = Math.min(startCoords.left, endCoords.left);
+          let right = Math.max(startCoords.left, endCoords.right);
+          
+          // Constrain selection to content area (never in margins)
+          left = Math.max(left, containerRect.left + marginLeft);
+          right = Math.min(right, containerRect.right - marginRight);
+          
           const top = startCoords.top;
-          const width = Math.abs(endCoords.left - startCoords.left);
+          const width = right - left;
           const height = Math.max(startCoords.bottom - startCoords.top, endCoords.bottom - endCoords.top);
 
           // Calculate position relative to container
@@ -800,15 +1044,16 @@ export default function MarkdownEditor({
           const lineHeight = lineHeightBase;
           
           // Create overlay for first line (from start to end of line)
-          const firstRelativeLeft = startCoords.left - containerLeft;
+          let firstRelativeLeft = Math.max(startCoords.left - containerLeft, marginLeft);
           const firstRelativeTop = startCoords.top - containerTop;
+          const firstWidth = Math.min(containerWidth - firstRelativeLeft, containerWidth - marginLeft - marginRight);
           const firstOverlay = document.createElement("div");
           firstOverlay.className = "custom-selection-overlay";
           firstOverlay.style.cssText = `
             position: absolute;
             left: ${firstRelativeLeft}px;
             top: ${firstRelativeTop}px;
-            width: ${containerWidth - firstRelativeLeft}px;
+            width: ${firstWidth}px;
             height: ${startCoords.bottom - startCoords.top}px;
             background-color: #00f;
             pointer-events: none;
@@ -821,7 +1066,7 @@ export default function MarkdownEditor({
           }
           selectionOverlays.push(firstOverlay);
           
-          // Create overlays for middle lines (full width)
+          // Create overlays for middle lines (content width only, not margins)
           let currentTop = startCoords.bottom;
           
           while (currentTop + lineHeight < endCoords.top) {
@@ -830,9 +1075,9 @@ export default function MarkdownEditor({
             overlay.className = "custom-selection-overlay";
             overlay.style.cssText = `
               position: absolute;
-              left: 0px;
+              left: ${marginLeft}px;
               top: ${relativeTop}px;
-              width: ${containerWidth}px;
+              width: ${containerWidth - marginLeft - marginRight}px;
               height: ${lineHeight}px;
               background-color: #00f;
               pointer-events: none;
@@ -847,11 +1092,11 @@ export default function MarkdownEditor({
             currentTop += lineHeight;
           }
           
-          // Create overlay for last line (from start of line to end)
+          // Create overlay for last line (from start of line to end, constrained to content)
           if (endCoords.top > startCoords.bottom) {
             const lastRelativeTop = endCoords.top - containerTop;
-            const lastRelativeLeft = 0;
-            const lastWidth = endCoords.left - containerLeft;
+            const lastRelativeLeft = marginLeft;
+            const lastWidth = Math.max(0, Math.min(endCoords.left - containerLeft, containerWidth - marginLeft - marginRight));
             const lastOverlay = document.createElement("div");
             lastOverlay.className = "custom-selection-overlay";
             lastOverlay.style.cssText = `
@@ -898,18 +1143,28 @@ export default function MarkdownEditor({
       scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
     }
 
+    // Update on window resize (for when sidebar toggles)
+    const handleResize = () => {
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+      }
+      animationFrame = requestAnimationFrame(updateSelectionOverlay);
+    };
+    window.addEventListener('resize', handleResize);
+
     // Initial update
     updateSelectionOverlay();
 
     return () => {
       editor.off("update", handleUpdate);
-      scrollContainer.removeEventListener('scroll', handleScroll);
+      scrollContainer?.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
       if (animationFrame) {
         cancelAnimationFrame(animationFrame);
       }
       selectionOverlays.forEach(overlay => overlay.remove());
     };
-  }, [editor, persistentSelection]);
+  }, [editor, persistentSelection, resolvedMarginLeft, resolvedMarginRight]);
 
   // Sync content from parent - convert markdown to HTML for TipTap
   useEffect(() => {
@@ -922,16 +1177,33 @@ export default function MarkdownEditor({
     }
     
     // Convert markdown to HTML for TipTap
-    const html = md.render(content || '');
+    // Use markdown-it to parse markdown syntax like **bold** into HTML
+    const markdownContent = content || '';
+    
+    // Always convert markdown to HTML, even if content appears to be HTML already
+    // This ensures markdown syntax like **bold** gets properly rendered
+    const html = md.render(markdownContent);
     
     // Get current HTML for comparison
     const currentHtml = editor.getHTML();
     
+    // Normalize HTML for comparison (remove extra whitespace/newlines)
+    const normalizeHtml = (html: string) => html.replace(/\s+/g, ' ').trim();
+    const normalizedHtml = normalizeHtml(html);
+    const normalizedCurrentHtml = normalizeHtml(currentHtml);
+    
     // Only update if content actually changed (avoid infinite loops)
-    if (html !== currentHtml && content !== '') {
+    // Also check if the raw markdown content changed, not just the HTML
+    const lastMarkdown = (editor as any).__lastMarkdownContent;
+    const markdownChanged = markdownContent !== lastMarkdown;
+    
+    if ((normalizedHtml !== normalizedCurrentHtml || markdownChanged) && markdownContent !== '') {
+      // Store the markdown content for comparison
+      (editor as any).__lastMarkdownContent = markdownContent;
+      
       // Preserve cursor position when syncing from parent
       const { from } = editor.state.selection;
-      editor.commands.setContent(html, false); // false = don't emit update event
+      editor.commands.setContent(html, { emitUpdate: false }); // don't emit update event
       // Restore cursor position after content update
       try {
         const docSize = editor.state.doc.content.size;
@@ -941,8 +1213,9 @@ export default function MarkdownEditor({
         // If cursor position is invalid, just set to end
         console.error("Error restoring cursor position:", error);
       }
-    } else if (content === '' && currentHtml !== '<p></p>') {
-      editor.commands.setContent('', false);
+    } else if (markdownContent === '' && currentHtml !== '<p></p>') {
+      editor.commands.setContent('', { emitUpdate: false });
+      (editor as any).__lastMarkdownContent = '';
     }
   }, [content, editor, md]);
 
@@ -959,42 +1232,61 @@ export default function MarkdownEditor({
 
   // Expose methods via ref if needed
   useEffect(() => {
-    if (editor && onReady) {
-      // Add markdown helper methods to editor instance
-      (editor as any).setMarkdown = setMarkdownContent;
-      (editor as any).getMarkdown = () => editor.getText();
-      (editor as any).insertText = (text: string) => {
-        editor.commands.insertContent(text);
-      };
-      (editor as any).replaceSelection = (text: string, selectionRange?: { from: number; to: number }) => {
-        // Use provided range if available, otherwise use current selection
-        const range = selectionRange || editor.state.selection;
-        const { from, to } = range;
-        
-        // Always set selection to the exact range first (this ensures we're replacing the right text)
-        editor.commands.setTextSelection({ from, to });
-        
-        // Delete the exact selection range if there's a selection
-        if (from !== to) {
-          editor.commands.deleteSelection();
-        }
-        
-        // Insert the new content at the current cursor position (which is now at 'from' after deletion)
-        editor.commands.insertContent(text, {
-          parseOptions: {
-            preserveWhitespace: 'full'
-          }
-        });
-      };
-      (editor as any).getSelectionRange = () => {
-        const { from, to } = editor.state.selection;
-        return { from, to };
-      };
-      (editor as any).getSelectedText = () => {
-        const { from, to } = editor.state.selection;
-        return editor.state.doc.textBetween(from, to);
-      };
+    if (!editor || !onReady) {
+      return;
     }
+    const editorAny = editor as any;
+
+    const assign = (key: string, value: unknown) => {
+      Reflect.set(editorAny, key, value);
+    };
+
+    assign("setMarkdown", setMarkdownContent);
+    assign("getMarkdown", () => editor.getText());
+    assign("insertText", (text: string) => {
+      editor.commands.insertContent(text);
+    });
+    assign("replaceSelection", (text: string, selectionRange?: { from: number; to: number }) => {
+      const range = selectionRange || editor.state.selection;
+      const { from, to } = range;
+      editor.commands.setTextSelection({ from, to });
+      if (from !== to) {
+        editor.commands.deleteSelection();
+      }
+      editor.commands.insertContent(text, {
+        parseOptions: {
+          preserveWhitespace: "full"
+        }
+      });
+    });
+    assign("getSelectionRange", () => {
+      const { from, to } = editor.state.selection;
+      return { from, to };
+    });
+    assign("getSelectedText", () => {
+      const { from, to } = editor.state.selection;
+      // Get HTML to preserve <br> tags from soft returns and <p> tags from hard returns, then convert to text
+      const slice = editor.state.doc.slice(from, to);
+      const fragment = editor.view.state.schema.cached.domSerializer?.serializeFragment(slice.content, { document: window.document }) || document.createDocumentFragment();
+      const tempDiv = document.createElement('div');
+      tempDiv.appendChild(fragment.cloneNode(true));
+      // Convert <p> tags to newlines (hard returns/paragraphs) - replace closing </p> with newline
+      tempDiv.innerHTML = tempDiv.innerHTML.replace(/<\/p>/gi, '\n</p>');
+      // Convert <br> tags to newlines (soft returns)
+      tempDiv.querySelectorAll('br').forEach(br => {
+        br.replaceWith('\n');
+      });
+      // Get plain text (newlines from both <p> and <br> tags are now preserved)
+      return tempDiv.textContent || '';
+    });
+
+    return () => {
+      ["setMarkdown", "getMarkdown", "insertText", "replaceSelection", "getSelectionRange", "getSelectedText"].forEach(
+        (key) => {
+          Reflect.deleteProperty(editorAny, key);
+        }
+      );
+    };
   }, [editor, setMarkdownContent, onReady]);
 
   // Formatting button handlers
@@ -1019,8 +1311,43 @@ export default function MarkdownEditor({
     }
   }, [editor, updateToolbarPosition]);
 
-  // Don't render editor until mounted on client
-  if (!mounted || !editor) {
+  // Handle adding selected text to brand key messaging
+  const handleAddToBrand = useCallback(async () => {
+    if (!editor || addingToBrand) return;
+    
+    try {
+      const selectedText = (editor as any).getSelectedText?.();
+      if (!selectedText || !selectedText.trim()) {
+        return;
+      }
+
+      setAddingToBrand(true);
+      
+      const response = await fetch("/api/brand/key-messaging", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: selectedText.trim() })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to add to brand" }));
+        console.error("Failed to add to brand:", errorData.error);
+        // Could show a toast notification here
+        return;
+      }
+
+      // Success - could show a toast notification here
+      // Dispatch a custom event to notify parent components
+      window.dispatchEvent(new CustomEvent("brand-key-messaging-added"));
+    } catch (error) {
+      console.error("Error adding to brand:", error);
+    } finally {
+      setAddingToBrand(false);
+    }
+  }, [editor, addingToBrand]);
+
+  // Don't render editor until ready
+  if (!editor) {
     return (
       <div className="flex h-64 items-center justify-center text-brand-muted">
         Loading editor...
@@ -1170,6 +1497,31 @@ export default function MarkdownEditor({
             123
           </button>
         </div>
+      )}
+
+      {/* Add to Brand Button - Separate pill to the right */}
+      {showFormattingToolbar && editor && hasBrand && persistentSelection && persistentSelection.from !== persistentSelection.to && (
+        <button
+          ref={addToBrandButtonRef}
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleAddToBrand();
+          }}
+          disabled={addingToBrand}
+          className={cn(
+            "absolute z-50 rounded-full border border-brand-stroke/60 bg-brand-panel px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:bg-brand-blue/20 hover:border-brand-blue",
+            addingToBrand && "opacity-60 cursor-not-allowed"
+          )}
+          style={{
+            top: `${toolbarPosition.top}px`,
+            left: `${toolbarPosition.left + toolbarSizeRef.current.width + 12}px`,
+            transform: `translateY(calc(-100% - ${TOOLBAR_GAP_PX}px))`,
+          }}
+        >
+          {addingToBrand ? "Adding..." : "Add to Brand"}
+        </button>
       )}
     </div>
   );

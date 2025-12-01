@@ -2,17 +2,42 @@
 
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { PencilSquareIcon, ArrowDownTrayIcon, ChevronDownIcon } from "@heroicons/react/24/solid";
+import { PencilSquareIcon, ArrowDownTrayIcon } from "@heroicons/react/24/solid";
 import { useState, useRef, useEffect } from "react";
 
-export default function SiteHeader() {
+type SiteHeaderProps = {
+  onPanelToggle?: () => void;
+  showPanelButton?: boolean;
+};
+
+export default function SiteHeader({ onPanelToggle, showPanelButton = false }: SiteHeaderProps = {}) {
   const { data: session, status } = useSession();
   const isAuthenticated = status === "authenticated" && Boolean(session?.user);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const downloadMenuRef = useRef<HTMLDivElement>(null);
+  
+  // Listen for sidebar state changes to update icon
+  useEffect(() => {
+    const handleSidebarStateChange = (event: CustomEvent) => {
+      setSidebarOpen(event.detail.open);
+    };
+    window.addEventListener("sidebar-state-change", handleSidebarStateChange as EventListener);
+    return () => {
+      window.removeEventListener("sidebar-state-change", handleSidebarStateChange as EventListener);
+    };
+  }, []);
 
   function handleNewDoc() {
     window.dispatchEvent(new Event("new-doc"));
+  }
+
+  function handlePanelToggle() {
+    if (onPanelToggle) {
+      onPanelToggle();
+    } else {
+      window.dispatchEvent(new Event("toggle-sidebar"));
+    }
   }
 
   // Close download menu when clicking outside
@@ -28,80 +53,65 @@ export default function SiteHeader() {
     }
   }, [showDownloadMenu]);
 
-  async function handleDownload(format: "docx" | "txt" | "pdf") {
+  async function handleDownload(format: "docx" | "txt" | "pdf" | "md") {
     // Get active document from global event or context
     // For now, we'll dispatch an event that WriterWorkspace can listen to
     window.dispatchEvent(new CustomEvent("download-document", { detail: { format } }));
-    setShowDownloadMenu(false);
+    // Menu will be closed by DocumentEditor after handling the download
   }
+  
+  // Listen for close menu event
+  useEffect(() => {
+    const handleCloseMenu = () => {
+      setShowDownloadMenu(false);
+    };
+    window.addEventListener("close-download-menu", handleCloseMenu);
+    return () => {
+      window.removeEventListener("close-download-menu", handleCloseMenu);
+    };
+  }, []);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-brand-stroke/60 bg-brand-background/95 px-4 py-4 backdrop-blur-xl">
-      <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4">
-        <Link href="/" className="font-display leading-tight" style={{ fontSize: '0.825rem' }}>
-          <span style={{ color: "#0000ff" }}>Forgetaboutit </span>
-          <span style={{ color: "#ffffff" }}>Writer</span>
+    <header className="sticky top-0 z-40 border-b border-brand-stroke/60 bg-brand-background/95 px-5 backdrop-blur-xl" style={{ height: '60px' }}>
+      <div className="mx-auto w-full h-full relative flex items-center" style={{ maxWidth: '1720px' }}>
+        {isAuthenticated && (
+          <button
+            type="button"
+            onClick={handlePanelToggle}
+            className="absolute left-5 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full border border-brand-stroke/60 bg-transparent text-white hover:bg-brand-panel/50 transition-colors"
+            aria-label="Toggle panel"
+          >
+            <span className="material-symbols-outlined text-xl">
+              {sidebarOpen ? "left_panel_close" : "left_panel_open"}
+            </span>
+          </button>
+        )}
+        <Link href="/" className="font-display leading-none flex items-center absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ fontSize: '24px', lineHeight: '1', whiteSpace: 'pre' }}>
+          <span style={{ color: "#0000ff" }}>Forgetaboutit</span>
+          <span style={{ color: "#ffffff" }}> Writer</span>
         </Link>
-        <div className="flex items-center gap-3">
-          <div className="relative" ref={downloadMenuRef}>
-            <button
-              type="button"
-              onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-              className="inline-flex items-center gap-2 rounded-full border border-brand-stroke/60 bg-brand-panel/70 px-4 py-2 text-sm font-semibold text-white transition hover:border-brand-blue hover:bg-brand-panel"
+        {isAuthenticated ? (
+          <button
+            type="button"
+            onClick={handleNewDoc}
+            className="absolute right-5 top-1/2 -translate-y-1/2 inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition hover:bg-brand-blue/90 hover:text-white"
+          >
+            <PencilSquareIcon className="h-4 w-4" />
+            New Doc
+          </button>
+        ) : (
+          <div className="absolute right-5 top-1/2 -translate-y-1/2 flex items-center gap-3">
+            <Link href="/sign-in" className="text-sm font-semibold text-white transition hover:text-brand-blue">
+              Sign In
+            </Link>
+            <Link
+              href="/register"
+              className="rounded-full bg-brand-blue px-5 py-2 text-sm font-semibold text-white transition hover:bg-brand-blue/80"
             >
-              <ArrowDownTrayIcon className="h-4 w-4" />
-              Download
-              <ChevronDownIcon className="h-4 w-4" />
-            </button>
-            {showDownloadMenu && (
-              <div className="absolute right-0 top-full z-50 mt-2 w-48 rounded-lg border border-brand-stroke/60 bg-brand-panel shadow-lg">
-                <button
-                  type="button"
-                  onClick={() => handleDownload("docx")}
-                  className="w-full px-4 py-2 text-left text-sm text-white transition hover:bg-brand-blue/20"
-                >
-                  .docx
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDownload("txt")}
-                  className="w-full px-4 py-2 text-left text-sm text-white transition hover:bg-brand-blue/20"
-                >
-                  .txt
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDownload("pdf")}
-                  className="w-full px-4 py-2 text-left text-sm text-white transition hover:bg-brand-blue/20"
-                >
-                  .pdf
-                </button>
-              </div>
-            )}
+              Register
+            </Link>
           </div>
-          {isAuthenticated ? (
-            <button
-              type="button"
-              onClick={handleNewDoc}
-              className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition hover:bg-brand-blue/90 hover:text-white"
-            >
-              <PencilSquareIcon className="h-4 w-4" />
-              New Doc
-            </button>
-          ) : (
-            <>
-              <Link href="/sign-in" className="text-sm font-semibold text-white transition hover:text-brand-blue">
-                Sign In
-              </Link>
-              <Link
-                href="/register"
-                className="rounded-full bg-brand-blue px-5 py-2 text-sm font-semibold text-white transition hover:bg-brand-blue/80"
-              >
-                Register
-              </Link>
-            </>
-          )}
-        </div>
+        )}
       </div>
     </header>
   );

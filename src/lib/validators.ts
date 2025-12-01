@@ -58,7 +58,6 @@ export const documentSchema = z.object({
   benchmark: z.string().max(120).nullable().optional(),
   avoidWords: z.string().max(200).nullable().optional(),
   writingStyle: z.string().nullable().optional(),
-  styleTitle: z.string().max(100).nullable().optional(),
-  starred: z.boolean().optional()
+  styleTitle: z.string().max(100).nullable().optional()
 });
 

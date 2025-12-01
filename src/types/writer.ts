@@ -17,6 +17,5 @@ export type WriterOutput = {
   isPending?: boolean;
   writingStyle?: string | null;
   styleTitle?: string | null;
-  starred?: boolean;
 };
 

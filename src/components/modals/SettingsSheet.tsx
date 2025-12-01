@@ -4,6 +4,7 @@
  import { Fragment, useState, useEffect } from "react";
 import { MinusSmallIcon } from "@heroicons/react/24/outline";
  import { ComposerSettingsInput, marketTiers } from "@/lib/validators";
+ import { cn } from "@/lib/utils";
  
 type SettingsSheetProps = {
   open: boolean;
@@ -16,10 +17,24 @@ type SettingsSheetProps = {
 };
  
 const marketLabels = {
-  MASS: "Mass ($)",
-  PREMIUM: "Premium ($$)",
-  LUXURY: "Luxury ($$$)",
-  UHNW: "UHNW ($$$$$)"
+  MASS: "Mass",
+  PREMIUM: "Premium",
+  LUXURY: "Luxury",
+  UHNW: "UHNW"
+} as const;
+
+const marketDollarSigns = {
+  MASS: "$",
+  PREMIUM: "$$",
+  LUXURY: "$$$",
+  UHNW: "$$$$$"
+} as const;
+
+const marketExamples = {
+  MASS: "Make every day feel this good.",
+  PREMIUM: "Crafted to elevate your routine.",
+  LUXURY: "Because indulgence should be effortless.",
+  UHNW: "Reserved for the few who rewrite the rules."
 } as const;
  
 export default function SettingsSheet({
@@ -33,9 +48,19 @@ export default function SettingsSheet({
 }: SettingsSheetProps) {
   const [brandModalOpen, setBrandModalOpen] = useState(false);
   const [brandInput, setBrandInput] = useState("");
+  const [brandName, setBrandName] = useState("");
   const [brandProcessing, setBrandProcessing] = useState(false);
   const [hasBrand, setHasBrand] = useState(initialBrandDefined);
   const [clearingBrand, setClearingBrand] = useState(false);
+  const [editingBrandName, setEditingBrandName] = useState(false);
+  const [currentBrandName, setCurrentBrandName] = useState("");
+  const [currentBrandInfo, setCurrentBrandInfo] = useState("");
+  const [showESLTooltip, setShowESLTooltip] = useState(false);
+  const [eslTooltipTimeout, setEslTooltipTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [hoveredGradeLevel, setHoveredGradeLevel] = useState<string | null>(null);
+  const [gradeLevelTooltipTimeout, setGradeLevelTooltipTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [hoveredMarketTier, setHoveredMarketTier] = useState<string | null>(null);
+  const [marketTierTooltipTimeout, setMarketTierTooltipTimeout] = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setHasBrand(initialBrandDefined);
@@ -49,7 +74,10 @@ export default function SettingsSheet({
         if (response.ok) {
           const data = await response.json();
           const summary = data.brandInfo ?? null;
+          const name = data.brandName ?? null;
           setHasBrand(!!summary);
+          setCurrentBrandName(name || "");
+          setCurrentBrandInfo(summary || "");
           onBrandUpdate?.(summary);
         }
       } catch (error) {
@@ -65,28 +93,90 @@ export default function SettingsSheet({
     if (!brandInput.trim()) {
       return;
     }
+    
     setBrandProcessing(true);
     try {
       const response = await fetch("/api/brand", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandInfo: brandInput })
+        body: JSON.stringify({ 
+          brandName: brandName?.trim() || undefined,
+          brandInfo: brandInput.trim() 
+        })
       });
       const data = await response.json();
       if (response.ok && !data.error) {
         const summary = data.brandInfo ?? null;
+        const name = data.brandName ?? null;
         setBrandInput("");
+        setBrandName("");
         setBrandModalOpen(false);
         setHasBrand(!!summary);
+        setCurrentBrandName(name || "");
+        setCurrentBrandInfo(summary || "");
         onBrandUpdate?.(summary);
       } else {
-        console.error("Failed to save brand info", data.error || "Unknown error");
+        // Handle Zod validation errors or other errors
+        let errorMessage = "Unknown error";
+        if (data.error) {
+          if (typeof data.error === "string") {
+            errorMessage = data.error;
+          } else if (data.error.formErrors && data.error.formErrors.length > 0) {
+            errorMessage = data.error.formErrors.join(", ");
+          } else if (data.error.fieldErrors) {
+            const fieldMessages = Object.entries(data.error.fieldErrors)
+              .flatMap(([field, errors]) => 
+                Array.isArray(errors) ? errors.map(err => `${field}: ${err}`) : []
+              );
+            errorMessage = fieldMessages.length > 0 ? fieldMessages.join(", ") : "Validation failed";
+          } else if (data.error.details) {
+            errorMessage = data.error.details;
+          }
+        }
+        console.error("Failed to save brand info", {
+          status: response.status,
+          statusText: response.statusText,
+          error: data.error,
+          errorMessage
+        });
+        alert(`Failed to save brand: ${errorMessage}`);
       }
     } catch (error) {
       console.error("Failed to save brand info", error);
     } finally {
       setBrandProcessing(false);
     }
+  }
+  
+  async function handleUpdateBrandName() {
+    if (editingBrandName) {
+      const originalName = brandName || "";
+      if (currentBrandName.trim() !== originalName.trim()) {
+        try {
+          const response = await fetch("/api/brand", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              brandName: currentBrandName.trim() || null,
+              brandInfo: currentBrandInfo 
+            })
+          });
+          const data = await response.json();
+          if (response.ok && !data.error) {
+            setCurrentBrandName(data.brandName || "");
+            setBrandName(data.brandName || "");
+          } else {
+            // Revert on error
+            setCurrentBrandName(originalName);
+          }
+        } catch (error) {
+          console.error("Failed to update brand name", error);
+          // Revert on error
+          setCurrentBrandName(originalName);
+        }
+      }
+    }
+    setEditingBrandName(false);
   }
 
   async function handleClearBrand() {
@@ -98,6 +188,9 @@ export default function SettingsSheet({
         return;
       }
       setBrandInput("");
+      setBrandName("");
+      setCurrentBrandName("");
+      setCurrentBrandInfo("");
       setHasBrand(false);
       onBrandUpdate?.(null);
     } catch (error) {
@@ -122,6 +215,26 @@ export default function SettingsSheet({
      }
     onChange({ ...settings, [field]: value || null });
    }
+
+  function clearAllAdjustments() {
+    onChange({
+      marketTier: null,
+      characterLength: null,
+      wordLength: null,
+      gradeLevel: null,
+      benchmark: null,
+      avoidWords: null
+    });
+  }
+
+  const hasCustomAdjustments = Boolean(
+    settings.marketTier ||
+    settings.characterLength ||
+    settings.wordLength ||
+    settings.gradeLevel ||
+    settings.benchmark ||
+    settings.avoidWords
+  );
  
    return (
      <Transition show={open} as={Fragment}>
@@ -159,8 +272,17 @@ export default function SettingsSheet({
               }
             >
                <header className="mb-4 flex items-center justify-between">
-                <div>
+                <div className="flex items-center gap-3">
                   <Dialog.Title className="font-display text-2xl text-brand-text">Adjust Writing</Dialog.Title>
+                  {hasCustomAdjustments && (
+                    <button
+                      type="button"
+                      onClick={clearAllAdjustments}
+                      className="rounded-full border border-brand-stroke/60 bg-brand-ink/50 px-3 py-1.5 text-xs font-semibold text-brand-muted hover:border-brand-blue hover:text-brand-blue transition"
+                    >
+                      Clear Adjustments
+                    </button>
+                  )}
                 </div>
                 <button onClick={onClose} className="rounded-full border border-brand-stroke/70 p-2 text-brand-text hover:text-brand-blue" aria-label="Close brief controls">
                   <MinusSmallIcon className="h-5 w-5" />
@@ -183,69 +305,229 @@ export default function SettingsSheet({
                     onChange={(value) => update("wordLength", value)}
                   />
                 </div>
-                <div>
-                  <label className="text-sm text-brand-muted">Choose market</label>
-                  <select
-                    value={settings.marketTier ?? ""}
-                    onChange={(e) => update("marketTier", e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
-                  >
-                    <option value="">Auto</option>
-                    {marketTiers.map((tier) => (
-                      <option key={tier} value={tier}>
-                        {marketLabels[tier]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm text-brand-muted">Choose grade level</label>
-                  <select
-                    value={settings.gradeLevel ?? ""}
-                    onChange={(e) => update("gradeLevel", e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
-                  >
-                    <option value="">Auto</option>
-                    <option value="ESL (English as Second Language)">ESL (English as Second Language)</option>
-                    <option value="Grade 5">Grade 5</option>
-                    <option value="Grade 9">Grade 9</option>
-                    <option value="Grade 12">Grade 12</option>
-                    <option value="Collegiate">Collegiate</option>
-                    <option value="PhD">PhD</option>
-                  </select>
-                </div>
-                <Field
-                  label="Benchmark"
-                  placeholder="Tom Ford"
-                  value={settings.benchmark ?? ""}
-                  onChange={(value) => update("benchmark", value)}
-                />
-                <Field
-                  label="Avoid words"
-                  placeholder="budget, cheap"
-                  value={settings.avoidWords ?? ""}
-                  onChange={(value) => update("avoidWords", value)}
-                />
-                <div className="pt-2 border-t border-brand-stroke/60">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-brand-muted">Brand</span>
-                    {hasBrand && (
-                      <span className="text-xs text-brand-blue font-semibold">Custom Brand Defined</span>
-                    )}
+                <div className="space-y-2">
+                  <label className="text-sm text-brand-muted">Grade level</label>
+                  <div className="flex flex-wrap gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => update("gradeLevel", "")}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                        !settings.gradeLevel
+                          ? "border-brand-blue bg-brand-blue/20 text-white"
+                          : "border-brand-stroke/70 bg-brand-ink text-brand-muted hover:border-brand-blue hover:text-white"
+                      )}
+                    >
+                      Auto
+                    </button>
+                    {[
+                      { value: "ESL (English as Second Language)", label: "ESL", tooltip: "English as a Second Language" },
+                      { value: "Grade 5", label: "5th", example: "This is fun!" },
+                      { value: "Grade 9", label: "9th", example: "This works well." },
+                      { value: "Grade 12", label: "12th", example: "This is effective." },
+                      { value: "Collegiate", label: "Collegiate", example: "This demonstrates efficacy." },
+                      { value: "PhD", label: "PhD", example: "This evinces methodological rigor." }
+                    ].map((level) => {
+                      const isESL = level.value === "ESL (English as Second Language)";
+                      const showTooltip = isESL ? showESLTooltip : hoveredGradeLevel === level.value;
+                      const tooltipText = isESL ? level.tooltip : level.example;
+                      
+                      return (
+                        <div key={level.value} className="relative">
+                          <button
+                            type="button"
+                            onClick={() => update("gradeLevel", level.value)}
+                            onMouseEnter={() => {
+                              if (isESL) {
+                                const timeout = setTimeout(() => {
+                                  setShowESLTooltip(true);
+                                }, 500);
+                                setEslTooltipTimeout(timeout);
+                              } else if (level.example) {
+                                const timeout = setTimeout(() => {
+                                  setHoveredGradeLevel(level.value);
+                                }, 500);
+                                setGradeLevelTooltipTimeout(timeout);
+                              }
+                            }}
+                            onMouseLeave={() => {
+                              if (isESL) {
+                                if (eslTooltipTimeout) {
+                                  clearTimeout(eslTooltipTimeout);
+                                  setEslTooltipTimeout(null);
+                                }
+                                setShowESLTooltip(false);
+                              } else {
+                                if (gradeLevelTooltipTimeout) {
+                                  clearTimeout(gradeLevelTooltipTimeout);
+                                  setGradeLevelTooltipTimeout(null);
+                                }
+                                setHoveredGradeLevel(null);
+                              }
+                            }}
+                            className={cn(
+                              "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                              settings.gradeLevel === level.value
+                                ? "border-brand-blue bg-brand-blue/20 text-white"
+                                : "border-brand-stroke/70 bg-brand-ink text-brand-muted hover:border-brand-blue hover:text-white"
+                            )}
+                          >
+                            {level.label}
+                          </button>
+                          {showTooltip && tooltipText && (
+                            <div
+                              className={cn(
+                                "absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded border border-brand-stroke/60 bg-brand-panel text-xs text-brand-text whitespace-nowrap z-50 pointer-events-none",
+                                !isESL && "italic"
+                              )}
+                            >
+                              {isESL ? tooltipText : <>i.e. "{tooltipText}"</>}
+                              <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px">
+                                <div className="border-4 border-transparent border-t-brand-stroke/60"></div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setBrandModalOpen(true)}
-                    className="w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
-                  >
-                    {hasBrand ? "Update Brand" : "Define Brand"}
-                  </button>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-brand-muted">Market</label>
+                  <div className="flex flex-wrap gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => update("marketTier", "")}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                        !settings.marketTier
+                          ? "border-brand-blue bg-brand-blue/20 text-white"
+                          : "border-brand-stroke/70 bg-brand-ink text-brand-muted hover:border-brand-blue hover:text-white"
+                      )}
+                    >
+                      Auto
+                    </button>
+                    {marketTiers.map((tier) => (
+                      <div key={tier} className="relative">
+                        <button
+                          type="button"
+                          onClick={() => update("marketTier", tier)}
+                          onMouseEnter={() => {
+                            const timeout = setTimeout(() => {
+                              setHoveredMarketTier(tier);
+                            }, 500);
+                            setMarketTierTooltipTimeout(timeout);
+                          }}
+                          onMouseLeave={() => {
+                            if (marketTierTooltipTimeout) {
+                              clearTimeout(marketTierTooltipTimeout);
+                              setMarketTierTooltipTimeout(null);
+                            }
+                            setHoveredMarketTier(null);
+                          }}
+                          className={cn(
+                            "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                            settings.marketTier === tier
+                              ? "border-brand-blue bg-brand-blue/20 text-white"
+                              : "border-brand-stroke/70 bg-brand-ink text-brand-muted hover:border-brand-blue hover:text-white"
+                          )}
+                        >
+                          {marketLabels[tier]} <sup className="text-[0.5em] leading-none">{marketDollarSigns[tier]}</sup>
+                        </button>
+                        {hoveredMarketTier === tier && (
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded border border-brand-stroke/60 bg-brand-panel text-xs text-brand-text whitespace-nowrap z-50 pointer-events-none italic">
+                            i.e. "{marketExamples[tier]}"
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px">
+                              <div className="border-4 border-transparent border-t-brand-stroke/60"></div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-brand-muted whitespace-nowrap w-24">Benchmark</label>
+                  <input
+                    type="text"
+                    placeholder="Tom Ford"
+                    value={settings.benchmark ?? ""}
+                    onChange={(e) => update("benchmark", e.target.value)}
+                    className="flex-1 rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-brand-muted whitespace-nowrap w-24">Avoid words</label>
+                  <input
+                    type="text"
+                    placeholder="budget, cheap"
+                    value={settings.avoidWords ?? ""}
+                    onChange={(e) => update("avoidWords", e.target.value)}
+                    className="flex-1 rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
+                  />
+                </div>
+                <div className="pt-2 border-t border-brand-stroke/60">
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-brand-muted whitespace-nowrap w-24">Brand</label>
+                    {hasBrand && (
+                      <div className="flex-1 flex items-center gap-2">
+                        {editingBrandName ? (
+                          <>
+                            <input
+                              type="text"
+                              value={currentBrandName}
+                              onChange={(e) => setCurrentBrandName(e.target.value)}
+                              onBlur={handleUpdateBrandName}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  handleUpdateBrandName();
+                                } else if (e.key === "Escape") {
+                                  // Reset to original value
+                                  setCurrentBrandName(brandName || "");
+                                  setEditingBrandName(false);
+                                }
+                              }}
+                              maxLength={100}
+                              className="flex-1 rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
+                              autoFocus
+                            />
+                          </>
+                        ) : (
+                          <div
+                            onClick={() => {
+                              setBrandName(currentBrandName);
+                              setEditingBrandName(true);
+                            }}
+                            className="flex-1 rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text cursor-text hover:border-brand-blue transition"
+                          >
+                            {currentBrandName || "Untitled Brand"}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (hasBrand) {
+                          setBrandInput(currentBrandInfo);
+                          setBrandName(currentBrandName);
+                        } else {
+                          setBrandInput("");
+                          setBrandName("");
+                        }
+                        setBrandModalOpen(true);
+                      }}
+                      className="rounded-full border border-brand-stroke/70 bg-brand-ink px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue whitespace-nowrap"
+                    >
+                      {hasBrand ? "Update Brand" : "Define Brand"}
+                    </button>
+                  </div>
                   {hasBrand && (
                     <button
                       type="button"
                       onClick={handleClearBrand}
                       disabled={clearingBrand}
-                      className="mt-2 w-full rounded-lg border border-brand-stroke/60 px-4 py-2 text-xs font-semibold text-brand-muted transition hover:border-brand-blue hover:text-brand-blue disabled:cursor-not-allowed disabled:opacity-60"
+                      className="mt-2 ml-[108px] rounded-full border border-brand-stroke/60 px-4 py-2 text-xs font-semibold text-brand-muted transition hover:border-brand-blue hover:text-brand-blue disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {clearingBrand ? "Clearing..." : "Clear Custom Brand"}
                     </button>
@@ -282,8 +564,19 @@ export default function SettingsSheet({
                  </header>
                  <div className="space-y-4">
                    <div>
+                     <label className="text-sm text-brand-muted">Brand Name</label>
+                     <input
+                       type="text"
+                       value={brandName}
+                       onChange={(e) => setBrandName(e.target.value.substring(0, 100))}
+                       placeholder="Enter brand name (optional)"
+                       maxLength={100}
+                       className="mt-2 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
+                     />
+                   </div>
+                   <div>
                      <label className="text-sm text-brand-muted">
-                       Paste your brand information, style guides, vocabulary, tone, and any other details about your brand.
+                       Paste your brand information, style guides, vocabulary, tone, and any other details about your brand. The AI will create a concise 400-character summary.
                      </label>
                      <textarea
                        value={brandInput}
@@ -297,7 +590,7 @@ export default function SettingsSheet({
                      <button
                        type="button"
                        onClick={() => setBrandModalOpen(false)}
-                       className="rounded-lg border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
+                       className="rounded-full border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
                      >
                        Cancel
                      </button>
@@ -305,7 +598,7 @@ export default function SettingsSheet({
                        type="button"
                        onClick={handleDefineBrand}
                        disabled={!brandInput.trim() || brandProcessing}
-                       className="rounded-lg bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-blue/80 disabled:opacity-60 disabled:cursor-not-allowed"
+                       className="rounded-full bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-blue/80 disabled:opacity-60 disabled:cursor-not-allowed"
                      >
                        {brandProcessing ? "Processing..." : "Save Brand"}
                      </button>
