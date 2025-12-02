@@ -61,6 +61,7 @@ export async function PATCH(
     if (body.avoidWords !== undefined) updateData.avoidWords = body.avoidWords;
     if (body.writingStyle !== undefined) updateData.writingStyle = body.writingStyle;
     if (body.styleTitle !== undefined) updateData.styleTitle = body.styleTitle;
+    if (body.pinned !== undefined) updateData.pinned = body.pinned;
 
     // If no fields to update, return the existing document
     if (Object.keys(updateData).length === 0) {

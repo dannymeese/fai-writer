@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Document, Packer, Paragraph, TextRun } from "docx";
+import { generateDownloadFilename } from "@/lib/utils";
 
 export async function POST(request: Request) {
   const { title, content, format = "docx" } = await request.json().catch(() => ({}));
@@ -8,8 +9,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Title and content required" }, { status: 400 });
   }
 
-  const stamp = new Date().toISOString().split("T")[0];
-  const sanitizedTitle = title.replace(/\s+/g, "_");
+  const filename = generateDownloadFilename(title, content, format);
 
   if (format === "txt") {
     const textContent = `${title}\n\n${content}`;
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     return new NextResponse(uint8Array, {
       headers: {
         "Content-Type": "text/plain",
-        "Content-Disposition": `attachment; filename="${sanitizedTitle}_${stamp}.txt"`
+        "Content-Disposition": `attachment; filename="${filename}"`
       }
     });
   }
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
       needsClientGeneration: true,
       title,
       content,
-      filename: `${sanitizedTitle}_${stamp}.pdf`
+      filename: filename
     });
   }
 
@@ -64,8 +64,6 @@ export async function POST(request: Request) {
   });
 
   const buffer = await Packer.toBuffer(doc);
-  const filename = `${sanitizedTitle}_${stamp}.docx`;
-
   const uint8Array = new Uint8Array(buffer);
 
   return new NextResponse(uint8Array, {

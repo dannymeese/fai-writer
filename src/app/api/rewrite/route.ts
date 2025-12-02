@@ -17,7 +17,7 @@ const rewriteRequestSchema = z.object({
 });
 
 const SHORT_RULES =
-  "RULES: No em/en dashes, AI clichés, or repeated lines. Every word must earn its place and feel bespoke + human. Missing info stays in [brackets]; never ask follow-ups. Skip emojis unless requested. Vary pacing to avoid tidy triads or recap paragraphs. Favor sensory detail over filler.";
+  "RULES: No em/en dashes, AI clichés, or repeated lines. Every word must earn its place and feel bespoke + human. Missing info stays in [brackets]; never ask follow-ups. Skip emojis unless requested. Vary pacing to avoid tidy triads or recap paragraphs. Never use 'X instead of Y' phrasing patterns. Vary list lengths—avoid always defaulting to exactly 3 bullet points. Favor sensory detail over filler.";
 
 export async function POST(request: Request) {
   const session = await auth();

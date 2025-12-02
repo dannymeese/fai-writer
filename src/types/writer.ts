@@ -17,6 +17,7 @@ export type WriterOutput = {
   isPending?: boolean;
   writingStyle?: string | null;
   styleTitle?: string | null;
+  pinned?: boolean;
 };
 
 export type FolderSummary = {

@@ -39,10 +39,11 @@ model Document {
   avoidWords      String?
   writingStyle    String?  @db.Text
   styleTitle      String?  @db.VarChar(100)
+  pinned          Boolean  @default(false)
   owner           User     @relation(fields: [ownerId], references: [id])
   ownerId         String
   createdAt       DateTime @default(now())
-  folders         DocumentFolder[]
+  updatedAt       DateTime @updatedAt
 }
 
 model Account {
@@ -105,29 +106,4 @@ enum MarketTier {
   PREMIUM
   LUXURY
   UHNW
-}
-
-model Folder {
-  id               String           @id @default(cuid())
-  name             String           @db.VarChar(120)
-  owner            User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  ownerId          String
-  documentFolders  DocumentFolder[]
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-
-  @@unique([ownerId, name])
-  @@index([ownerId])
-}
-
-model DocumentFolder {
-  id          String   @id @default(cuid())
-  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  documentId  String
-  folder      Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
-  folderId    String
-  createdAt   DateTime @default(now())
-
-  @@unique([documentId, folderId])
-  @@index([folderId])
 }

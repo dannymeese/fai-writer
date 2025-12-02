@@ -5,12 +5,13 @@ import { Tab } from "@headlessui/react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { ArrowRightOnRectangleIcon } from "@heroicons/react/24/outline";
+import NextImage from "next/image";
 import DocumentEditor from "../editors/DocumentEditor";
 import ComposeBar from "../forms/ComposeBar";
 import SettingsSheet from "../modals/SettingsSheet";
 import { ComposerSettingsInput } from "@/lib/validators";
 import { FolderSummary, OutputPlaceholder, WriterOutput } from "@/types/writer";
-import { cn, formatTimestamp, smartTitleFromPrompt, deriveTitleFromContent } from "@/lib/utils";
+import { cn, formatTimestamp, smartTitleFromPrompt, deriveTitleFromContent, generateDownloadFilename, addPromptToHistory } from "@/lib/utils";
 
 type WriterWorkspaceProps = {
   user: {
@@ -24,11 +25,13 @@ type SavedDoc = {
   id: string;
   title: string;
   createdAt: string;
+  lastEditedAt?: string;
   prompt: string;
   content: string;
   settings: ComposerSettingsInput;
   writingStyle?: string | null;
   styleTitle?: string | null;
+  pinned?: boolean;
 };
 
 type SidebarTab = "docs" | "styles" | "brands";
@@ -63,16 +66,27 @@ function readLocalDocs(): SavedDoc[] {
         id: typeof safeEntry.id === "string" ? safeEntry.id : `local-${Date.now()}`,
         title: typeof safeEntry.title === "string" ? safeEntry.title : "Untitled doc",
         createdAt: typeof safeEntry.createdAt === "string" ? safeEntry.createdAt : new Date().toISOString(),
+        lastEditedAt:
+          typeof safeEntry.lastEditedAt === "string"
+            ? safeEntry.lastEditedAt
+            : typeof safeEntry.createdAt === "string"
+              ? safeEntry.createdAt
+              : new Date().toISOString(),
         prompt: typeof safeEntry.prompt === "string" ? safeEntry.prompt : "",
         content: typeof safeEntry.content === "string" ? safeEntry.content : "",
         settings: normalizeSettings(safeEntry.settings ?? {}),
         writingStyle:
           typeof safeEntry.writingStyle === "string"
             ? safeEntry.writingStyle
-            : safeEntry.writingStyle ?? null
+            : safeEntry.writingStyle ?? null,
+        styleTitle:
+          typeof safeEntry.styleTitle === "string"
+            ? safeEntry.styleTitle
+            : safeEntry.styleTitle ?? null,
+        pinned: typeof safeEntry.pinned === "boolean" ? safeEntry.pinned : false
       });
     }
-    return docs.slice(0, 25);
+    return sortSavedDocs(docs).slice(0, 25);
   } catch (error) {
     console.error("read local docs failed", error);
     return [];
@@ -83,7 +97,11 @@ function persistLocalDocEntry(doc: SavedDoc) {
   if (!canUseLocalStorage()) return;
   try {
     const existing = readLocalDocs();
-    const next = [doc, ...existing.filter((entry) => entry.id !== doc.id)].slice(0, 25);
+    const next = [
+      { ...doc, lastEditedAt: doc.lastEditedAt ?? doc.createdAt, pinned: doc.pinned ?? false },
+      ...existing.filter((entry) => entry.id !== doc.id)
+    ]
+      .slice(0, 25);
     window.localStorage.setItem(LOCAL_DOCS_KEY, JSON.stringify(next));
   } catch (error) {
     console.error("persist local docs failed", error);
@@ -119,6 +137,19 @@ function hasCustomOptions(settings: ComposerSettingsInput): boolean {
     settings.characterLength ||
     settings.wordLength
   );
+}
+
+function sortSavedDocs(docs: SavedDoc[]): SavedDoc[] {
+  return [...docs].sort((a, b) => {
+    const aPinned = Boolean(a.pinned);
+    const bPinned = Boolean(b.pinned);
+    if (aPinned !== bPinned) {
+      return aPinned ? -1 : 1;
+    }
+    const aTime = new Date(a.lastEditedAt ?? a.createdAt).getTime();
+    const bTime = new Date(b.lastEditedAt ?? b.createdAt).getTime();
+    return bTime - aTime;
+  });
 }
 
 function formatErrorMessage(source: unknown, fallback = "Unable to complete that request."): string {
@@ -234,7 +265,20 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const guestLimitEnabled = process.env.NEXT_PUBLIC_ENFORCE_GUEST_LIMIT === "true";
   const [composeValue, setComposeValue] = useState("");
   const [settings, setSettings] = useState<ComposerSettingsInput>(defaultSettings);
-  const [outputs, setOutputs] = useState<WriterOutput[]>(() => (initialOutputs ?? []).map(ensurePlaceholderState));
+  // Always start with a blank document - don't load previous documents on initial load
+  const [outputs, setOutputs] = useState<WriterOutput[]>(() => {
+    const blankDoc: WriterOutput = ensurePlaceholderState({
+      id: crypto.randomUUID(),
+      title: "Untitled doc",
+      content: "",
+      createdAt: new Date().toISOString(),
+      settings: normalizeSettings(defaultSettings),
+      prompt: "",
+      writingStyle: null,
+      styleTitle: null
+    });
+    return [blankDoc];
+  });
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetAnchor, setSheetAnchor] = useState<DOMRect | null>(null);
   const [loading, setLoading] = useState(false);
@@ -255,12 +299,17 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [titleAutosaveTimeout, setTitleAutosaveTimeout] = useState<NodeJS.Timeout | null>(null);
   const editorRef = useRef<any>(null); // Reference to the TipTap editor instance
   const outputsRef = useRef<WriterOutput[]>(outputs);
+  const savedDocsRef = useRef<SavedDoc[]>([]);
   const composeInputRef = useRef<HTMLTextAreaElement>(null);
   const isAuthenticated = !isGuest;
 
   useEffect(() => {
     outputsRef.current = outputs;
   }, [outputs]);
+
+  useEffect(() => {
+    savedDocsRef.current = savedDocs;
+  }, [savedDocs]);
 
   const fetchSavedDocs = useCallback(async () => {
     if (!isAuthenticated) {
@@ -272,55 +321,47 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       const response = await fetch("/api/documents", { cache: "no-store" });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        console.warn("[fetchSavedDocs] load docs failed", response.status, payload);
-        const local = readLocalDocs();
-        if (local.length) {
-          setSavedDocs(local);
-        }
+        console.error("[fetchSavedDocs] Failed to load docs from database:", {
+          status: response.status,
+          error: payload?.error || "Unknown error"
+        });
+        setSavedDocs([]);
         return;
       }
       const docs = await response.json();
       console.log("[fetchSavedDocs] fetched", docs.length, "documents from API");
-      const mapped: SavedDoc[] = (docs as any[]).map((doc) => ({
-        id: doc.id,
-        title: doc.title ?? "Untitled doc",
-        createdAt: doc.createdAt ?? new Date().toISOString(),
-        prompt: doc.prompt ?? "",
-        content: doc.content ?? "",
-        settings: normalizeSettings({
-          marketTier: doc.tone ?? null,
-          characterLength: doc.characterLength ?? null,
-          wordLength: doc.wordLength ?? null,
-          gradeLevel: doc.gradeLevel ?? null,
-          benchmark: doc.benchmark ?? null,
-          avoidWords: doc.avoidWords ?? null
-        }),
-        writingStyle: doc.writingStyle ?? null,
-        styleTitle: doc.styleTitle ?? null
-      }));
-      mapped.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const mapped: SavedDoc[] = (docs as any[]).map((doc) => {
+        const existing = savedDocsRef.current.find((entry) => entry.id === doc.id);
+        return {
+          id: doc.id,
+          title: doc.title ?? "Untitled doc",
+          createdAt: doc.createdAt ?? new Date().toISOString(),
+          lastEditedAt: existing?.lastEditedAt ?? doc.updatedAt ?? doc.createdAt ?? new Date().toISOString(),
+          prompt: doc.prompt ?? "",
+          content: doc.content ?? "",
+          settings: normalizeSettings({
+            marketTier: doc.tone ?? null,
+            characterLength: doc.characterLength ?? null,
+            wordLength: doc.wordLength ?? null,
+            gradeLevel: doc.gradeLevel ?? null,
+            benchmark: doc.benchmark ?? null,
+            avoidWords: doc.avoidWords ?? null
+          }),
+          writingStyle: doc.writingStyle ?? null,
+          styleTitle: doc.styleTitle ?? null,
+          pinned: typeof doc.pinned === "boolean" ? doc.pinned : existing?.pinned ?? false
+        };
+      });
       console.log("[fetchSavedDocs] mapped documents:", mapped.length);
       const regularDocs = mapped.filter((doc) => !isStyleDocument(doc));
       const styles = mapped.filter((doc) => isStyleDocument(doc));
       console.log("[fetchSavedDocs] classified - docs:", regularDocs.length, "styles:", styles.length);
       console.log("[fetchSavedDocs] sample doc titles:", regularDocs.slice(0, 3).map(d => d.title));
-      if (mapped.length) {
-        setSavedDocs(mapped);
-        console.log("[fetchSavedDocs] Updated savedDocs state with", mapped.length, "documents");
-      } else {
-        const local = readLocalDocs();
-        if (local.length) {
-          setSavedDocs(local);
-        } else {
-          setSavedDocs([]);
-        }
-      }
+      setSavedDocs(sortSavedDocs(mapped));
+      console.log("[fetchSavedDocs] Updated savedDocs state with", mapped.length, "documents");
     } catch (error) {
-      console.error("[fetchSavedDocs] fetch docs error", error);
-      const local = readLocalDocs();
-      if (local.length) {
-        setSavedDocs(local);
-      }
+      console.error("[fetchSavedDocs] Failed to fetch docs:", error);
+      setSavedDocs([]);
     }
   }, [isAuthenticated]);
 
@@ -367,7 +408,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     if (isAuthenticated) return;
     const local = readLocalDocs();
     if (local.length) {
-      setSavedDocs(local);
+      setSavedDocs(sortSavedDocs(local));
     }
   }, [isAuthenticated]);
 
@@ -471,6 +512,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       return;
     }
     const currentPrompt = composeValue;
+    
+    // Add prompt to history
+    addPromptToHistory(currentPrompt);
+    
     setLoading(true);
     const editorContext = collectEditorContext();
 
@@ -532,6 +577,39 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
 
     // If there's an active document and editor, insert at cursor position
     if (activeDocument && editorRef.current) {
+      // Check if the document is untitled and needs to be saved first
+      const isUntitled = !activeDocument.title || activeDocument.title.trim() === "" || activeDocument.title.toLowerCase() === "untitled doc";
+      const isSaved = isAuthenticated && savedDocsRef.current.find(d => d.id === activeDocument.id);
+      const needsSaving = isUntitled && isAuthenticated && !isSaved;
+      
+      let documentIdToUse = activeDocument.id;
+      
+      // If untitled and not saved, save it first
+      if (needsSaving) {
+        const currentContent = activeDocument.content || "";
+        const savedId = await persistDocumentToServer(activeDocument, currentContent);
+        if (savedId && savedId !== activeDocument.id) {
+          // Update the active document ID
+          setOutputs((prev) =>
+            prev.map((entry) =>
+              entry.id === activeDocument.id ? { ...entry, id: savedId } : entry
+            )
+          );
+          setActiveDocumentId(savedId);
+          documentIdToUse = savedId;
+          // Refresh saved docs to include the newly saved document
+          await fetchSavedDocs();
+        } else if (savedId) {
+          documentIdToUse = savedId;
+        }
+      }
+      
+      // Include documentId in editorContext so compose API can update instead of create
+      const editorContextWithDocId = {
+        ...editorContext,
+        documentId: documentIdToUse
+      };
+      
       try {
         const response = await fetch("/api/compose", {
           method: "POST",
@@ -546,7 +624,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
                   description: activeStyle.description
                 }
               : undefined,
-            editorContext: editorContext ?? undefined
+            editorContext: editorContextWithDocId ?? undefined
           })
         });
 
@@ -733,8 +811,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    const stamp = new Date().toISOString().split("T")[0];
-    link.download = `${output.title.replace(/\s+/g, "_")}_${stamp}.docx`;
+    const filename = generateDownloadFilename(output.title, resolved, "docx");
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -769,11 +847,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       id: `${output.id}-style-${Date.now()}`,
       title: styleName,
       createdAt: new Date().toISOString(),
+      lastEditedAt: new Date().toISOString(),
       prompt: output.prompt ?? "",
       content: resolvedContent,
       settings: normalizeSettings(output.settings),
       writingStyle: description,
-      styleTitle: styleName
+      styleTitle: styleName,
+      pinned: false
     };
     if (guestLimitEnabled && isGuest) {
       applyLocalDoc(localStyleDoc);
@@ -823,124 +903,45 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     const hydratedStyleDoc: SavedDoc = {
       ...localStyleDoc,
       id: remoteDoc?.id ?? localStyleDoc.id,
-      createdAt: remoteDoc?.createdAt ?? localStyleDoc.createdAt
+      createdAt: remoteDoc?.createdAt ?? localStyleDoc.createdAt,
+      lastEditedAt: remoteDoc?.updatedAt ?? remoteDoc?.createdAt ?? localStyleDoc.lastEditedAt,
+      pinned: localStyleDoc.pinned ?? false
     };
     applyLocalDoc(hydratedStyleDoc);
     fetchSavedDocs();
     setToast(`Saved "${styleName}".`);
   }
 
-  const assignDocumentToFolder = useCallback(
-    async (folderId: string, options?: { folderName?: string }) => {
-      if (!isAuthenticated) {
-        setToast("Sign in to organize documents into folders.");
-        return;
-      }
-      if (!activeDocumentId) {
-        setToast("Open a document before adding it to a folder.");
-        return;
-      }
-
-      const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
-      if (!currentDoc) {
-        setToast("Document is still loading.");
-        return;
-      }
-
-      const latestId = await saveCurrentDocument(activeDocumentId, currentDoc.content);
-      const resolvedDocumentId = latestId ?? activeDocumentId;
-      if (!resolvedDocumentId) {
-        setToast("Save the document before adding it to a folder.");
-        return;
-      }
-
-      try {
-        const response = await fetch("/api/folders/assign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            folderId,
-            documentId: resolvedDocumentId
-          })
-        });
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) {
-          setToast(formatErrorMessage(payload?.error, "Unable to add document to folder."));
-          return;
-        }
-
-        const folderName =
-          options?.folderName ||
-          payload?.folder?.name ||
-          folders.find((folder) => folder.id === folderId)?.name ||
-          "folder";
-        setToast(`Added to ${folderName}.`);
-        fetchFolders();
-      } catch (error) {
-        console.error("assign document to folder failed:", error);
-        setToast("Unable to add document to folder.");
-      }
-    },
-    [activeDocumentId, fetchFolders, folders, isAuthenticated, saveCurrentDocument]
-  );
-
-  const handleAddToFolder = useCallback(
-    (folderId: string) => {
-      void assignDocumentToFolder(folderId);
-    },
-    [assignDocumentToFolder]
-  );
-
-  const handleCreateFolder = useCallback(async () => {
-    if (!isAuthenticated) {
-      setToast("Create a free account to organize documents into folders.");
-      return;
-    }
-    const folderName = typeof window !== "undefined" ? window.prompt("Name your folder") : null;
-    if (folderName === null) {
-      return;
-    }
-    const trimmedName = folderName.trim();
-    if (!trimmedName) {
-      setToast("Folder name cannot be empty.");
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/folders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmedName })
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        setToast(formatErrorMessage(payload?.error, "Unable to create folder."));
-        return;
-      }
-
-      const normalizedFolder: FolderSummary = {
-        id: payload.id,
-        name: payload.name ?? trimmedName,
-        createdAt: payload.createdAt ?? new Date().toISOString(),
-        documentCount: typeof payload.documentCount === "number" ? payload.documentCount : 0
-      };
-      setFolders((prev) => [normalizedFolder, ...prev.filter((folder) => folder.id !== normalizedFolder.id)]);
-      await assignDocumentToFolder(normalizedFolder.id, { folderName: normalizedFolder.name });
-    } catch (error) {
-      console.error("create folder failed:", error);
-      setToast("Unable to create folder.");
-    }
-  }, [assignDocumentToFolder, isAuthenticated]);
-
   const hasOutputs = outputs.length > 0;
 
   const applyLocalDoc = useCallback((doc: SavedDoc) => {
     persistLocalDocEntry(doc);
     setSavedDocs((prev) => {
-      const next = [doc, ...prev.filter((entry) => entry.id !== doc.id)];
-      return next.slice(0, 25);
+      const normalizedDoc = { ...doc, lastEditedAt: doc.lastEditedAt ?? doc.createdAt };
+      const next = [normalizedDoc, ...prev.filter((entry) => entry.id !== doc.id)];
+      return sortSavedDocs(next).slice(0, 25);
     });
   }, []);
+
+  const bumpSavedDoc = useCallback(
+    (docId: string, transform?: (doc: SavedDoc) => SavedDoc) => {
+      setSavedDocs((prev) => {
+        const index = prev.findIndex((doc) => doc.id === docId);
+        if (index === -1) {
+          return prev;
+        }
+        const target = prev[index];
+        const transformed = transform ? transform(target) : target;
+        const updatedDoc: SavedDoc = {
+          ...transformed,
+          lastEditedAt: new Date().toISOString()
+        };
+        const next = [updatedDoc, ...prev.slice(0, index), ...prev.slice(index + 1)];
+        return sortSavedDocs(next);
+      });
+    },
+    []
+  );
 
   const { docDocuments, styleDocuments } = useMemo(() => {
     const docs: SavedDoc[] = [];
@@ -1160,11 +1161,31 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     if (doc.writingStyle) payload.writingStyle = doc.writingStyle;
     if (doc.styleTitle) payload.styleTitle = doc.styleTitle;
     
+    // Include pinned status from savedDocs if available
+    const savedDoc = savedDocsRef.current.find((saved) => saved.id === doc.id);
+    if (savedDoc && typeof savedDoc.pinned === 'boolean') {
+      payload.pinned = savedDoc.pinned;
+      console.log("[buildDocumentPayload] Including pinned status:", {
+        documentId: doc.id,
+        pinned: savedDoc.pinned
+      });
+    } else {
+      console.log("[buildDocumentPayload] No pinned status found for document:", {
+        documentId: doc.id,
+        savedDocFound: !!savedDoc
+      });
+    }
+    
     return payload;
   }, [resolveDocumentTitle]);
 
   const persistDocumentToServer = useCallback(
     async (doc: WriterOutput, contentValue: string) => {
+      // Don't save documents with empty content
+      if (!contentValue || !contentValue.trim()) {
+        return null;
+      }
+      
       const resolvedTitle = resolveDocumentTitle(doc, contentValue);
       if (!isAuthenticated) {
         // Guests: save locally
@@ -1172,11 +1193,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           id: doc.id,
           title: resolvedTitle,
           createdAt: doc.createdAt,
+          lastEditedAt: new Date().toISOString(),
           prompt: doc.prompt,
           content: contentValue,
           settings: doc.settings,
           writingStyle: doc.writingStyle ?? null,
-          styleTitle: doc.styleTitle ?? null
+          styleTitle: doc.styleTitle ?? null,
+          pinned: doc.pinned ?? false
         });
         return doc.id;
       }
@@ -1184,19 +1207,58 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       // First try to patch existing document
       if (doc.id) {
         try {
+          // Include pinned status in patch if available
+          const savedDoc = savedDocsRef.current.find((saved) => saved.id === doc.id);
+          const patchData: any = { content: contentValue };
+          if (savedDoc && typeof savedDoc.pinned === 'boolean') {
+            patchData.pinned = savedDoc.pinned;
+          }
+          
           const patchResponse = await fetch(`/api/documents/${doc.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content: contentValue })
+            body: JSON.stringify(patchData)
           });
 
           if (patchResponse.ok) {
+            // Update lastEditedAt in local state from server response
+            try {
+              const updatedDoc = await patchResponse.json();
+              if (updatedDoc?.updatedAt) {
+                setSavedDocs((prev) => {
+                  const next = prev.map((entry) =>
+                    entry.id === doc.id
+                      ? { ...entry, lastEditedAt: updatedDoc.updatedAt }
+                      : entry
+                  );
+                  return sortSavedDocs(next);
+                });
+              }
+            } catch (e) {
+              // If JSON parsing fails, just continue - timestamp will update on next fetch
+              console.warn("[persistDocumentToServer] Failed to parse patch response", e);
+            }
             return doc.id;
           }
 
           if (patchResponse.status !== 404) {
             const errorPayload = await patchResponse.json().catch(() => null);
-            console.error("Autosave patch failed:", patchResponse.status, errorPayload);
+            const isExpectedLocalFallback =
+              patchResponse.status === 503 ||
+              (typeof errorPayload?.error === "string" &&
+                /document storage is disabled|database connection failed/i.test(errorPayload.error));
+            if (isExpectedLocalFallback) {
+              console.info("[persistDocumentToServer] Server unavailable; saving locally (patch).", {
+                status: patchResponse.status
+              });
+            } else {
+              console.warn("Autosave patch failed:", patchResponse.status, errorPayload);
+            }
+            // Database error - return null to indicate failure
+            console.error("[persistDocumentToServer] Patch failed, not saving locally:", {
+              status: patchResponse.status,
+              documentId: doc.id
+            });
             return null;
           }
         } catch (error) {
@@ -1218,6 +1280,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           title: payload.title,
           contentLength: payload.content?.length,
           hasPrompt: !!payload.prompt,
+          pinned: payload.pinned,
           keys: Object.keys(payload)
         });
         
@@ -1269,7 +1332,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           
           const errorMessage = errorPayload?.error || errorPayload?.message || errorPayload?.details || errorText || `HTTP ${createResponse.status}: ${createResponse.statusText}`;
           
-          console.error("Document creation failed:", {
+          const isExpectedLocalFallback =
+            createResponse.status === 503 ||
+            /document storage is disabled|database connection failed/i.test(errorMessage);
+          const logDetails = {
             status: createResponse.status,
             statusText: createResponse.statusText,
             error: errorMessage,
@@ -1280,14 +1346,19 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             contentLength: payload.content?.length,
             payloadKeys: Object.keys(payload),
             contentType,
-            responseText: responseText.substring(0, 500) // First 500 chars of response
-          });
+            responseText: responseText.substring(0, 500)
+          };
+          // Database error - show error and return null
+          console.error("[persistDocumentToServer] Document creation failed:", logDetails);
+          const errorMsg = formatErrorMessage(errorMessage, "Failed to save document to database.");
+          setToast(errorMsg);
           return null;
         }
 
         const responseText = await createResponse.text();
         if (!responseText) {
-          console.error("Document creation failed: empty response");
+          console.error("[persistDocumentToServer] Document creation failed: empty response");
+          setToast("Failed to save document: Empty response from server.");
           return null;
         }
         
@@ -1295,25 +1366,30 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         try {
           created = JSON.parse(responseText);
         } catch (e) {
-          console.error("Document creation failed: invalid JSON response", { responseText });
+          console.error("[persistDocumentToServer] Document creation failed: invalid JSON response", { responseText });
+          setToast("Failed to save document: Invalid response from server.");
           return null;
         }
         
         if (!created?.id) {
-          console.error("Document creation failed: no ID in response", { created });
+          console.error("[persistDocumentToServer] Document creation failed: no ID in response", { created });
+          setToast("Failed to save document: No document ID returned from server.");
           return null;
         }
         
         fetchSavedDocs();
         return created.id as string;
       } catch (error) {
-        console.error("Document creation error:", error);
+        console.error("[persistDocumentToServer] Document creation error:", error);
         if (error instanceof Error) {
           console.error("Error details:", {
             message: error.message,
             stack: error.stack,
             name: error.name
           });
+          setToast(`Failed to save document: ${error.message}`);
+        } else {
+          setToast("Failed to save document: Unknown error.");
         }
         return null;
       }
@@ -1339,6 +1415,249 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     },
     [persistDocumentToServer]
   );
+
+  const assignDocumentToFolder = useCallback(
+    async (folderId: string, options?: { folderName?: string }) => {
+      if (!isAuthenticated) {
+        setToast("Sign in to organize documents into folders.");
+        return;
+      }
+      if (!activeDocumentId) {
+        setToast("Open a document before adding it to a folder.");
+        return;
+      }
+
+      const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
+      if (!currentDoc) {
+        setToast("Document is still loading.");
+        return;
+      }
+
+      const latestId = await saveCurrentDocument(activeDocumentId, currentDoc.content);
+      const resolvedDocumentId = latestId ?? activeDocumentId;
+      if (!resolvedDocumentId) {
+        setToast("Save the document before adding it to a folder.");
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/folders/assign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            folderId,
+            documentId: resolvedDocumentId
+          })
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          setToast(formatErrorMessage(payload?.error, "Unable to add document to folder."));
+          return;
+        }
+
+        const folderName =
+          options?.folderName ||
+          payload?.folder?.name ||
+          folders.find((folder) => folder.id === folderId)?.name ||
+          "folder";
+        setToast(`Added to ${folderName}.`);
+        fetchFolders();
+      } catch (error) {
+        console.error("assign document to folder failed:", error);
+        setToast("Unable to add document to folder.");
+      }
+    },
+    [activeDocumentId, fetchFolders, folders, isAuthenticated, saveCurrentDocument]
+  );
+
+  const handleAddToFolder = useCallback(
+    (folderId: string) => {
+      void assignDocumentToFolder(folderId);
+    },
+    [assignDocumentToFolder]
+  );
+
+  const handlePinDocument = useCallback(
+    async (doc: SavedDoc) => {
+      const newPinnedState = !doc.pinned;
+      const title = doc.title?.trim() || "Untitled doc";
+      
+      // Update local state immediately for instant UI feedback
+      setSavedDocs((prev) => {
+        const next = prev.map((entry) =>
+          entry.id === doc.id ? { ...entry, pinned: newPinnedState } : entry
+        );
+        return sortSavedDocs(next);
+      });
+      
+      // Persist to local storage for guests only
+      if (!isAuthenticated) {
+        const updatedDoc = { ...doc, pinned: newPinnedState };
+        persistLocalDocEntry(updatedDoc);
+        return;
+      }
+      
+      // Persist to database for authenticated users
+      try {
+        const response = await fetch(`/api/documents/${doc.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pinned: newPinnedState })
+        });
+        
+        if (response.ok) {
+          const updatedDocFromServer = await response.json().catch(() => null);
+          console.log("[PIN SUCCESS] Pin status saved to database:", {
+            documentId: doc.id,
+            pinned: newPinnedState,
+            serverResponse: updatedDocFromServer
+          });
+          // Refresh saved docs from database to ensure consistency
+          await fetchSavedDocs();
+        } else {
+          // Get error details from response
+          const status = response?.status ?? 0;
+          const statusText = response?.statusText ?? 'Unknown error';
+          let errorMessage = `HTTP ${status}: ${statusText}`;
+          
+          console.log("[PIN ERROR] Starting error handling. Status:", status, "StatusText:", statusText);
+          
+          try {
+            // Try to get error details from response
+            const errorPayload = await response.json().catch(async () => {
+              // If JSON parsing fails, try text
+              try {
+                const text = await response.text();
+                return { rawText: text };
+              } catch {
+                return null;
+              }
+            });
+            
+            console.log("[PIN ERROR] Error payload:", errorPayload);
+            
+            if (errorPayload) {
+              if (typeof errorPayload === 'object' && errorPayload !== null) {
+                const extractedError = errorPayload.error || errorPayload.details || errorPayload.message || errorPayload.rawText;
+                if (typeof extractedError === 'string' && extractedError.trim().length > 0) {
+                  errorMessage = extractedError;
+                } else if (extractedError) {
+                  errorMessage = String(extractedError);
+                }
+              } else if (typeof errorPayload === 'string') {
+                errorMessage = errorPayload;
+              }
+            }
+          } catch (e) {
+            console.log("[PIN ERROR] Exception reading response:", e);
+            // Keep default errorMessage
+          }
+          
+          // Final safety check - ensure errorMessage is always a non-empty string
+          if (typeof errorMessage !== 'string' || !errorMessage.trim()) {
+            errorMessage = `HTTP ${status}: ${statusText || 'Unknown error'}`;
+          }
+          
+          // Only revert on auth errors - for other errors, keep the optimistic update and local storage
+          if (response.status === 401 || response.status === 403) {
+            // Log auth errors as actual errors
+            console.error("[PIN ERROR] Authentication failed:", {
+              status,
+              statusText,
+              error: errorMessage,
+              documentId: doc?.id
+            });
+            
+            // Revert on auth error
+            setSavedDocs((prev) => {
+              const next = prev.map((entry) =>
+                entry.id === doc.id ? { ...entry, pinned: doc.pinned } : entry
+              );
+              return sortSavedDocs(next);
+            });
+            setToast(`Failed to update pin status: ${errorMessage}`);
+          } else {
+            // Revert optimistic update on any database error for authenticated users
+            setSavedDocs((prev) => {
+              const next = prev.map((entry) =>
+                entry.id === doc.id ? { ...entry, pinned: doc.pinned } : entry
+              );
+              return sortSavedDocs(next);
+            });
+            
+            if (response.status === 404) {
+              console.error("[PIN ERROR] Document not in database:", {
+                documentId: doc?.id,
+                title,
+                error: errorMessage
+              });
+              setToast(`Failed to pin: Document not saved to database yet. Save the document first.`);
+            } else {
+              console.error("[PIN ERROR] Database update failed:", {
+                status,
+                statusText,
+                error: errorMessage,
+                documentId: doc?.id
+              });
+              setToast(`Failed to update pin status: ${errorMessage}`);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("[PIN ERROR] Network error:", error);
+        // Revert optimistic update on network errors for authenticated users
+        setSavedDocs((prev) => {
+          const next = prev.map((entry) =>
+            entry.id === doc.id ? { ...entry, pinned: doc.pinned } : entry
+          );
+          return sortSavedDocs(next);
+        });
+        setToast(`Failed to update pin status: Network error. Please try again.`);
+      }
+    },
+    [isAuthenticated, setToast, fetchSavedDocs]
+  );
+
+  const handleCreateFolder = useCallback(async () => {
+    if (!isAuthenticated) {
+      setToast("Create a free account to organize documents into folders.");
+      return;
+    }
+    const folderName = typeof window !== "undefined" ? window.prompt("Name your folder") : null;
+    if (folderName === null) {
+      return;
+    }
+    const trimmedName = folderName.trim();
+    if (!trimmedName) {
+      setToast("Folder name cannot be empty.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName })
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setToast(formatErrorMessage(payload?.error, "Unable to create folder."));
+        return;
+      }
+
+      const normalizedFolder: FolderSummary = {
+        id: payload.id,
+        name: payload.name ?? trimmedName,
+        createdAt: payload.createdAt ?? new Date().toISOString(),
+        documentCount: typeof payload.documentCount === "number" ? payload.documentCount : 0
+      };
+      setFolders((prev) => [normalizedFolder, ...prev.filter((folder) => folder.id !== normalizedFolder.id)]);
+      await assignDocumentToFolder(normalizedFolder.id, { folderName: normalizedFolder.name });
+    } catch (error) {
+      console.error("create folder failed:", error);
+      setToast("Unable to create folder.");
+    }
+  }, [assignDocumentToFolder, isAuthenticated]);
 
   const handleLoadDoc = useCallback(
     async (doc: SavedDoc) => {
@@ -1387,7 +1706,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       setAutosaveTimeout(null);
     }
 
-    // Create a fresh document entry
+    // Create a fresh document entry (don't save until it has content)
     let baseDoc: WriterOutput = ensurePlaceholderState({
       id: crypto.randomUUID(),
       title: "Untitled doc",
@@ -1399,22 +1718,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       styleTitle: null
     });
 
-    if (isAuthenticated) {
-      const createdId = await persistDocumentToServer(baseDoc, "");
-      if (createdId) {
-        baseDoc = { ...baseDoc, id: createdId };
-      }
-    } else {
-      persistLocalDocEntry({
-        id: baseDoc.id,
-        title: baseDoc.title,
-        createdAt: baseDoc.createdAt,
-        prompt: baseDoc.prompt,
-        content: "",
-        settings: baseDoc.settings,
-        writingStyle: baseDoc.writingStyle
-      });
-    }
+    // Don't save empty documents - they'll be saved when user types first character
     
     // Close any open docs and open the new one
     setOutputs([baseDoc]);
@@ -1436,7 +1740,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     return () => window.removeEventListener("new-doc", listener);
   }, [handleStartNewDoc]);
 
-  // Set active document when outputs change
+  // Set active document when outputs change (but only if we don't already have one active)
   useEffect(() => {
     if (outputs.length > 0 && !activeDocumentId) {
       setActiveDocumentId(outputs[0].id);
@@ -1454,6 +1758,11 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           output.id === activeDocumentId ? { ...output, title } : output
         )
       );
+
+      bumpSavedDoc(activeDocumentId, (doc) => ({
+        ...doc,
+        title
+      }));
 
       // Clear existing title autosave timeout
       if (titleAutosaveTimeout) {
@@ -1488,7 +1797,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
 
       setTitleAutosaveTimeout(timeout);
     },
-    [activeDocumentId, titleAutosaveTimeout]
+    [activeDocumentId, bumpSavedDoc, titleAutosaveTimeout]
   );
 
   // Handle document content changes with autosave
@@ -1526,6 +1835,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       
       if (!activeDocumentId) return;
       
+      // Get previous content to detect transition from empty to non-empty
+      const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
+      const previousContent = currentDoc?.content ?? "";
+      const wasEmpty = !previousContent || !previousContent.trim();
+      const isNowNonEmpty = content && content.trim().length > 0;
+      const shouldSaveImmediately = wasEmpty && isNowNonEmpty;
+      
       // Update local state immediately
       setOutputs((prev) =>
         prev.map((output) =>
@@ -1538,12 +1854,16 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         clearTimeout(autosaveTimeout);
       }
 
-      // Set new autosave timeout (debounce for 2 seconds)
-      const timeout = setTimeout(async () => {
-        const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
-        if (!currentDoc) return;
-
-        const savedId = await persistDocumentToServer(currentDoc, content);
+      // If transitioning from empty to non-empty, save immediately
+      if (shouldSaveImmediately) {
+        const savedId = await persistDocumentToServer(
+          { ...currentDoc!, content },
+          content
+        );
+        console.log("[AUTOSAVE] Document saved immediately (first character):", {
+          documentId: activeDocumentId,
+          savedId
+        });
         if (savedId && savedId !== activeDocumentId) {
           setOutputs((prev) =>
             prev.map((entry) =>
@@ -1552,11 +1872,42 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           );
           setActiveDocumentId(savedId);
         }
-      }, 2000); // 2 second debounce
+        // Saved docs list will be updated by persistDocumentToServer (via fetchSavedDocs or persistLocalDocEntry)
+        return;
+      }
 
-      setAutosaveTimeout(timeout);
+      // For subsequent changes, use debounced autosave (only if content is non-empty)
+      if (isNowNonEmpty) {
+        // Update saved docs list for existing documents
+        bumpSavedDoc(activeDocumentId, (doc) => ({
+          ...doc,
+          content
+        }));
+
+        const timeout = setTimeout(async () => {
+          const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
+          if (!currentDoc) return;
+
+          const savedId = await persistDocumentToServer(currentDoc, content);
+          console.log("[AUTOSAVE] Document saved:", {
+            documentId: activeDocumentId,
+            savedId,
+            pinned: savedDocsRef.current.find((s) => s.id === activeDocumentId)?.pinned
+          });
+          if (savedId && savedId !== activeDocumentId) {
+            setOutputs((prev) =>
+              prev.map((entry) =>
+                entry.id === activeDocumentId ? { ...entry, id: savedId } : entry
+              )
+            );
+            setActiveDocumentId(savedId);
+          }
+        }, 2000); // 2 second debounce
+
+        setAutosaveTimeout(timeout);
+      }
     },
-    [activeDocumentId, autosaveTimeout, persistDocumentToServer]
+    [activeDocumentId, autosaveTimeout, bumpSavedDoc, persistDocumentToServer]
   );
 
   // Cleanup autosave timeouts on unmount
@@ -1678,8 +2029,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       window.dispatchEvent(new CustomEvent("sidebar-state-change", { detail: { open: sidebarOpen } }));
     }, [sidebarOpen]);
 
+    // Dispatch settings state changes synchronously so header darkens in sync
+    useLayoutEffect(() => {
+      window.dispatchEvent(new CustomEvent("settings-state-change", { detail: { open: sheetOpen } }));
+    }, [sheetOpen]);
+
     return (
-    <div className="flex min-h-screen bg-brand-background text-brand-text">
+    <div className="flex min-h-screen bg-brand-background/33 text-brand-text">
       {sidebarOpen && !isDesktop && (
         <button
           type="button"
@@ -1692,6 +2048,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         <WorkspaceSidebar
               open={sidebarOpen}
           activeTab={sidebarTab}
+          activeDocumentId={activeDocumentId}
           docs={docDocuments}
           styles={styleDocuments}
           brandSummary={brandSummary}
@@ -1708,9 +2065,11 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           onOpen={() => setSidebarOpen(true)}
           onApplyStyle={handleApplyStyle}
           onTabChange={(tab) => setSidebarTab(tab)}
+          onPinDocument={handlePinDocument}
+          settingsOpen={sheetOpen}
         />
       )}
-      <div className={cn("flex min-h-screen flex-1 flex-col pb-[350px] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop && "lg:ml-[320px]")}>
+      <div className={cn("flex min-h-screen flex-1 flex-col pb-[350px] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop ? "lg:ml-[320px]" : undefined)}>
         <div className="flex-1 px-4 py-8 sm:px-6">
           <div className="mx-auto w-full max-w-5xl">
             {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
@@ -1724,20 +2083,33 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               brandSummary={brandSummary}
               styleGuide={activeStyle ? { name: activeStyle.name, description: activeStyle.description } : null}
               horizontalPadding={documentHorizontalPadding}
-              folderOptions={
-                isAuthenticated
-                  ? folders.map((folder) => ({
-                      id: folder.id,
-                      name: folder.name
-                    }))
-                  : []
-              }
-              onAddToFolder={handleAddToFolder}
-              onCreateFolder={handleCreateFolder}
             />
+            {/* Forgetaboutit Icon - positioned below document canvas */}
+            <div className="flex justify-center mt-20 pointer-events-none" style={{ opacity: 1 }}>
+              <div className="w-6 h-auto" style={{ opacity: 1, filter: 'brightness(0) saturate(100%) invert(10%)' }}>
+                <NextImage 
+                  src="/FAI-icon-blue-no-padding.png" 
+                  alt="Forgetaboutit" 
+                  width={24}
+                  height={0}
+                  className="w-6 h-auto"
+                  style={{ opacity: 1 }}
+                  unoptimized
+                />
+              </div>
+            </div>
           </div>
         </div>
-        <div className={cn("fixed bottom-[10px] left-0 right-0 px-[180px] pointer-events-none z-[60] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop && "lg:left-[320px]")}>
+        {/* Gradient overlay behind compose bar */}
+        <div 
+          className={cn("fixed bottom-0 left-0 right-0 pointer-events-none transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop ? "lg:left-[320px]" : undefined)}
+          style={{
+            zIndex: 50,
+            height: '150px',
+            background: 'linear-gradient(to top, rgba(0, 0, 0, 0.66) 0%, rgba(0, 0, 0, 0) 100%)'
+          }}
+        />
+        <div className={cn("fixed bottom-[10px] left-0 right-0 px-[180px] pointer-events-none z-[60] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop ? "lg:left-[320px]" : undefined)}>
           <div className="mx-auto max-w-[680px] pointer-events-auto">
             <ComposeBar
               value={composeValue}
@@ -1777,10 +2149,10 @@ function Toast({ message }: { message: string | null }) {
   return (
     <div
       className={cn(
-        "pointer-events-none fixed bottom-24 left-1/2 w-full max-w-md -translate-x-1/2 transform rounded-2xl bg-brand-panel px-4 py-3 text-center text-sm text-brand-text shadow-[0_20px_60px_rgba(0,0,0,0.45)] transition-all duration-300",
+        "pointer-events-none fixed top-1/2 left-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 transform rounded-2xl bg-brand-panel px-4 py-3 text-center text-sm text-brand-text shadow-[0_20px_60px_rgba(0,0,0,0.45)] transition-all duration-300 z-[9999]",
         {
-          "opacity-100 translate-y-0": Boolean(message),
-          "opacity-0 translate-y-4": !message
+          "opacity-100 translate-y-[-50%]": Boolean(message),
+          "opacity-0 translate-y-[-40%]": !message
         }
       )}
     >
@@ -1818,6 +2190,7 @@ function RegisterGate() {
 type WorkspaceSidebarProps = {
   open: boolean;
   activeTab: SidebarTab;
+  activeDocumentId: string | null;
   docs: SavedDoc[];
   styles: SavedDoc[];
   brandSummary: string | null;
@@ -1834,11 +2207,14 @@ type WorkspaceSidebarProps = {
   onTabChange: (tab: SidebarTab) => void;
   onSelect: (doc: SavedDoc) => void;
   onApplyStyle: (style: SavedDoc) => void;
+  onPinDocument?: (doc: SavedDoc) => void;
+  settingsOpen?: boolean;
 };
 
 function WorkspaceSidebar({
   open,
   activeTab,
+  activeDocumentId,
   docs,
   styles,
   brandSummary,
@@ -1854,12 +2230,17 @@ function WorkspaceSidebar({
   onOpen,
   onTabChange,
   onSelect,
-  onApplyStyle
+  onApplyStyle,
+  onPinDocument,
+  settingsOpen = false
 }: WorkspaceSidebarProps) {
+  const [hoveredTimestampId, setHoveredTimestampId] = useState<string | null>(null);
+  const timestampTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const tabs: { id: SidebarTab; label: string; icon: string }[] = [
     { id: "docs", label: "Docs", icon: "draft" },
-    { id: "styles", label: "Styles", icon: "brand_family" },
-    { id: "brands", label: "Brands", icon: "storefront" }
+    { id: "styles", label: "Styles", icon: "groups" },
+    { id: "brands", label: "Brands", icon: "flag" }
   ];
   const selectedIndex = Math.max(
     tabs.findIndex((tab) => tab.id === activeTab),
@@ -1876,27 +2257,142 @@ function WorkspaceSidebar({
     e.preventDefault();
   }, []);
 
+  // Handle timestamp hover with delay
+  const handleTimestampMouseEnter = useCallback((docId: string) => {
+    // Clear any existing timeout
+    if (timestampTimeoutRef.current) {
+      clearTimeout(timestampTimeoutRef.current);
+    }
+    // Set timeout to show tooltip after 1 second
+    timestampTimeoutRef.current = setTimeout(() => {
+      setHoveredTimestampId(docId);
+    }, 1000);
+  }, []);
+
+  const handleTimestampMouseLeave = useCallback(() => {
+    // Clear timeout if user moves away before delay completes
+    if (timestampTimeoutRef.current) {
+      clearTimeout(timestampTimeoutRef.current);
+      timestampTimeoutRef.current = null;
+    }
+    setHoveredTimestampId(null);
+  }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timestampTimeoutRef.current) {
+        clearTimeout(timestampTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Helper function to extract preview text from content
+  function getContentPreview(content: string, maxLength: number = 80): string {
+    if (!content || !content.trim()) {
+      return "";
+    }
+    // Strip markdown formatting
+    let text = content
+      .replace(/```[\s\S]*?```/g, "") // code blocks
+      .replace(/`([^`]+)`/g, "$1") // inline code
+      .replace(/!\[[^\]]*]\([^)]+\)/g, "") // images
+      .replace(/\[([^\]]+)]\([^)]+\)/g, "$1") // links
+      .replace(/[*_~]{1,3}([^*_~]+)[*_~]{1,3}/g, "$1") // emphasis/strike
+      .replace(/^#{1,6}\s+/gm, "") // headings
+      .replace(/^\s{0,3}[-*+]\s+/gm, "") // unordered lists
+      .replace(/^\s{0,3}\d+\.\s+/gm, "") // ordered lists
+      .replace(/^>\s?/gm, "") // blockquotes
+      .replace(/\n+/g, " ") // newlines to spaces
+      .trim();
+    
+    if (text.length <= maxLength) {
+      return text;
+    }
+    // Truncate at word boundary
+    const truncated = text.substring(0, maxLength);
+    const lastSpace = truncated.lastIndexOf(" ");
+    return lastSpace > 0 ? truncated.substring(0, lastSpace) : truncated;
+  }
+
   function renderDocList(items: SavedDoc[], emptyLabel: string) {
     if (!items.length) {
       return <p className="text-sm text-brand-muted">{emptyLabel}</p>;
     }
-  return (
-      <ul className="space-y-3 pr-2">
-        {items.map((doc) => (
-                  <li key={doc.id}>
-                    <button
-                      type="button"
-                      onMouseDown={handleButtonMouseDown}
-                      onClick={() => onSelect(doc)}
-              className="w-full rounded-2xl border border-brand-stroke/40 bg-brand-background/60 px-3 py-3 text-left transition hover:border-white"
-                      tabIndex={-1}
-                    >
-                      <p className="text-sm font-semibold text-white">{doc.title || "Untitled doc"}</p>
-                      <p className="text-xs text-brand-muted">{formatTimestamp(doc.createdAt)}</p>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+    return (
+      <ul className="space-y-3">
+        {items.map((doc) => {
+          const isActive = activeDocumentId === doc.id;
+          const preview = getContentPreview(doc.content);
+          const displayTitle = doc.title || "Untitled doc";
+          return (
+            <li key={doc.id} className="relative group">
+              <button
+                type="button"
+                onMouseDown={handleButtonMouseDown}
+                onClick={() => onSelect(doc)}
+                className={cn(
+                  "w-full rounded-[7px] border border-brand-stroke/40 bg-brand-background/60 p-5 text-left transition",
+                  isActive
+                    ? "border-white shadow-[0_20px_45px_rgba(0,0,0,0.45)]"
+                    : "hover:opacity-50"
+                )}
+                tabIndex={-1}
+              >
+                <p className="text-[21px] font-semibold pr-9 mb-[5px] pb-1" style={{ lineHeight: '1.6rem', minHeight: '3rem', color: 'rgba(255, 255, 255, 0.75)' }}>{displayTitle}</p>
+                {preview && (
+                  <p className="text-xs font-semibold text-brand-muted/70 mt-1">
+                    {preview}
+                  </p>
+                )}
+              </button>
+              <button
+                type="button"
+                aria-label="Pin document"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onPinDocument?.(doc);
+                }}
+                className={cn(
+                  "absolute top-1 right-1 pt-[5px] pr-[5px] pb-0.5 pl-0.5 text-xs text-white/70 opacity-0 transition group-hover:opacity-50 focus-visible:opacity-50 hover:opacity-100 hover:text-white",
+                  doc.pinned ? "opacity-100 group-hover:opacity-100 hover:!opacity-50 text-brand-blue hover:text-brand-blue" : undefined
+                )}
+                tabIndex={-1}
+              >
+                <span className="material-symbols-rounded text-base leading-none" style={{ transform: 'rotate(45deg) scale(0.66)' }}>push_pin</span>
+              </button>
+              <div 
+                className={cn(
+                  "absolute transition-opacity",
+                  isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                )}
+                style={{ bottom: '8px', right: '8px' }}
+                onMouseEnter={() => handleTimestampMouseEnter(doc.id)}
+                onMouseLeave={handleTimestampMouseLeave}
+              >
+                <p className="text-[8px] font-semibold text-brand-muted/25 cursor-default">
+                  {formatTimestamp(doc.lastEditedAt ?? doc.createdAt)}
+                </p>
+                {hoveredTimestampId === doc.id && (
+                  <div className="absolute bottom-full right-0 mb-2 px-2 py-1.5 rounded border border-brand-stroke/60 bg-brand-panel text-xs text-brand-text whitespace-nowrap z-50 pointer-events-none">
+                    <div className="space-y-0.5">
+                      <div>Last Edited: {formatTimestamp(doc.lastEditedAt ?? doc.createdAt)}</div>
+                      <div>Created: {formatTimestamp(doc.createdAt)}</div>
+                    </div>
+                    <div className="absolute top-full right-4 -mt-px">
+                      <div className="border-4 border-transparent border-t-brand-stroke/60"></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     );
   }
 
@@ -1905,7 +2401,7 @@ function WorkspaceSidebar({
       return <p className="text-sm text-brand-muted">Save a style from any output and it&apos;ll appear here.</p>;
     }
     return (
-      <ul className="space-y-3 pr-2">
+      <ul className="space-y-3">
         {items.map((style) => (
           <li key={style.id}>
             <button
@@ -1913,7 +2409,7 @@ function WorkspaceSidebar({
               onMouseDown={handleButtonMouseDown}
               onClick={() => onApplyStyle(style)}
               className={cn(
-                "w-full rounded-2xl border border-brand-stroke/40 bg-brand-background/60 px-3 py-3 text-left transition hover:border-white",
+                "w-full rounded-[5px] border border-brand-stroke/40 bg-brand-background/60 px-3 py-3 text-left transition hover:border-white",
                 activeStyleId === style.id ? "border-white bg-white/10" : undefined
               )}
               tabIndex={-1}
@@ -1983,9 +2479,11 @@ function WorkspaceSidebar({
       className={cn(
         "flex flex-col text-brand-text transition-all duration-300",
         open
-          ? "bg-brand-panel/85 shadow-[0_30px_80px_rgba(0,0,0,0.5)] fixed inset-0 z-50 w-full lg:fixed lg:left-0 lg:top-0 lg:bottom-0 lg:z-auto lg:w-80 lg:h-full lg:border-r lg:border-brand-stroke/40 lg:shadow-none lg:translate-x-0"
-          : "fixed left-4 top-[calc(88px+16px)] z-50 lg:hidden lg:translate-x-[-100%]"
+          ? "bg-brand-panel/85 shadow-[0_30px_80px_rgba(0,0,0,0.5)] fixed inset-0 w-full lg:fixed lg:left-0 lg:top-0 lg:bottom-0 lg:w-80 lg:h-full lg:border-r lg:border-brand-stroke/40 lg:shadow-none lg:translate-x-0"
+          : "fixed left-4 top-[calc(88px+16px)] lg:hidden lg:translate-x-[-100%]",
+        settingsOpen ? "brightness-50" : undefined
       )}
+      style={{ zIndex: 1200 }}
       tabIndex={-1}
       onFocus={(e) => {
         // Prevent sidebar from receiving focus
@@ -2015,15 +2513,15 @@ function WorkspaceSidebar({
                 </Tab>
               ))}
             </Tab.List>
-            <div className="flex-1 min-h-0 overflow-hidden px-5">
+            <div className="flex-1 min-h-0 overflow-hidden pl-5 pr-0">
               <Tab.Panels className="h-full">
-                <Tab.Panel className="h-full overflow-y-auto pr-1 pt-8 pb-8 focus:outline-none">
+                <Tab.Panel className="h-full overflow-y-auto pt-8 pb-8 pr-5 focus:outline-none">
                   {renderDocList(docs, "No docs yet. Generate something to see it here.")}
                 </Tab.Panel>
-                <Tab.Panel className="h-full overflow-y-auto pr-1 pt-8 pb-8 focus:outline-none">
+                <Tab.Panel className="h-full overflow-y-auto pt-8 pb-8 pr-5 focus:outline-none">
                   {renderStyleList(styles)}
                 </Tab.Panel>
-                <Tab.Panel className="h-full overflow-y-auto pr-1 pt-8 pb-8 focus:outline-none">
+                <Tab.Panel className="h-full overflow-y-auto pt-8 pb-8 pr-5 focus:outline-none">
                   {renderBrandsContent()}
                 </Tab.Panel>
               </Tab.Panels>
@@ -2031,11 +2529,11 @@ function WorkspaceSidebar({
           </Tab.Group>
           <div className="mt-auto border-t border-brand-stroke/40 pt-4 pb-6 px-5 flex-shrink-0">
             <div className="flex items-center justify-between gap-3">
-              <Link href="/membership" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+              <Link href="/membership" className="flex items-center gap-[5px] hover:opacity-80 transition-opacity">
                 <ProfileAvatar name={userName} size={32} />
                 <div>
                   <p className="text-[10px] text-brand-muted">Account</p>
-                  <p className="mt-0.5 text-sm font-semibold text-white">{userName}</p>
+                  <p className="mt-[1px] text-sm font-semibold text-white">{userName}</p>
                 </div>
               </Link>
               <div className="flex-shrink-0">
@@ -2110,7 +2608,6 @@ function generateColorFromName(name: string): string {
 
 function ProfileAvatar({ name, size = 32 }: { name: string; size?: number }) {
   const initials = getInitials(name);
-  const bgColor = generateColorFromName(name);
   
   return (
     <div
@@ -2120,7 +2617,7 @@ function ProfileAvatar({ name, size = 32 }: { name: string; size?: number }) {
         height: `${size}px`,
         minWidth: `${size}px`,
         minHeight: `${size}px`,
-        backgroundColor: bgColor,
+        background: 'linear-gradient(135deg, #4a4a4a 0%, #2a2a2a 100%)',
         fontSize: `${size * 0.4}px`
       }}
     >

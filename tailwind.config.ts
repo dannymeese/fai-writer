@@ -26,8 +26,8 @@ const config: Config = {
         }
       },
       fontFamily: {
-        sans: ["var(--font-manrope)", "Manrope", "ui-sans-serif", "system-ui"],
-        display: ["var(--font-manrope)", "Manrope", "ui-sans-serif", "system-ui"],
+        sans: ["var(--font-inter)", "Inter", "ui-sans-serif", "system-ui"],
+        display: ["var(--font-inter)", "Inter", "ui-sans-serif", "system-ui"],
         mono: ["var(--font-fira-code)", "Fira Code", "monospace"]
       }
     }

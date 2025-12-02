@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { auth } from "@/auth";
 import { composeRequestSchema } from "@/lib/validators";
 import { prisma } from "@/lib/prisma";
-import { smartTitleFromPrompt } from "@/lib/utils";
+import { smartTitleFromPrompt, stripMarkdownFromTitle } from "@/lib/utils";
 import { getOpenAIClient } from "@/lib/openai";
 
 const TOKEN_LIMIT = Number(process.env.LLM_TOKEN_LIMIT ?? "500000");
@@ -12,11 +12,11 @@ type UsageIdentifier = { userId: string } | { guestId: string };
 type UsageContext = { identifier: UsageIdentifier; guestCookie?: string };
 
 const SHORT_RULES =
-  "RULES: No em/en dashes, AI clichés, or repeated lines. Every word must earn its place and feel bespoke + human. Missing info stays in [brackets]; never ask follow-ups. Skip emojis unless requested. Vary pacing to avoid tidy triads or recap paragraphs. Favor sensory detail over filler.";
+  "RULES: No em/en dashes, AI clichés, or repeated lines. Every word must earn its place and feel bespoke + human. Missing info stays in [brackets]; never ask follow-ups. Skip emojis unless requested. Vary pacing to avoid tidy triads or recap paragraphs. Never use 'X instead of Y' phrasing patterns. Vary list lengths—avoid always defaulting to exactly 3 bullet points. Favor sensory detail over filler.";
 const EXTENDED_RULES = `VITAL RULES FOR ALL OUTPUT:
 
 1. DO NOT USE EM DASHES OR EN DASHES.
-2. DO NOT WRITE WITH ANY AI WRITING TELLS OR RED FLAGS, ESPECIALLY NOT "NOT _, but _"-esque phrasing.
+2. DO NOT WRITE WITH ANY AI WRITING TELLS OR RED FLAGS, ESPECIALLY NOT "NOT _, but _"-esque phrasing OR "X instead of Y" patterns (e.g., "Clicking instead of crafting", "Supervising instead of doing", "Approving instead of owning").
 3. DO NOT REPEAT SOMETHING THAT MEANS ESSENTIALLY THE SAME THING BUT IN DIFFERENT WORDS. 
 4. MAKE SURE THAT EVERY WORD SERVES A PURPOSE AND BRINGS ADDITIONAL MEANING OR DON'T USE IT AT ALL.
 5. ONLY PROVIDE TEXT THAT FEELS BESPOKE AND HUMAN.
@@ -24,7 +24,7 @@ const EXTENDED_RULES = `VITAL RULES FOR ALL OUTPUT:
 7. DO NOT use emojis unless the user EXPLICITLY asks you to.
 8. NEVER ask the user for more information—provide the best possible answer immediately.
 9. Keep tone sharply specific; inject real-world detail and asymmetric sentence lengths.
-10. Avoid recap paragraphs, tidy triads, or BuzzFeed-style bullets.`;
+10. Avoid recap paragraphs, tidy triads, or BuzzFeed-style bullets. Vary list lengths—never default to exactly 3 bullet points. Use 2, 4, 5, or other counts naturally based on content needs.`;
 
 function buildSystemPrompt(brandInfo: string | null, useExtendedRules: boolean): string {
   const base = useExtendedRules ? EXTENDED_RULES : SHORT_RULES;
@@ -122,7 +122,11 @@ export async function POST(request: Request) {
   const directiveLines = [
     conciseDirective,
     effectiveMarketTier ? `Target market: ${effectiveMarketTier}.` : null,
-    settings.gradeLevel ? `Write at approximately a ${settings.gradeLevel} reading level.` : null,
+    settings.gradeLevel 
+      ? settings.gradeLevel === "ESL (English as Second Language)"
+        ? `Write for ESL (English as a Second Language) readers: Use literal, direct language. Avoid colloquialisms, idioms, slang, and figurative expressions. Prefer straightforward, concrete words over abstract or metaphorical language. Use clear, simple sentence structures.`
+        : `Write at approximately a ${settings.gradeLevel} reading level.`
+      : null,
     settings.benchmark ? `Mirror the tone and polish of ${settings.benchmark}.` : null,
     settings.characterLength
       ? `Keep the entire response within ${settings.characterLength} characters. If it exceeds this limit, revise until it fits.`
@@ -236,8 +240,9 @@ export async function POST(request: Request) {
             ]
           });
           styleTitle = titleResponse.output_text?.trim() ?? null;
-          // Clean up the title - remove quotes, periods, etc.
+          // Clean up the title - remove quotes, periods, markdown formatting, etc.
           if (styleTitle) {
+            styleTitle = stripMarkdownFromTitle(styleTitle);
             styleTitle = styleTitle.replace(/^["']|["']$/g, "").replace(/\.$/, "").trim();
             // Ensure it's 2-4 words
             const words = styleTitle.split(/\s+/).filter(Boolean);
@@ -262,8 +267,14 @@ export async function POST(request: Request) {
     let documentId: string | null = null;
     let timestamp = new Date().toISOString();
 
-    if (isAuthenticated && session?.user?.id && prisma) {
+    // Check if we should update an existing document instead of creating a new one
+    const existingDocumentId = (editorContext as any)?.documentId;
+
+    // If there's an existing documentId, don't create/update here - let client handle saving via autosave
+    // This prevents creating duplicate documents when AI writes to an untitled doc
+    if (!existingDocumentId && isAuthenticated && session?.user?.id && prisma) {
       try {
+        // Create new document only if no existing documentId was provided
         const document = await prisma.document.create({
           data: {
             title,
@@ -291,6 +302,10 @@ export async function POST(request: Request) {
           console.error("[compose] Error stack:", err.stack);
         }
       }
+    } else if (existingDocumentId) {
+      // Return the existing documentId so client knows which document to update
+      documentId = existingDocumentId;
+      console.log("[compose] Using existing document (content will be saved via autosave):", documentId);
     }
 
     const totalTokensUsed = contentTokens + styleTokens;

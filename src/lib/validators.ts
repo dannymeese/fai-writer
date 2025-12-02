@@ -31,7 +31,8 @@ export type ComposerSettingsInput = z.infer<typeof composerSettingsSchema>;
 const editorContextSchema = z.object({
   before: z.string().max(2000).optional().nullable(),
   after: z.string().max(2000).optional().nullable(),
-  selection: z.string().max(2000).optional().nullable()
+  selection: z.string().max(2000).optional().nullable(),
+  documentId: z.string().optional()
 });
 
 export const composeRequestSchema = z.object({
@@ -58,7 +59,8 @@ export const documentSchema = z.object({
   benchmark: z.string().max(120).nullable().optional(),
   avoidWords: z.string().max(200).nullable().optional(),
   writingStyle: z.string().nullable().optional(),
-  styleTitle: z.string().max(100).nullable().optional()
+  styleTitle: z.string().max(100).nullable().optional(),
+  pinned: z.boolean().optional()
 });
 
 export const folderCreateSchema = z.object({

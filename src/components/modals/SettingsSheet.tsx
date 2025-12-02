@@ -238,17 +238,29 @@ export default function SettingsSheet({
  
    return (
      <Transition show={open} as={Fragment}>
-      <Dialog onClose={onClose} className="relative z-50">
-        <div className="fixed inset-0 pointer-events-none" aria-hidden="true" />
+      <Dialog onClose={onClose} className="fixed inset-0" style={{ zIndex: 1100 }}>
+        {/* Dark backdrop overlay */}
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-200"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-150"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black/60" aria-hidden="true" style={{ zIndex: 1100 }} />
+        </Transition.Child>
         {open && (
           <button
             type="button"
             className="fixed inset-0 cursor-default bg-transparent"
+            style={{ zIndex: 1100 }}
             onClick={onClose}
             aria-label="Dismiss brief controls"
           />
         )}
-        <div className="pointer-events-none fixed inset-x-0 bottom-24 flex justify-end p-4 sm:pr-10">
+        <div className="pointer-events-none fixed inset-x-0 bottom-24 flex justify-end p-4 sm:pr-10" style={{ zIndex: 1101 }}>
           <Transition.Child
             as={Fragment}
             enter="ease-out duration-200"
@@ -260,16 +272,17 @@ export default function SettingsSheet({
           >
             <Dialog.Panel
               className="pointer-events-auto w-full max-w-lg rounded-3xl border border-brand-stroke/60 bg-[#0a0a0a]/90 backdrop-blur-[10px] p-6 text-brand-text"
-              style={
-                anchorRect
+              style={{
+                zIndex: 1101,
+                ...(anchorRect
                   ? {
                       position: "fixed",
                       bottom: `calc(64px + 3rem)`,
                       left: Math.max(16, anchorRect.left - 200),
                       right: "auto"
                     }
-                  : undefined
-              }
+                  : {})
+              }}
             >
                <header className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -381,7 +394,7 @@ export default function SettingsSheet({
                                 !isESL && "italic"
                               )}
                             >
-                              {isESL ? tooltipText : <>i.e. "{tooltipText}"</>}
+                              {isESL ? tooltipText : <>i.e. &ldquo;{tooltipText}&rdquo;</>}
                               <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px">
                                 <div className="border-4 border-transparent border-t-brand-stroke/60"></div>
                               </div>
@@ -436,7 +449,7 @@ export default function SettingsSheet({
                         </button>
                         {hoveredMarketTier === tier && (
                           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded border border-brand-stroke/60 bg-brand-panel text-xs text-brand-text whitespace-nowrap z-50 pointer-events-none italic">
-                            i.e. "{marketExamples[tier]}"
+                            i.e. &ldquo;{marketExamples[tier]}&rdquo;
                             <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px">
                               <div className="border-4 border-transparent border-t-brand-stroke/60"></div>
                             </div>
@@ -539,7 +552,7 @@ export default function SettingsSheet({
          </div>
        </Dialog>
        <Transition show={brandModalOpen} as={Fragment}>
-         <Dialog onClose={() => setBrandModalOpen(false)} className="relative z-50">
+         <Dialog onClose={() => setBrandModalOpen(false)} className="relative z-[1200]">
            <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
            <div className="fixed inset-0 flex items-center justify-center p-4">
              <Transition.Child

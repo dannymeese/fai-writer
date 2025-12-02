@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { documentSchema } from "@/lib/validators";
-import { deriveTitleFromContent } from "@/lib/utils";
+import { deriveTitleFromContent, stripMarkdownFromTitle } from "@/lib/utils";
 import { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -96,9 +96,12 @@ export async function POST(request: Request) {
       );
     }
 
+    // Strip markdown formatting from AI-generated titles
+    const cleanedTitle = stripMarkdownFromTitle(autoTitle);
+    
     // Ensure title doesn't exceed database limit (255 chars)
-    const trimmedTitle = autoTitle.trim();
-    const finalTitle = trimmedTitle.length > 255 ? trimmedTitle.substring(0, 252) + "..." : trimmedTitle;
+    const trimmedTitle = cleanedTitle.trim();
+    const finalTitle = trimmedTitle.length > 255 ? trimmedTitle.substring(0, 255) : trimmedTitle;
 
     // Build data object for Prisma
     const createData: any = {
@@ -117,6 +120,24 @@ export async function POST(request: Request) {
     if (parsed.data.avoidWords !== undefined && parsed.data.avoidWords !== null) createData.avoidWords = parsed.data.avoidWords;
     if (parsed.data.writingStyle !== undefined && parsed.data.writingStyle !== null) createData.writingStyle = parsed.data.writingStyle;
     if (parsed.data.styleTitle !== undefined && parsed.data.styleTitle !== null) createData.styleTitle = parsed.data.styleTitle;
+    if (parsed.data.pinned !== undefined) createData.pinned = parsed.data.pinned;
+
+    // Verify user exists before creating document
+    const userExists = await db.user.findUnique({
+      where: { id: session.user.id },
+      select: { id: true }
+    });
+    
+    if (!userExists) {
+      console.error("[documents][POST] User not found in database", {
+        userId: session.user.id,
+        userEmail: session.user.email
+      });
+      return NextResponse.json(
+        { error: "User account not found. Please sign in again." },
+        { status: 404 }
+      );
+    }
 
     console.log("[documents][POST] Attempting to create document", {
       titleLength: createData.title.length,
@@ -124,7 +145,9 @@ export async function POST(request: Request) {
       hasTone: !!createData.tone,
       hasPrompt: !!createData.prompt,
       hasWritingStyle: !!createData.writingStyle,
-      userId: session.user.id
+      pinned: createData.pinned,
+      userId: session.user.id,
+      allKeys: Object.keys(createData)
     });
 
     const doc = await db.document.create({
@@ -150,11 +173,26 @@ export async function POST(request: Request) {
           { status: 409 }
         );
       }
+      // P2003 = Foreign key constraint violation
+      if (error.code === "P2003") {
+        console.error("[documents][POST] Foreign key constraint violation", {
+          code: error.code,
+          meta: error.meta,
+          message: error.message,
+          userId: session.user.id
+        });
+        return NextResponse.json(
+          { error: "Database constraint violation. Please ensure your account is properly set up.", details: error.message },
+          { status: 500 }
+        );
+      }
       // Other Prisma errors
       console.error("[documents][POST] Prisma error", {
         code: error.code,
         meta: error.meta,
-        message: error.message
+        message: error.message,
+        userId: session.user.id,
+        createDataKeys: Object.keys(createData || {})
       });
       return NextResponse.json(
         { error: "Database error occurred.", details: error.message },

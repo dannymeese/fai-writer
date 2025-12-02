@@ -291,8 +291,8 @@ export default function MarkdownEditor({
         }
       }
 
-      // Make cursor solid (no animation) when input is focused
-      const animation = isInputFocused ? 'none' : 'blink 1s infinite';
+      // Blink only when editor is focused
+      const animation = editor.isFocused ? 'blink 1s infinite' : 'none';
 
       // Calculate position relative to container using dynamic margins
       let relativeLeft = coords.left - containerRect.left;
@@ -342,6 +342,8 @@ export default function MarkdownEditor({
     // Update cursor marker on selection changes
     editor.on("selectionUpdate", handleSelectionUpdate);
     editor.on("update", handleUpdate);
+    editor.on("focus", handleUpdate);
+    editor.on("blur", handleUpdate);
     
     // Initial update
     updateCursorMarker();
@@ -371,6 +373,8 @@ export default function MarkdownEditor({
     return () => {
       editor.off("selectionUpdate", handleSelectionUpdate);
       editor.off("update", handleUpdate);
+      editor.off("focus", handleUpdate);
+      editor.off("blur", handleUpdate);
       scrollContainer?.removeEventListener('scroll', handleScroll);
       window.removeEventListener('resize', handleResize);
       if (animationFrame) {
@@ -380,7 +384,129 @@ export default function MarkdownEditor({
         cursorMarker.remove();
       }
     };
-  }, [editor, isInputFocused, resolvedMarginLeft, resolvedMarginRight]);
+  }, [editor, resolvedMarginLeft, resolvedMarginRight]);
+
+  // Auto-scroll cursor into view when typing
+  useEffect(() => {
+    if (!editor) return;
+
+    let scrollAnimationFrame: number | null = null;
+
+    const scrollCursorIntoView = () => {
+      // Only scroll if editor is focused
+      if (!editor.isFocused) return;
+
+      const { from, to } = editor.state.selection;
+      
+      // Only scroll if there's no selection (cursor mode)
+      if (from !== to) return;
+
+      try {
+        // Get cursor position in viewport coordinates
+        const coords = editor.view.coordsAtPos(from);
+        const editorElement = editor.view.dom;
+        const scrollContainer = editorElement.closest('.overflow-auto') as HTMLElement;
+        
+        if (!scrollContainer) return;
+
+        // Get container bounds in viewport coordinates
+        const containerRect = scrollContainer.getBoundingClientRect();
+        
+        // Determine header height (100px when not scrolled, 60px when scrolled)
+        const headerHeight = window.scrollY > 0 ? 60 : 100;
+        
+        // Check if sticky title bar is visible (it's at top-[60px] = 60px from top of viewport)
+        // The sticky title appears when title scrolls out of view
+        const stickyTitleHeight = window.scrollY > 0 ? 40 : 0; // Only visible when scrolled
+        const effectiveTopOffset = headerHeight + stickyTitleHeight;
+
+        // Cursor position in viewport coordinates
+        const cursorTop = coords.top;
+        const cursorBottom = coords.bottom;
+        
+        // Padding from edges
+        const padding = 20;
+        
+        // Calculate visible area of container (accounting for header/sticky title)
+        const containerVisibleTop = Math.max(containerRect.top, effectiveTopOffset);
+        const containerVisibleBottom = Math.min(containerRect.bottom, window.innerHeight);
+        
+        // Check if cursor is out of view
+        const isAboveVisible = cursorTop < containerVisibleTop;
+        const isBelowVisible = cursorBottom > containerVisibleBottom;
+
+        // Only scroll if cursor is actually out of view
+        if (!isAboveVisible && !isBelowVisible) {
+          return; // Cursor is visible, no need to scroll
+        }
+
+        // Calculate scroll delta
+        // When we scroll the container down, content moves up in viewport
+        // So if cursor is above target, we scroll up (negative delta)
+        // If cursor is below target, we scroll down (positive delta)
+        let scrollDelta = 0;
+
+        if (isAboveVisible) {
+          // Cursor is above visible area - scroll container up to bring cursor down
+          // Target: cursor should be at containerVisibleTop + padding
+          const targetTop = containerVisibleTop + padding;
+          scrollDelta = cursorTop - targetTop;
+        } else if (isBelowVisible) {
+          // Cursor is below visible area - scroll container down to bring cursor up
+          const targetBottom = containerVisibleBottom - padding;
+          scrollDelta = cursorBottom - targetBottom;
+        }
+
+        // Scroll the container if needed
+        if (Math.abs(scrollDelta) > 1) { // Only scroll if delta is significant (> 1px)
+          const currentScrollTop = scrollContainer.scrollTop;
+          const newScrollTop = currentScrollTop + scrollDelta;
+          
+          // Use smooth scrolling
+          scrollContainer.scrollTo({
+            top: Math.max(0, newScrollTop),
+            behavior: 'smooth'
+          });
+        }
+      } catch (error) {
+        // Silently fail if there's an error getting coordinates
+        console.error('Error scrolling cursor into view:', error);
+      }
+    };
+
+    const handleUpdate = () => {
+      if (scrollAnimationFrame) {
+        cancelAnimationFrame(scrollAnimationFrame);
+      }
+      scrollAnimationFrame = requestAnimationFrame(scrollCursorIntoView);
+    };
+
+    // Only listen to update events when editor is focused
+    const handleFocus = () => {
+      editor.on("update", handleUpdate);
+    };
+
+    const handleBlur = () => {
+      editor.off("update", handleUpdate);
+    };
+
+    editor.on("focus", handleFocus);
+    editor.on("blur", handleBlur);
+    
+    // If already focused, start listening
+    if (editor.isFocused) {
+      editor.on("update", handleUpdate);
+    }
+
+    return () => {
+      editor.off("focus", handleFocus);
+      editor.off("blur", handleBlur);
+      editor.off("update", handleUpdate);
+      if (scrollAnimationFrame) {
+        cancelAnimationFrame(scrollAnimationFrame);
+      }
+    };
+  }, [editor]);
 
   // Update formatting toolbar position (with guard to prevent concurrent updates)
   const updateToolbarPosition = useCallback(() => {
@@ -801,13 +927,22 @@ export default function MarkdownEditor({
     
     // Add global keyboard shortcut handler - only handle shortcuts when editor is focused
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      try {
+        if (!editor) return;
+        // Avoid handling if editor is destroyed/unavailable
+        if ((editor as any)?.isDestroyed) return;
+      } catch {
+        return;
+      }
       if (!(e.metaKey || e.ctrlKey)) {
         return;
       }
       
       // Only handle shortcuts if the editor is focused or the target is within the editor
       const target = e.target as HTMLElement | null;
-      const isEditorFocused = editor.isFocused || (target && editor.view.dom.contains(target));
+      const isEditorFocused =
+        Boolean(editor?.isFocused) ||
+        Boolean(target && editorContainerRef.current && editorContainerRef.current.contains(target));
       
       // If editor is not focused and target is a text input (like compose bar), let browser handle it
       if (!isEditorFocused) {
@@ -839,7 +974,7 @@ export default function MarkdownEditor({
       }
 
       // If target is not in editor, don't handle (let browser handle it)
-      if (target && !editor.view.dom.contains(target)) {
+      if (target && !(editorContainerRef.current && editorContainerRef.current.contains(target))) {
         return;
       }
 
@@ -895,7 +1030,43 @@ export default function MarkdownEditor({
       // Let the browser perform the actual clipboard operation after we've restored focus/selection
     };
     
+    // Intercept copy/cut events to ensure plaintext is copied (without markdown formatting)
+    const handleClipboard = (e: ClipboardEvent) => {
+      // Only handle clipboard events from the editor
+      const target = e.target as Node | null;
+      if (!target || !editorElement.contains(target)) {
+        return;
+      }
+
+      const { from, to } = editor.state.selection;
+      if (from === to) {
+        // No selection, let browser handle it
+        return;
+      }
+
+      // Get plaintext from selection (same logic as getSelectedText)
+      const slice = editor.state.doc.slice(from, to);
+      const fragment = editor.view.state.schema.cached.domSerializer?.serializeFragment(slice.content, { document: window.document }) || document.createDocumentFragment();
+      const tempDiv = document.createElement('div');
+      tempDiv.appendChild(fragment.cloneNode(true));
+      // Convert <p> tags to newlines (hard returns/paragraphs)
+      tempDiv.innerHTML = tempDiv.innerHTML.replace(/<\/p>/gi, '\n</p>');
+      // Convert <br> tags to newlines (soft returns)
+      tempDiv.querySelectorAll('br').forEach(br => {
+        br.replaceWith('\n');
+      });
+      // Get plain text (newlines from both <p> and <br> tags are preserved)
+      const plainText = tempDiv.textContent || '';
+
+      if (plainText) {
+        e.preventDefault();
+        e.clipboardData?.setData('text/plain', plainText);
+      }
+    };
+    
     window.document.addEventListener('keydown', handleGlobalKeyDown, true);
+    window.document.addEventListener('copy', handleClipboard, true);
+    window.document.addEventListener('cut', handleClipboard, true);
 
     editor.on("selectionUpdate", handleSelectionUpdate);
     const editorElement = editor.view.dom;
@@ -945,7 +1116,9 @@ export default function MarkdownEditor({
       editorElement.removeEventListener("mousedown", handleMouseDown);
       editorElement.removeEventListener("mouseup", handleMouseUp);
       editorElement.removeEventListener("blur", handleBlur);
-      window.document.removeEventListener('keydown', handleGlobalKeyDown);
+      window.document.removeEventListener('keydown', handleGlobalKeyDown, true);
+      window.document.removeEventListener('copy', handleClipboard, true);
+      window.document.removeEventListener('cut', handleClipboard, true);
       scrollContainer?.removeEventListener('scroll', handleScroll);
       if (dragTimeout) clearTimeout(dragTimeout);
       if (scrollTimeout) clearTimeout(scrollTimeout);
@@ -1197,7 +1370,17 @@ export default function MarkdownEditor({
     const lastMarkdown = (editor as any).__lastMarkdownContent;
     const markdownChanged = markdownContent !== lastMarkdown;
     
-    if ((normalizedHtml !== normalizedCurrentHtml || markdownChanged) && markdownContent !== '') {
+    // Handle empty content - always reset if content is empty and editor has content
+    if (markdownContent === '') {
+      if (currentHtml !== '<p></p>' && normalizedCurrentHtml !== '') {
+        editor.commands.setContent('', { emitUpdate: false });
+        (editor as any).__lastMarkdownContent = '';
+      }
+      return;
+    }
+    
+    // Handle non-empty content - update if content changed
+    if (normalizedHtml !== normalizedCurrentHtml || markdownChanged) {
       // Store the markdown content for comparison
       (editor as any).__lastMarkdownContent = markdownContent;
       
@@ -1213,9 +1396,6 @@ export default function MarkdownEditor({
         // If cursor position is invalid, just set to end
         console.error("Error restoring cursor position:", error);
       }
-    } else if (markdownContent === '' && currentHtml !== '<p></p>') {
-      editor.commands.setContent('', { emitUpdate: false });
-      (editor as any).__lastMarkdownContent = '';
     }
   }, [content, editor, md]);
 
@@ -1244,7 +1424,13 @@ export default function MarkdownEditor({
     assign("setMarkdown", setMarkdownContent);
     assign("getMarkdown", () => editor.getText());
     assign("insertText", (text: string) => {
-      editor.commands.insertContent(text);
+      // Convert markdown to HTML before inserting (e.g., **bold** -> <strong>bold</strong>)
+      const html = md.render(text);
+      editor.commands.insertContent(html, {
+        parseOptions: {
+          preserveWhitespace: "full"
+        }
+      });
     });
     assign("replaceSelection", (text: string, selectionRange?: { from: number; to: number }) => {
       const range = selectionRange || editor.state.selection;
@@ -1253,7 +1439,9 @@ export default function MarkdownEditor({
       if (from !== to) {
         editor.commands.deleteSelection();
       }
-      editor.commands.insertContent(text, {
+      // Convert markdown to HTML before inserting (e.g., **bold** -> <strong>bold</strong>)
+      const html = md.render(text);
+      editor.commands.insertContent(html, {
         parseOptions: {
           preserveWhitespace: "full"
         }
@@ -1279,15 +1467,30 @@ export default function MarkdownEditor({
       // Get plain text (newlines from both <p> and <br> tags are now preserved)
       return tempDiv.textContent || '';
     });
+    assign("getPlainText", () => {
+      // Get plaintext from entire editor content (same logic as getSelectedText but for entire document)
+      const slice = editor.state.doc.slice(0, editor.state.doc.content.size);
+      const fragment = editor.view.state.schema.cached.domSerializer?.serializeFragment(slice.content, { document: window.document }) || document.createDocumentFragment();
+      const tempDiv = document.createElement('div');
+      tempDiv.appendChild(fragment.cloneNode(true));
+      // Convert <p> tags to newlines (hard returns/paragraphs)
+      tempDiv.innerHTML = tempDiv.innerHTML.replace(/<\/p>/gi, '\n</p>');
+      // Convert <br> tags to newlines (soft returns)
+      tempDiv.querySelectorAll('br').forEach(br => {
+        br.replaceWith('\n');
+      });
+      // Get plain text (newlines from both <p> and <br> tags are preserved)
+      return tempDiv.textContent || '';
+    });
 
     return () => {
-      ["setMarkdown", "getMarkdown", "insertText", "replaceSelection", "getSelectionRange", "getSelectedText"].forEach(
+      ["setMarkdown", "getMarkdown", "insertText", "replaceSelection", "getSelectionRange", "getSelectedText", "getPlainText"].forEach(
         (key) => {
           Reflect.deleteProperty(editorAny, key);
         }
       );
     };
-  }, [editor, setMarkdownContent, onReady]);
+  }, [editor, setMarkdownContent, onReady, md]);
 
   // Formatting button handlers
   const handleFormat = useCallback((command: () => boolean) => {

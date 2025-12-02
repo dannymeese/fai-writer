@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useSession } from "next-auth/react";
-import { PencilSquareIcon, ArrowDownTrayIcon } from "@heroicons/react/24/solid";
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +16,7 @@ export default function SiteHeader({ onPanelToggle, showPanelButton = false }: S
   const isAuthenticated = status === "authenticated" && Boolean(session?.user);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isDesktop, setIsDesktop] = useState(true);
   const downloadMenuRef = useRef<HTMLDivElement>(null);
@@ -53,6 +54,17 @@ export default function SiteHeader({ onPanelToggle, showPanelButton = false }: S
     window.addEventListener("sidebar-state-change", handleSidebarStateChange as EventListener);
     return () => {
       window.removeEventListener("sidebar-state-change", handleSidebarStateChange as EventListener);
+    };
+  }, []);
+
+  // Listen for settings popup state changes to darken header
+  useEffect(() => {
+    const handleSettingsStateChange = (event: CustomEvent) => {
+      setSettingsOpen(event.detail.open);
+    };
+    window.addEventListener("settings-state-change", handleSettingsStateChange as EventListener);
+    return () => {
+      window.removeEventListener("settings-state-change", handleSettingsStateChange as EventListener);
     };
   }, []);
 
@@ -102,26 +114,39 @@ export default function SiteHeader({ onPanelToggle, showPanelButton = false }: S
   }, []);
 
   const headerHeight = isScrolled ? '60px' : '100px';
-  const wordmarkSize = isScrolled ? '24px' : '34px';
+  const wordmarkHeight = isScrolled ? 24 : 34;
 
   return (
-    <header className={cn("sticky top-0 z-40 border-b border-brand-stroke/60 bg-brand-background/60 px-5 backdrop-blur-[10px] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop && "lg:ml-[320px]")} style={{ height: headerHeight }}>
+    <header className={cn("sticky top-0 border-b border-brand-stroke/60 bg-brand-background/60 backdrop-blur-[10px] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop ? "lg:ml-[320px] pl-0 pr-5" : "px-5", settingsOpen ? "brightness-50" : undefined)} style={{ height: headerHeight, zIndex: 1200 }}>
       <div className="mx-auto w-full h-full relative flex items-center transition-all duration-300 ease-in-out" style={{ maxWidth: '1720px' }}>
         {isAuthenticated && (
           <button
             type="button"
             onClick={handlePanelToggle}
-            className="absolute left-5 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full border border-brand-stroke/60 bg-transparent text-white hover:bg-brand-panel/50 transition-colors"
+            className={cn(
+              "absolute top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center border border-brand-stroke/60 bg-transparent text-white hover:bg-brand-panel/50 transition-colors",
+              sidebarOpen && isDesktop
+                ? "left-0 rounded-r-full border-l-0"
+                : "left-5 rounded-full"
+            )}
             aria-label="Toggle panel"
           >
-            <span className="material-symbols-outlined text-xl">
+            <span className="material-symbols-outlined" style={{ fontSize: sidebarOpen ? '30px' : '23px' }}>
               {sidebarOpen ? "chevron_left" : "menu"}
             </span>
           </button>
         )}
-        <Link href="/" className="font-display font-medium leading-none flex items-center absolute left-1/2 top-1/2 -translate-x-1/2 transition-all duration-150 ease-in-out" style={{ fontSize: wordmarkSize, lineHeight: '1', whiteSpace: 'pre', transform: 'translate(-50%, calc(-50% - 3px))' }}>
-          <span style={{ color: "#0000ff" }}>Forgetaboutit</span>
-          <span style={{ color: "#ffffff" }}> Writer</span>
+        <Link href="/" className="absolute left-1/2 top-1/2 -translate-x-1/2 transition-all duration-150 ease-in-out" style={{ transform: 'translate(-50%, calc(-50% + 1px))' }}>
+          <Image 
+            src="/wordmark-svg-fai-writer.svg" 
+            alt="Forgetaboutit Writer - AI Writing Assistant and Content Creation Tool" 
+            height={wordmarkHeight}
+            width={200} // Will maintain aspect ratio
+            className="h-auto transition-all duration-150 ease-in-out"
+            style={{ height: `${wordmarkHeight}px`, width: 'auto' }}
+            priority
+            unoptimized
+          />
         </Link>
         {isAuthenticated ? (
           <button
@@ -129,7 +154,7 @@ export default function SiteHeader({ onPanelToggle, showPanelButton = false }: S
             onClick={handleNewDoc}
             className="absolute right-5 top-1/2 -translate-y-1/2 inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-semibold text-black transition hover:bg-brand-blue/90 hover:text-white"
           >
-            <PencilSquareIcon className="h-4 w-4" />
+            <span className="material-symbols-outlined" style={{ fontSize: '21px' }}>edit_square</span>
             New Doc
           </button>
         ) : (

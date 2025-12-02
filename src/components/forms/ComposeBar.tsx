@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowUpIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { XMarkIcon } from "@heroicons/react/24/outline";
 import { WrenchIcon } from "@heroicons/react/24/solid";
-import { cn } from "@/lib/utils";
+import { cn, getPromptHistory, PromptHistoryEntry } from "@/lib/utils";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type ComposeBarProps = {
@@ -40,9 +40,13 @@ export default function ComposeBar({
   selectedText = null
 }: ComposeBarProps) {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const historyButtonRef = useRef<HTMLButtonElement>(null);
+  const historyPopupRef = useRef<HTMLDivElement>(null);
   const sendButtonRef = useRef<HTMLButtonElement>(null);
   const internalTextareaRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = inputRef ?? internalTextareaRef;
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [promptHistory, setPromptHistory] = useState<PromptHistoryEntry[]>([]);
   
   const rewriteExamples = useMemo(
     () => [
@@ -86,14 +90,11 @@ export default function ComposeBar({
 
   // Typing cursor animation when loading
   useEffect(() => {
-    if (loading) {
-      const interval = setInterval(() => {
-        setTypingChar((prev) => (prev === "1" ? "0" : "1"));
-      }, 200);
-      return () => clearInterval(interval);
-    } else {
-      setTypingChar("1");
-    }
+    if (!loading) return;
+    const interval = setInterval(() => {
+      setTypingChar((prev) => (prev === "1" ? "0" : "1"));
+    }, 200);
+    return () => clearInterval(interval);
   }, [loading]);
 
   useEffect(() => {
@@ -105,14 +106,47 @@ export default function ComposeBar({
     const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
     textarea.style.height = `${nextHeight}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }, [value, textareaRef]);
 
-  // Set initial height on mount
+  // Load prompt history
   useEffect(() => {
-    // Send button height is fixed, no need to sync
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setPromptHistory(getPromptHistory());
   }, []);
+
+  // Close history popup when clicking outside
+  useEffect(() => {
+    if (!historyOpen) return;
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        historyPopupRef.current &&
+        !historyPopupRef.current.contains(event.target as Node) &&
+        historyButtonRef.current &&
+        !historyButtonRef.current.contains(event.target as Node)
+      ) {
+        setHistoryOpen(false);
+      }
+    };
+    
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [historyOpen]);
+
+  // Refresh history when it opens
+  useEffect(() => {
+    if (historyOpen) {
+      setPromptHistory(getPromptHistory());
+    }
+  }, [historyOpen]);
+
+  const handleHistorySelect = (prompt: string) => {
+    onChange(prompt);
+    setHistoryOpen(false);
+    // Focus the textarea after selecting
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 0);
+  };
 
   const content = (
     <div className="flex w-full flex-col gap-2 mt-[3px]">
@@ -156,7 +190,53 @@ export default function ComposeBar({
           What should I write?
         </p>
       )}
-      <div className="flex w-full items-end gap-1 mt-[6px]">
+      <div className="relative flex w-full items-end gap-1 mt-[6px]">
+        <button
+          type="button"
+          aria-label="Show prompt history"
+          title="History"
+          ref={historyButtonRef}
+          onClick={() => setHistoryOpen((prev) => !prev)}
+          className={cn(
+            "absolute -top-8 right-0 flex items-center justify-center transition hover:text-brand-blue",
+            loading && "shimmer-loading",
+            historyOpen && "text-brand-blue"
+          )}
+          style={{ transform: 'translate(-11px, -8px)' }}
+        >
+          <span className="material-symbols-outlined text-xl" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>history</span>
+        </button>
+        {historyOpen && (
+          <div
+            ref={historyPopupRef}
+            className="absolute bottom-full right-0 mb-10 w-[400px] max-w-[calc(100vw-2rem)] max-h-[400px] overflow-y-auto rounded-2xl border border-brand-stroke/60 bg-brand-panel shadow-[0_20px_60px_rgba(0,0,0,0.45)] z-[100]"
+            style={{ transform: 'translate(-11px, 0)' }}
+          >
+            {/* Header with icon and title */}
+            <div className="flex items-center gap-2 p-4 border-b border-brand-stroke/40">
+              <span className="material-symbols-outlined text-lg text-brand-muted">history</span>
+              <h3 className="text-xs font-semibold text-brand-muted uppercase tracking-wider">History</h3>
+            </div>
+            {promptHistory.length === 0 ? (
+              <div className="p-4 text-sm text-brand-muted text-center">
+                No prompt history yet
+              </div>
+            ) : (
+              <div className="p-2">
+                {promptHistory.map((entry, index) => (
+                  <button
+                    key={`${entry.timestamp}-${index}`}
+                    type="button"
+                    onClick={() => handleHistorySelect(entry.prompt)}
+                    className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/5 transition text-sm text-brand-text hover:text-white break-words"
+                  >
+                    <p className="line-clamp-2 break-words">{entry.prompt}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div className={cn(
           "flex flex-1 items-stretch overflow-hidden border bg-brand-ink transition-all",
           "rounded-[24px]",
@@ -213,17 +293,21 @@ export default function ComposeBar({
           onClick={onSubmit}
           disabled={disabled || !value.trim()}
           className={cn(
-            "flex min-w-[120px] items-center justify-center rounded-full bg-white px-4 py-2 text-black transition hover:bg-gray-100 h-12",
+            "flex min-w-[120px] items-center justify-center rounded-full px-4 py-2 transition h-12",
             {
-              "opacity-60": disabled || !value.trim(),
+              "bg-[#111111] text-white/60": disabled || !value.trim(),
+              "bg-white text-black hover:bg-gray-100": !disabled && value.trim(),
               "shimmer-loading": loading
             }
           )}
         >
           {loading ? (
-            <span className="text-2xl font-mono text-black">{typingChar}</span>
+            <span className={cn(
+              "text-2xl font-mono",
+              disabled || !value.trim() ? "text-white/60" : "text-black"
+            )}>{typingChar}</span>
           ) : (
-            <ArrowUpIcon className="h-8 w-8 stroke-[3] text-black" />
+            <span className="material-symbols-sharp text-black" style={{ fontSize: '36px' }}>arrow_upward</span>
           )}
         </button>
       </div>

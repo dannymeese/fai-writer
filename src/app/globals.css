@@ -1,4 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Sharp:opsz,wght,FILL,GRAD@24,400,0,0");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0");
 
 @tailwind base;
 @tailwind components;
@@ -10,7 +12,7 @@
 
 body {
   margin: 0;
-  font-family: var(--font-manrope), ui-sans-serif, system-ui;
+  font-family: var(--font-inter), ui-sans-serif, system-ui;
   background-color: #000000;
   color: #ffffff;
 }
@@ -57,6 +59,40 @@ textarea::placeholder {
   -webkit-font-feature-settings: "liga";
   -webkit-font-smoothing: antialiased;
   font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+.material-symbols-sharp {
+  font-family: "Material Symbols Sharp", sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  font-size: 1.5rem;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+.material-symbols-rounded {
+  font-family: "Material Symbols Rounded", sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  font-size: 1.5rem;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24;
 }
 
 /* TipTap Editor Styles */

@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
-import { Manrope, Fira_Code } from "next/font/google";
+import { Inter, Fira_Code } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/shared/Providers";
 import SiteHeader from "@/components/shared/SiteHeader";
 import { auth } from "@/auth";
 
-const manrope = Manrope({
+const inter = Inter({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-manrope"
+  variable: "--font-inter"
 });
 
 const firaCode = Fira_Code({
@@ -27,7 +27,7 @@ export const dynamic = "force-dynamic";
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   return (
-    <html lang="en" className={`${manrope.variable} ${firaCode.variable}`}>
+    <html lang="en" className={`${inter.variable} ${firaCode.variable}`}>
       <body className="min-h-screen bg-brand-background font-sans text-brand-text antialiased">
         <Providers session={session}>
           <div className="flex min-h-screen flex-col bg-brand-background text-brand-text">
