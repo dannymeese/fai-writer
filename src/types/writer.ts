@@ -19,3 +19,10 @@ export type WriterOutput = {
   styleTitle?: string | null;
 };
 
+export type FolderSummary = {
+  id: string;
+  name: string;
+  createdAt: string;
+  documentCount: number;
+};
+

@@ -61,3 +61,18 @@ export const documentSchema = z.object({
   styleTitle: z.string().max(100).nullable().optional()
 });
 
+export const folderCreateSchema = z.object({
+  name: z
+    .string()
+    .min(2, "Folder name needs at least 2 characters.")
+    .max(120, "Folder name is too long.")
+});
+
+export const folderAssignSchema = z.object({
+  folderId: z.string().min(1, "Folder is required."),
+  documentId: z.string().min(1, "Document is required.")
+});
+
+export type FolderCreateInput = z.infer<typeof folderCreateSchema>;
+export type FolderAssignInput = z.infer<typeof folderAssignSchema>;
+

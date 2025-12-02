@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { Tab } from "@headlessui/react";
 import Link from "next/link";
-import { SignOutButton } from "../shared/SignOutButton";
+import { signOut } from "next-auth/react";
+import { ArrowRightOnRectangleIcon } from "@heroicons/react/24/outline";
 import DocumentEditor from "../editors/DocumentEditor";
 import ComposeBar from "../forms/ComposeBar";
 import SettingsSheet from "../modals/SettingsSheet";
 import { ComposerSettingsInput } from "@/lib/validators";
-import { OutputPlaceholder, WriterOutput } from "@/types/writer";
+import { FolderSummary, OutputPlaceholder, WriterOutput } from "@/types/writer";
 import { cn, formatTimestamp, smartTitleFromPrompt, deriveTitleFromContent } from "@/lib/utils";
 
 type WriterWorkspaceProps = {
@@ -243,6 +244,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [brandSummary, setBrandSummary] = useState<string | null>(null);
   const [brandKeyMessaging, setBrandKeyMessaging] = useState<Array<{ id: string; text: string; createdAt: string }>>([]);
   const [savedDocs, setSavedDocs] = useState<SavedDoc[]>([]);
+  const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("docs");
   const [activeStyle, setActiveStyle] = useState<ActiveStyle | null>(null);
@@ -319,6 +321,39 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       if (local.length) {
         setSavedDocs(local);
       }
+    }
+  }, [isAuthenticated]);
+
+  const fetchFolders = useCallback(async () => {
+    if (!isAuthenticated) {
+      setFolders([]);
+      return;
+    }
+    try {
+      const response = await fetch("/api/folders", { cache: "no-store" });
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          setFolders([]);
+        } else {
+          console.warn("[fetchFolders] failed", response.status);
+        }
+        return;
+      }
+      const data = await response.json().catch(() => []);
+      if (Array.isArray(data)) {
+        setFolders(
+          data.map((folder) => ({
+            id: folder.id,
+            name: folder.name ?? "Untitled folder",
+            createdAt: folder.createdAt ?? new Date().toISOString(),
+            documentCount: typeof folder.documentCount === "number" ? folder.documentCount : 0
+          }))
+        );
+      } else {
+        setFolders([]);
+      }
+    } catch (error) {
+      console.error("[fetchFolders] failed", error);
     }
   }, [isAuthenticated]);
 
@@ -424,6 +459,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   useEffect(() => {
     fetchSavedDocs();
   }, [fetchSavedDocs]);
+
+  useEffect(() => {
+    fetchFolders();
+  }, [fetchFolders]);
 
   async function handleSubmit() {
     if (!composeValue.trim()) return;
@@ -791,6 +830,108 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     setToast(`Saved "${styleName}".`);
   }
 
+  const assignDocumentToFolder = useCallback(
+    async (folderId: string, options?: { folderName?: string }) => {
+      if (!isAuthenticated) {
+        setToast("Sign in to organize documents into folders.");
+        return;
+      }
+      if (!activeDocumentId) {
+        setToast("Open a document before adding it to a folder.");
+        return;
+      }
+
+      const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
+      if (!currentDoc) {
+        setToast("Document is still loading.");
+        return;
+      }
+
+      const latestId = await saveCurrentDocument(activeDocumentId, currentDoc.content);
+      const resolvedDocumentId = latestId ?? activeDocumentId;
+      if (!resolvedDocumentId) {
+        setToast("Save the document before adding it to a folder.");
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/folders/assign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            folderId,
+            documentId: resolvedDocumentId
+          })
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          setToast(formatErrorMessage(payload?.error, "Unable to add document to folder."));
+          return;
+        }
+
+        const folderName =
+          options?.folderName ||
+          payload?.folder?.name ||
+          folders.find((folder) => folder.id === folderId)?.name ||
+          "folder";
+        setToast(`Added to ${folderName}.`);
+        fetchFolders();
+      } catch (error) {
+        console.error("assign document to folder failed:", error);
+        setToast("Unable to add document to folder.");
+      }
+    },
+    [activeDocumentId, fetchFolders, folders, isAuthenticated, saveCurrentDocument]
+  );
+
+  const handleAddToFolder = useCallback(
+    (folderId: string) => {
+      void assignDocumentToFolder(folderId);
+    },
+    [assignDocumentToFolder]
+  );
+
+  const handleCreateFolder = useCallback(async () => {
+    if (!isAuthenticated) {
+      setToast("Create a free account to organize documents into folders.");
+      return;
+    }
+    const folderName = typeof window !== "undefined" ? window.prompt("Name your folder") : null;
+    if (folderName === null) {
+      return;
+    }
+    const trimmedName = folderName.trim();
+    if (!trimmedName) {
+      setToast("Folder name cannot be empty.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName })
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setToast(formatErrorMessage(payload?.error, "Unable to create folder."));
+        return;
+      }
+
+      const normalizedFolder: FolderSummary = {
+        id: payload.id,
+        name: payload.name ?? trimmedName,
+        createdAt: payload.createdAt ?? new Date().toISOString(),
+        documentCount: typeof payload.documentCount === "number" ? payload.documentCount : 0
+      };
+      setFolders((prev) => [normalizedFolder, ...prev.filter((folder) => folder.id !== normalizedFolder.id)]);
+      await assignDocumentToFolder(normalizedFolder.id, { folderName: normalizedFolder.name });
+    } catch (error) {
+      console.error("create folder failed:", error);
+      setToast("Unable to create folder.");
+    }
+  }, [assignDocumentToFolder, isAuthenticated]);
+
   const hasOutputs = outputs.length > 0;
 
   const applyLocalDoc = useCallback((doc: SavedDoc) => {
@@ -999,19 +1140,27 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const buildDocumentPayload = useCallback((doc: WriterOutput, contentValue: string) => {
     const settingsPayload = doc.settings ?? defaultSettings;
     const resolvedTitle = resolveDocumentTitle(doc, contentValue);
-    return {
+    const payload: any = {
       title: resolvedTitle,
-      content: contentValue,
-      tone: settingsPayload.marketTier ?? null,
-      prompt: doc.prompt || "",
-      characterLength: settingsPayload.characterLength ?? null,
-      wordLength: settingsPayload.wordLength ?? null,
-      gradeLevel: settingsPayload.gradeLevel ?? null,
-      benchmark: settingsPayload.benchmark ?? null,
-      avoidWords: settingsPayload.avoidWords ?? null,
-      writingStyle: doc.writingStyle ?? null,
-      styleTitle: doc.styleTitle ?? null
+      content: contentValue
     };
+    
+    // Only include fields that have values (omit null/undefined)
+    if (settingsPayload.marketTier) payload.tone = settingsPayload.marketTier;
+    if (doc.prompt) payload.prompt = doc.prompt;
+    if (settingsPayload.characterLength !== null && settingsPayload.characterLength !== undefined) {
+      payload.characterLength = settingsPayload.characterLength;
+    }
+    if (settingsPayload.wordLength !== null && settingsPayload.wordLength !== undefined) {
+      payload.wordLength = settingsPayload.wordLength;
+    }
+    if (settingsPayload.gradeLevel) payload.gradeLevel = settingsPayload.gradeLevel;
+    if (settingsPayload.benchmark) payload.benchmark = settingsPayload.benchmark;
+    if (settingsPayload.avoidWords) payload.avoidWords = settingsPayload.avoidWords;
+    if (doc.writingStyle) payload.writingStyle = doc.writingStyle;
+    if (doc.styleTitle) payload.styleTitle = doc.styleTitle;
+    
+    return payload;
   }, [resolveDocumentTitle]);
 
   const persistDocumentToServer = useCallback(
@@ -1058,6 +1207,20 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       // If patch failed (likely 404) or doc has no id, create it
       try {
         const payload = buildDocumentPayload(doc, contentValue);
+        
+        // Validate payload before sending
+        if (!payload.title || payload.title.trim().length === 0) {
+          console.error("Document creation failed: empty title", { payload, doc, contentValue });
+          return null;
+        }
+        
+        console.log("[persistDocumentToServer] Creating document with payload:", {
+          title: payload.title,
+          contentLength: payload.content?.length,
+          hasPrompt: !!payload.prompt,
+          keys: Object.keys(payload)
+        });
+        
         const createResponse = await fetch("/api/documents", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1065,36 +1228,93 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         });
 
         if (!createResponse.ok) {
-          let errorPayload: any = {};
+          let errorPayload: any = null;
           let errorText: string = "";
+          
+          // Try to get response text first
+          const contentType = createResponse.headers.get("content-type");
+          let responseText = "";
+          
           try {
-            errorPayload = await createResponse.json();
-          } catch (e) {
-            // If JSON parsing fails, try to get text
-            try {
-              errorText = await createResponse.text();
-            } catch (textError) {
-              errorText = "Unable to read error response";
-            }
+            responseText = await createResponse.text();
+          } catch (textError) {
+            console.error("Failed to read response text", textError);
+            responseText = "Unable to read response";
           }
+          
+          // Log raw response for debugging
+          console.log("[persistDocumentToServer] Error response:", {
+            status: createResponse.status,
+            statusText: createResponse.statusText,
+            contentType,
+            responseTextLength: responseText.length,
+            responseTextPreview: responseText.substring(0, 500)
+          });
+          
+          if (contentType?.includes("application/json") && responseText) {
+            try {
+              errorPayload = JSON.parse(responseText);
+              // Check if errorPayload is meaningful (not empty object)
+              if (errorPayload && typeof errorPayload === "object" && Object.keys(errorPayload).length === 0) {
+                errorPayload = null;
+                errorText = responseText || "Empty error response";
+              }
+            } catch (e) {
+              console.error("Failed to parse error JSON", e);
+              errorText = responseText;
+            }
+          } else {
+            errorText = responseText || "No error message available";
+          }
+          
+          const errorMessage = errorPayload?.error || errorPayload?.message || errorPayload?.details || errorText || `HTTP ${createResponse.status}: ${createResponse.statusText}`;
+          
           console.error("Document creation failed:", {
             status: createResponse.status,
             statusText: createResponse.statusText,
-            error: errorPayload,
+            error: errorMessage,
+            errorPayload: errorPayload && Object.keys(errorPayload).length > 0 ? errorPayload : undefined,
             errorText: errorText || undefined,
             payloadSize: JSON.stringify(payload).length,
             title: payload.title,
             contentLength: payload.content?.length,
-            payloadKeys: Object.keys(payload)
+            payloadKeys: Object.keys(payload),
+            contentType,
+            responseText: responseText.substring(0, 500) // First 500 chars of response
           });
           return null;
         }
 
-        const created = await createResponse.json();
+        const responseText = await createResponse.text();
+        if (!responseText) {
+          console.error("Document creation failed: empty response");
+          return null;
+        }
+        
+        let created: any;
+        try {
+          created = JSON.parse(responseText);
+        } catch (e) {
+          console.error("Document creation failed: invalid JSON response", { responseText });
+          return null;
+        }
+        
+        if (!created?.id) {
+          console.error("Document creation failed: no ID in response", { created });
+          return null;
+        }
+        
         fetchSavedDocs();
         return created.id as string;
       } catch (error) {
         console.error("Document creation error:", error);
+        if (error instanceof Error) {
+          console.error("Error details:", {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+          });
+        }
         return null;
       }
     },
@@ -1104,16 +1324,18 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   // Save current document immediately (without debounce)
   const saveCurrentDocument = useCallback(
     async (documentId: string | null, documentContent: string) => {
-      if (!documentId) return;
+      if (!documentId) return null;
       const currentDoc = outputsRef.current.find((o) => o.id === documentId);
-      if (!currentDoc) return;
+      if (!currentDoc) return null;
       const savedId = await persistDocumentToServer(currentDoc, documentContent);
       if (savedId && savedId !== documentId) {
         setOutputs((prev) =>
           prev.map((entry) => (entry.id === documentId ? { ...entry, id: savedId } : entry))
         );
         setActiveDocumentId(savedId);
+        return savedId;
       }
+      return documentId;
     },
     [persistDocumentToServer]
   );
@@ -1334,7 +1556,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
 
       setAutosaveTimeout(timeout);
     },
-    [activeDocumentId, autosaveTimeout, persistDocumentToServer, isAuthenticated]
+    [activeDocumentId, autosaveTimeout, persistDocumentToServer]
   );
 
   // Cleanup autosave timeouts on unmount
@@ -1502,6 +1724,16 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               brandSummary={brandSummary}
               styleGuide={activeStyle ? { name: activeStyle.name, description: activeStyle.description } : null}
               horizontalPadding={documentHorizontalPadding}
+              folderOptions={
+                isAuthenticated
+                  ? folders.map((folder) => ({
+                      id: folder.id,
+                      name: folder.name
+                    }))
+                  : []
+              }
+              onAddToFolder={handleAddToFolder}
+              onCreateFolder={handleCreateFolder}
             />
           </div>
         </div>
@@ -1670,7 +1902,7 @@ function WorkspaceSidebar({
 
   function renderStyleList(items: SavedDoc[]) {
     if (!items.length) {
-      return <p className="text-sm text-brand-muted">Save a style from any output and it'll appear here.</p>;
+      return <p className="text-sm text-brand-muted">Save a style from any output and it&apos;ll appear here.</p>;
     }
     return (
       <ul className="space-y-3 pr-2">
@@ -1739,27 +1971,20 @@ function WorkspaceSidebar({
         )}
         {!hasBrand && brandKeyMessaging.length === 0 && (
           <p className="text-sm text-brand-muted">
-            No brand defined yet. Add one inside Settings, or select text and click "Add to Brand" in the formatting toolbar.
+            No brand defined yet. Add one inside Settings, or select text and click &ldquo;Add to Brand&rdquo; in the formatting toolbar.
           </p>
         )}
       </div>
     );
   }
 
-  const contentStyle = isDesktop && open
-    ? {
-        paddingTop: `${topOffset}px`,
-        paddingBottom: `${bottomOffset}px`
-      }
-    : undefined;
-
   return (
     <aside
       className={cn(
         "flex flex-col text-brand-text transition-all duration-300",
         open
-          ? "bg-brand-panel/85 shadow-[0_30px_80px_rgba(0,0,0,0.5)] fixed inset-0 z-50 w-full lg:fixed lg:left-0 lg:top-0 lg:bottom-0 lg:z-auto lg:w-80 lg:h-full lg:border-r lg:border-brand-stroke/40 lg:shadow-none"
-          : "fixed left-4 top-[calc(88px+16px)] z-50 lg:hidden"
+          ? "bg-brand-panel/85 shadow-[0_30px_80px_rgba(0,0,0,0.5)] fixed inset-0 z-50 w-full lg:fixed lg:left-0 lg:top-0 lg:bottom-0 lg:z-auto lg:w-80 lg:h-full lg:border-r lg:border-brand-stroke/40 lg:shadow-none lg:translate-x-0"
+          : "fixed left-4 top-[calc(88px+16px)] z-50 lg:hidden lg:translate-x-[-100%]"
       )}
       tabIndex={-1}
       onFocus={(e) => {
@@ -1770,15 +1995,15 @@ function WorkspaceSidebar({
       }}
     >
       {open ? (
-        <div className="flex h-full flex-col px-5 pb-6" style={contentStyle}>
+        <div className="flex h-full flex-col">
           <Tab.Group className="flex flex-1 flex-col min-h-0" selectedIndex={selectedIndex} onChange={handleTabChange}>
-            <Tab.List className="flex rounded-full bg-brand-background/40 p-1 text-xs font-semibold uppercase flex-shrink-0" style={{ marginTop: 0 }}>
+            <Tab.List className="flex bg-brand-background/40 text-xs font-semibold uppercase flex-shrink-0 w-full p-1.5">
               {tabs.map((tab) => (
                 <Tab
                   key={tab.id}
                   className={({ selected }) =>
                     cn(
-                      "flex flex-1 flex-col items-center justify-center gap-1 rounded-full px-2 py-3 transition focus:outline-none",
+                      "flex flex-1 flex-col items-center justify-center gap-1 py-3 rounded-full transition focus:outline-none",
                       selected
                         ? "bg-white/15 text-white shadow-[0_15px_35px_rgba(0,0,0,0.45)]"
                         : "text-brand-muted hover:text-white"
@@ -1790,31 +2015,41 @@ function WorkspaceSidebar({
                 </Tab>
               ))}
             </Tab.List>
-            <div className="mt-6 flex-1 min-h-0 overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-hidden px-5">
               <Tab.Panels className="h-full">
-                <Tab.Panel className="h-full overflow-y-auto pr-1 focus:outline-none">
+                <Tab.Panel className="h-full overflow-y-auto pr-1 pt-8 pb-8 focus:outline-none">
                   {renderDocList(docs, "No docs yet. Generate something to see it here.")}
                 </Tab.Panel>
-                <Tab.Panel className="h-full overflow-y-auto pr-1 focus:outline-none">
+                <Tab.Panel className="h-full overflow-y-auto pr-1 pt-8 pb-8 focus:outline-none">
                   {renderStyleList(styles)}
                 </Tab.Panel>
-                <Tab.Panel className="h-full overflow-y-auto pr-1 focus:outline-none">
+                <Tab.Panel className="h-full overflow-y-auto pr-1 pt-8 pb-8 focus:outline-none">
                   {renderBrandsContent()}
                 </Tab.Panel>
               </Tab.Panels>
             </div>
           </Tab.Group>
-          <div className="mt-4 border-t border-brand-stroke/40 pt-4 flex-shrink-0">
+          <div className="mt-auto border-t border-brand-stroke/40 pt-4 pb-6 px-5 flex-shrink-0">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <ProfileAvatar name={userName} size={48} />
+              <Link href="/membership" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+                <ProfileAvatar name={userName} size={32} />
                 <div>
-                  <p className="text-[10px] text-brand-muted">Working as</p>
-                  <p className="mt-0.5 text-base font-semibold text-white">{userName}</p>
+                  <p className="text-[10px] text-brand-muted">Account</p>
+                  <p className="mt-0.5 text-sm font-semibold text-white">{userName}</p>
                 </div>
-              </div>
+              </Link>
               <div className="flex-shrink-0">
-                <SignOutButton />
+                <button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                  }}
+                  onClick={() => signOut({ callbackUrl: "/sign-in" })}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-brand-stroke/70 px-3 py-1.5 text-xs font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
+                  tabIndex={-1}
+                >
+                  <ArrowRightOnRectangleIcon className="h-3 w-3" />
+                  Sign out
+                </button>
               </div>
             </div>
           </div>
@@ -1873,16 +2108,18 @@ function generateColorFromName(name: string): string {
   return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 }
 
-function ProfileAvatar({ name, size = 40 }: { name: string; size?: number }) {
+function ProfileAvatar({ name, size = 32 }: { name: string; size?: number }) {
   const initials = getInitials(name);
   const bgColor = generateColorFromName(name);
   
   return (
     <div
-      className="flex items-center justify-center rounded-full font-semibold text-white"
+      className="flex items-center justify-center rounded-full font-semibold text-white flex-shrink-0"
       style={{
         width: `${size}px`,
         height: `${size}px`,
+        minWidth: `${size}px`,
+        minHeight: `${size}px`,
         backgroundColor: bgColor,
         fontSize: `${size * 0.4}px`
       }}
