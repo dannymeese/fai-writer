@@ -22,17 +22,28 @@ export async function GET() {
   try {
     const folders = await prisma.folder.findMany({
       where: { ownerId: session.user.id },
-      orderBy: { createdAt: "desc" },
       include: {
         _count: {
           select: { documentFolders: true }
+        },
+        documentFolders: {
+          orderBy: { assignedAt: "desc" },
+          take: 1,
+          select: { assignedAt: true }
         }
       },
       take: 100
     });
 
+    // Sort folders by most recent document assignment, then by creation date
+    const sortedFolders = folders.sort((a, b) => {
+      const aLastAssigned = a.documentFolders[0]?.assignedAt ?? a.createdAt;
+      const bLastAssigned = b.documentFolders[0]?.assignedAt ?? b.createdAt;
+      return bLastAssigned.getTime() - aLastAssigned.getTime();
+    });
+
     return NextResponse.json(
-      folders.map((folder) => ({
+      sortedFolders.map((folder) => ({
         id: folder.id,
         name: folder.name,
         createdAt: folder.createdAt,

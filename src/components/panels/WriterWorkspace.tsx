@@ -429,6 +429,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       }
       const data = await response.json().catch(() => []);
       if (Array.isArray(data)) {
+        // API already returns folders sorted by most recent assignment, so use as-is
         setFolders(
           data.map((folder) => ({
             id: folder.id,
@@ -1736,6 +1737,11 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         return null;
       }
 
+      if (trimmedName.length > 30) {
+        setFolderDialogError("Folder name must be 30 characters or less.");
+        return null;
+      }
+
       const duplicate = folders.some((folder) => folder.name.toLowerCase() === trimmedName.toLowerCase());
       if (duplicate) {
         setFolderDialogError("You already have a folder with that name.");
@@ -2406,6 +2412,129 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   );
 }
 
+function TruncateTitle({ text, className, style }: { text: string; className?: string; style?: React.CSSProperties }) {
+  const textRef = useRef<HTMLParagraphElement>(null);
+  const [truncatedText, setTruncatedText] = useState(text);
+
+  useEffect(() => {
+    const element = textRef.current;
+    if (!element) return;
+
+    const measureAndTruncate = () => {
+      const container = element.parentElement;
+      if (!container) return;
+
+      // Calculate available width: container width minus padding (46px right padding)
+      const containerWidth = container.clientWidth;
+      const paddingRight = 46; // pr-[46px]
+      const paddingLeft = 20; // p-5 = 20px
+      const maxWidth = containerWidth - paddingLeft - paddingRight;
+
+      const words = text.split(' ');
+      let result = '';
+      
+      // Create a temporary element to measure text width
+      const tempElement = document.createElement('span');
+      tempElement.style.visibility = 'hidden';
+      tempElement.style.position = 'absolute';
+      tempElement.style.fontSize = window.getComputedStyle(element).fontSize;
+      tempElement.style.fontWeight = window.getComputedStyle(element).fontWeight;
+      tempElement.style.fontFamily = window.getComputedStyle(element).fontFamily;
+      tempElement.style.whiteSpace = 'nowrap';
+      document.body.appendChild(tempElement);
+
+      for (const word of words) {
+        const testText = result ? `${result} ${word}` : word;
+        tempElement.textContent = testText;
+        
+        if (tempElement.offsetWidth <= maxWidth) {
+          result = testText;
+        } else {
+          break;
+        }
+      }
+
+      document.body.removeChild(tempElement);
+      setTruncatedText(result || words[0] || '');
+    };
+
+    // Small delay to ensure layout is complete
+    const timeoutId = setTimeout(measureAndTruncate, 0);
+    
+    const resizeObserver = new ResizeObserver(measureAndTruncate);
+    resizeObserver.observe(element.parentElement || element);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      resizeObserver.disconnect();
+    };
+  }, [text]);
+
+  return (
+    <p ref={textRef} className={className} style={style}>
+      {truncatedText}
+    </p>
+  );
+}
+
+function AutoFitText({ children, className, maxFontSize = 15, minFontSize = 8, lineHeight = 1.33 }: { children: string; className?: string; maxFontSize?: number; minFontSize?: number; lineHeight?: number }) {
+  const textRef = useRef<HTMLSpanElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const textElement = textRef.current;
+    const containerElement = containerRef.current;
+    if (!textElement || !containerElement) return;
+
+    const adjustFontSize = () => {
+      const containerHeight = containerElement.clientHeight;
+      const containerWidth = containerElement.clientWidth;
+      let fontSize = maxFontSize;
+      
+      // Reset to max size first
+      textElement.style.fontSize = `${fontSize}px`;
+      textElement.style.lineHeight = `${lineHeight}`;
+      
+      // Check if text fits - allow up to 3 lines
+      while (fontSize > minFontSize) {
+        const textHeight = textElement.scrollHeight;
+        const textWidth = textElement.scrollWidth;
+        const maxHeight = containerHeight;
+        const maxWidth = containerWidth;
+        
+        if (textHeight <= maxHeight && textWidth <= maxWidth) {
+          break;
+        }
+        
+        fontSize -= 0.5;
+        textElement.style.fontSize = `${fontSize}px`;
+      }
+    };
+
+    // Small delay to ensure layout is complete
+    const timeoutId = setTimeout(adjustFontSize, 0);
+    
+    // Adjust on resize
+    const resizeObserver = new ResizeObserver(() => {
+      adjustFontSize();
+    });
+    resizeObserver.observe(containerElement);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      resizeObserver.disconnect();
+    };
+  }, [children, maxFontSize, minFontSize, lineHeight]);
+
+  return (
+    <div ref={containerRef} className="w-full h-full flex items-center justify-center pt-1">
+      <span ref={textRef} className={cn("font-semibold w-full text-center break-words line-clamp-3", className)}>
+        {children}
+      </span>
+    </div>
+  );
+}
+
 type FolderDialogProps = {
   open: boolean;
   loading: boolean;
@@ -2422,6 +2551,8 @@ function FolderDialog({ open, loading, error, onSubmit, onClose, onResetError }:
   useEffect(() => {
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 0);
+    } else {
+      setValue("");
     }
   }, [open]);
 
@@ -2444,23 +2575,35 @@ function FolderDialog({ open, loading, error, onSubmit, onClose, onResetError }:
           </button>
         </div>
         <p className="mt-1 text-sm text-brand-muted">Give your folder a name to organize docs.</p>
-        <input
-          ref={inputRef}
-          type="text"
-          className="mt-4 w-full rounded-xl border border-brand-stroke/60 bg-brand-background/40 px-3 py-2 text-sm text-white placeholder:text-brand-muted focus:border-white focus:outline-none"
-          placeholder="Folder name"
-          value={value}
-          onChange={(event) => {
-            setValue(event.target.value);
-            onResetError?.();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && value.trim() && !loading) {
-              onSubmit(value);
-            }
-          }}
-          disabled={loading}
-        />
+        <div className="mt-4">
+          <input
+            ref={inputRef}
+            type="text"
+            maxLength={30}
+            className="w-full rounded-xl border border-brand-stroke/60 bg-brand-background/40 px-3 py-2 text-sm text-white placeholder:text-brand-muted focus:border-white focus:outline-none"
+            placeholder="Folder name"
+            value={value}
+            onChange={(event) => {
+              const newValue = event.target.value.slice(0, 30);
+              setValue(newValue);
+              onResetError?.();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && value.trim() && !loading) {
+                onSubmit(value);
+              }
+            }}
+            disabled={loading}
+          />
+          <div className="mt-1 flex justify-end">
+            <span className={cn(
+              "text-xs",
+              value.length >= 30 ? "text-red-400" : "text-brand-muted"
+            )}>
+              {value.length}/30
+            </span>
+          </div>
+        </div>
         {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button
@@ -2651,6 +2794,10 @@ function WorkspaceSidebar({
 
   const handleTabChange = (index: number) => {
     const nextTab = tabs[index]?.id ?? tabs[0].id;
+    // Clear folder filter when switching to docs tab
+    if (nextTab === "docs" && folderFilterId !== null) {
+      setFolderFilterId(null);
+    }
     onTabChange(nextTab);
   };
 
@@ -2716,6 +2863,14 @@ function WorkspaceSidebar({
     return docs.filter((doc) => doc.folders?.some((folder) => folder.id === effectiveFolderFilterId));
   }, [docs, effectiveFolderFilterId]);
 
+  // Helper function to truncate text at word boundaries
+  function truncateAtWordBoundary(text: string, maxLength: number): string {
+    if (text.length <= maxLength) return text;
+    const truncated = text.substring(0, maxLength);
+    const lastSpace = truncated.lastIndexOf(' ');
+    return lastSpace > 0 ? truncated.substring(0, lastSpace) : truncated;
+  }
+
   // Helper function to extract preview text from content
   function getContentPreview(content: string, maxLength: number = 80): string {
     if (!content || !content.trim()) {
@@ -2753,7 +2908,7 @@ function WorkspaceSidebar({
         {items.map((doc) => {
           const isActive = activeDocumentId === doc.id;
           const preview = getContentPreview(doc.content);
-          const displayTitle = doc.title || "Untitled doc";
+          const fullTitle = doc.title || "Untitled doc";
           const docFolders = doc.folders ?? [];
           const canDragDoc = canOrganizeFolders && !doc.id.startsWith("local-");
           return (
@@ -2773,30 +2928,22 @@ function WorkspaceSidebar({
                 onMouseDown={handleButtonMouseDown}
                 onClick={() => onSelect(doc)}
                 className={cn(
-                  "w-full rounded-[7px] border border-brand-stroke/40 bg-brand-background/60 p-5 text-left transition",
+                  "w-full h-[90px] rounded-[7px] border border-brand-stroke/40 bg-brand-background/60 p-5 text-left transition flex flex-col",
                   isActive
                     ? "border-white shadow-[0_20px_45px_rgba(0,0,0,0.45)]"
                     : "hover:opacity-50"
                 )}
                 tabIndex={-1}
               >
-                <p className="text-[21px] font-semibold pr-9 mb-[5px] pb-1" style={{ lineHeight: '1.6rem', minHeight: '3rem', color: 'rgba(255, 255, 255, 0.75)' }}>{displayTitle}</p>
+                <TruncateTitle 
+                  text={fullTitle}
+                  className="text-lg font-semibold pr-[46px] mb-[2.5px] pb-0.5 overflow-hidden whitespace-nowrap"
+                  style={{ lineHeight: '1.6rem', color: 'rgba(255, 255, 255, 0.75)' }}
+                />
                 {preview && (
-                  <p className="text-xs font-semibold text-brand-muted/70 mt-1">
+                  <p className="text-xs font-semibold text-brand-muted/70 mt-0.5 overflow-hidden whitespace-nowrap">
                     {preview}
                   </p>
-                )}
-                {docFolders.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {docFolders.map((folder) => (
-                      <span
-                        key={folder.id}
-                        className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/70"
-                      >
-                        {folder.name}
-                      </span>
-                    ))}
-                  </div>
                 )}
               </button>
               <button
@@ -2849,34 +2996,33 @@ function WorkspaceSidebar({
     );
   }
 
-  function renderFolderScroller() {
+  function renderFolderGrid() {
     if (!canOrganizeFolders) {
       return (
-        <div className="mb-5 rounded-2xl border border-brand-stroke/40 bg-brand-background/60 px-4 py-3 text-xs text-brand-muted">
-          Sign in to create folders and organize docs.
-        </div>
-      );
-    }
-
-    if (!folders.length) {
-      return (
-        <div className="mb-5">
-          <button
-            type="button"
-            onMouseDown={handleButtonMouseDown}
-            onClick={onCreateFolder}
-            className="inline-flex items-center gap-2 rounded-full border border-dashed border-brand-stroke/60 px-4 py-2 text-xs font-semibold text-brand-text transition hover:border-white hover:text-white"
-          >
-            <span className="material-symbols-outlined text-base leading-none">add_circle</span>
-            Create folder
-          </button>
+        <div className="pt-6 border-t border-brand-stroke/40 bg-brand-panel/95 backdrop-blur-sm">
+          <p className="mb-4 text-sm font-semibold text-white">Folders</p>
+          <div className="rounded-2xl border border-brand-stroke/40 bg-brand-background/60 px-4 py-3 text-xs text-brand-muted">
+            Sign in to create folders and organize docs.
+          </div>
         </div>
       );
     }
 
     return (
-      <div className="mb-5 overflow-x-auto">
-        <div className="flex w-max items-center gap-[3px] pb-1">
+      <div className="pt-3 border-t border-brand-stroke/40 bg-brand-panel/95 backdrop-blur-sm">
+        <div className="mb-4 flex items-center justify-between px-3">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold text-white">Folders</p>
+            <button
+              type="button"
+              onMouseDown={handleButtonMouseDown}
+              onClick={onCreateFolder}
+              className="inline-flex items-center justify-center rounded-full border border-brand-stroke/50 p-1 text-xs text-brand-muted transition hover:border-white hover:text-white"
+              title="Create folder"
+            >
+              <span className="material-symbols-outlined text-base leading-none">add</span>
+            </button>
+          </div>
           <button
             type="button"
             onMouseDown={handleButtonMouseDown}
@@ -2888,60 +3034,76 @@ function WorkspaceSidebar({
           >
             All
           </button>
-          {folders.map((folder) => {
-            const isSelected = effectiveFolderFilterId === folder.id;
-            const isDragTarget = dragOverFolderId === folder.id;
-            const allowDrop = Boolean(onDocumentDroppedOnFolder && draggingDocId);
-            return (
-              <button
-                key={folder.id}
-                type="button"
-                onMouseDown={handleButtonMouseDown}
-                onClick={() =>
-                  setFolderFilterId((current) => (current === folder.id ? null : folder.id))
-                }
-                onDragOver={(event) => {
-                  if (!allowDrop) return;
-                  event.preventDefault();
-                  setDragOverFolderId(folder.id);
-                }}
-                onDragLeave={(event) => {
-                  if (!allowDrop) return;
-                  event.preventDefault();
-                  if (dragOverFolderId === folder.id) {
-                    setDragOverFolderId(null);
-                  }
-                }}
-                onDrop={(event) => {
-                  if (!allowDrop) return;
-                  event.preventDefault();
-                  setDragOverFolderId(null);
-                  const droppedId = event.dataTransfer?.getData("text/plain") || draggingDocId;
-                  if (droppedId) {
-                    onDocumentDroppedOnFolder?.(folder.id, droppedId);
-                  }
-                }}
-                className={cn(
-                  "flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-                  isSelected ? "border-white bg-white/10 text-white" : "border-brand-stroke/50 text-brand-muted hover:border-white hover:text-white",
-                  isDragTarget ? "border-brand-blue text-brand-blue" : undefined
-                )}
-              >
-                <span className="truncate max-w-[120px]">{folder.name}</span>
-                <span className="text-[10px] text-white/60">{folder.documentCount}</span>
-              </button>
-            );
-          })}
+        </div>
+        {folders.length === 0 ? (
           <button
             type="button"
             onMouseDown={handleButtonMouseDown}
             onClick={onCreateFolder}
-            className="inline-flex items-center gap-1 rounded-full border border-brand-stroke/50 px-3 py-1.5 text-xs font-semibold text-brand-muted transition hover:border-white hover:text-white"
+            className="inline-flex items-center gap-2 rounded-full border border-dashed border-brand-stroke/60 px-4 py-2 text-xs font-semibold text-brand-text transition hover:border-white hover:text-white"
           >
-            <span className="material-symbols-outlined text-base leading-none">add</span>
-            Folder
+            <span className="material-symbols-outlined text-base leading-none">add_circle</span>
+            Create folder
           </button>
-        </div>
+        ) : (
+          <div className="max-h-[200px] overflow-y-auto px-3">
+            <div className="grid grid-cols-3 gap-2">
+            {folders.map((folder) => {
+              const isSelected = effectiveFolderFilterId === folder.id;
+              const isDragTarget = dragOverFolderId === folder.id;
+              const allowDrop = Boolean(onDocumentDroppedOnFolder && draggingDocId);
+              return (
+                <button
+                  key={folder.id}
+                  type="button"
+                  onMouseDown={handleButtonMouseDown}
+                  onClick={() =>
+                    setFolderFilterId((current) => (current === folder.id ? null : folder.id))
+                  }
+                  onDragOver={(event) => {
+                    if (!allowDrop) return;
+                    event.preventDefault();
+                    setDragOverFolderId(folder.id);
+                  }}
+                  onDragLeave={(event) => {
+                    if (!allowDrop) return;
+                    event.preventDefault();
+                    if (dragOverFolderId === folder.id) {
+                      setDragOverFolderId(null);
+                    }
+                  }}
+                  onDrop={(event) => {
+                    if (!allowDrop) return;
+                    event.preventDefault();
+                    setDragOverFolderId(null);
+                    const droppedId = event.dataTransfer?.getData("text/plain") || draggingDocId;
+                    if (droppedId) {
+                      onDocumentDroppedOnFolder?.(folder.id, droppedId);
+                    }
+                  }}
+                  className={cn(
+                    "aspect-square relative flex flex-col items-center justify-start rounded-lg border transition p-[7px]",
+                    isSelected ? "border-white bg-white/10 text-white" : "border-brand-stroke/50 bg-black/10 text-brand-muted hover:border-white hover:text-white hover:bg-black/15",
+                    isDragTarget ? "border-brand-blue text-brand-blue bg-black/15" : undefined
+                  )}
+                >
+                  <div className="flex-1 w-full min-h-0">
+                    <AutoFitText 
+                      className="text-white"
+                      maxFontSize={15}
+                      minFontSize={8}
+                      lineHeight={1.33}
+                    >
+                      {folder.name}
+                    </AutoFitText>
+                  </div>
+                  <span className="text-[9px] text-white/60 text-center mt-1">{folder.documentCount}</span>
+                </button>
+              );
+            })}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -3049,6 +3211,12 @@ function WorkspaceSidebar({
               {tabs.map((tab) => (
                 <Tab
                   key={tab.id}
+                  onClick={() => {
+                    // Clear folder filter when clicking docs tab
+                    if (tab.id === "docs" && folderFilterId !== null) {
+                      setFolderFilterId(null);
+                    }
+                  }}
                   className={({ selected }) =>
                     cn(
                       "flex flex-1 flex-col items-center justify-center gap-1 py-3 rounded-full transition focus:outline-none",
@@ -3063,14 +3231,18 @@ function WorkspaceSidebar({
                 </Tab>
               ))}
             </Tab.List>
-            <div className="flex-1 min-h-0 overflow-hidden pl-5 pr-0">
+            <div className="flex-1 min-h-0 overflow-hidden">
               <Tab.Panels className="h-full">
-                <Tab.Panel className="h-full overflow-y-auto pt-8 pb-8 pr-5 focus:outline-none">
-                  {renderFolderScroller()}
-                  {renderDocList(
-                    filteredDocs,
-                    effectiveFolderFilterId ? "No docs in this folder yet." : "No docs yet. Generate something to see it here."
-                  )}
+                <Tab.Panel className="h-full flex flex-col focus:outline-none">
+                  <div className="flex-1 min-h-0 overflow-y-auto pt-3 px-3">
+                    {renderDocList(
+                      filteredDocs,
+                      effectiveFolderFilterId ? "No docs in this folder yet." : "No docs yet. Generate something to see it here."
+                    )}
+                  </div>
+                  <div className="flex-shrink-0">
+                    {renderFolderGrid()}
+                  </div>
                 </Tab.Panel>
                 <Tab.Panel className="h-full overflow-y-auto pt-8 pb-8 pr-5 focus:outline-none">
                   {renderStyleList(styles)}
@@ -3081,7 +3253,7 @@ function WorkspaceSidebar({
               </Tab.Panels>
             </div>
           </Tab.Group>
-          <div className="mt-auto border-t border-brand-stroke/40 pt-4 pb-6 px-5 flex-shrink-0">
+          <div className="mt-auto border-t border-brand-stroke/40 pt-5 pb-6 px-5 flex-shrink-0">
             <div className="flex items-center justify-between gap-3">
               <Link href="/membership" className="flex items-center gap-[5px] hover:opacity-80 transition-opacity">
                 <ProfileAvatar name={userName} size={32} />

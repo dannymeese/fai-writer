@@ -23,11 +23,32 @@ export async function GET() {
     const docs = await db.document.findMany({
       where: { ownerId: session.user.id },
       orderBy: { createdAt: "desc" },
-      take: 25
+      take: 25,
+      include: {
+        documentFolders: {
+          include: {
+            folder: {
+              select: {
+                id: true,
+                name: true
+              }
+            }
+          }
+        }
+      }
     });
 
+    // Transform documents to include folders array
+    const docsWithFolders = docs.map((doc) => ({
+      ...doc,
+      folders: doc.documentFolders.map((df) => ({
+        id: df.folder.id,
+        name: df.folder.name
+      }))
+    }));
+
     console.log("[documents][GET] Found", docs.length, "documents for user", session.user.id);
-    return NextResponse.json(docs);
+    return NextResponse.json(docsWithFolders);
   } catch (error) {
     console.error("[documents][GET] failed", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
