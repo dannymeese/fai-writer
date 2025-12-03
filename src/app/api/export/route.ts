@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { Document, Packer, Paragraph, TextRun } from "docx";
-import { generateDownloadFilename } from "@/lib/utils";
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
+import { generateDownloadFilename, markdownToPlainText } from "@/lib/utils";
+import MarkdownIt from "markdown-it";
 
 export async function POST(request: Request) {
   const { title, content, format = "docx" } = await request.json().catch(() => ({}));
@@ -12,7 +13,10 @@ export async function POST(request: Request) {
   const filename = generateDownloadFilename(title, content, format);
 
   if (format === "txt") {
-    const textContent = `${title}\n\n${content}`;
+    // Strip markdown formatting for plain text
+    const plainTitle = markdownToPlainText(title);
+    const plainContent = markdownToPlainText(content);
+    const textContent = `${plainTitle}\n\n${plainContent}`;
     const blob = new Blob([textContent], { type: "text/plain" });
     const arrayBuffer = await blob.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
@@ -36,29 +40,243 @@ export async function POST(request: Request) {
     });
   }
 
-  // Default: DOCX format
+  // Default: DOCX format - parse markdown and apply formatting
+  const md = new MarkdownIt();
+  const tokens = md.parse(content, {});
+  
+  // Helper function to parse inline markdown tokens to TextRuns
+  function parseInlineTokens(tokens: any[], startIndex = 0, bold = false, italic = false): { runs: TextRun[]; nextIndex: number } {
+    const runs: TextRun[] = [];
+    let i = startIndex;
+    
+    while (i < tokens.length) {
+      const token = tokens[i];
+      
+      if (token.type === "text") {
+        if (token.content) {
+          runs.push(new TextRun({ 
+            text: token.content,
+            bold: bold,
+            italics: italic
+          }));
+        }
+        i++;
+      } else if (token.type === "strong_open") {
+        // Start bold section - recursively parse until strong_close
+        i++;
+        const result = parseInlineTokens(tokens, i, true, italic);
+        runs.push(...result.runs);
+        i = result.nextIndex;
+        // Skip the strong_close token
+        if (i < tokens.length && tokens[i].type === "strong_close") {
+          i++;
+        }
+      } else if (token.type === "em_open") {
+        // Start italic section - recursively parse until em_close
+        i++;
+        const result = parseInlineTokens(tokens, i, bold, true);
+        runs.push(...result.runs);
+        i = result.nextIndex;
+        // Skip the em_close token
+        if (i < tokens.length && tokens[i].type === "em_close") {
+          i++;
+        }
+      } else if (token.type === "code_inline") {
+        runs.push(new TextRun({ 
+          text: token.content || "",
+          font: "Courier New",
+          bold: bold,
+          italics: italic
+        }));
+        i++;
+      } else if (token.type === "strong_close" || token.type === "em_close") {
+        // Return when we hit a closing tag (caller will handle it)
+        return { runs, nextIndex: i };
+      } else if (token.children) {
+        // Process children with current formatting
+        const result = parseInlineTokens(token.children, 0, bold, italic);
+        runs.push(...result.runs);
+        i++;
+      } else {
+        i++;
+      }
+    }
+    
+    return { runs, nextIndex: i };
+  }
+  
+  // Helper function to extract text from inline tokens (for simpler cases)
+  function getTextFromTokens(tokens: any[]): string {
+    let text = "";
+    for (const token of tokens) {
+      if (token.type === "text") {
+        text += token.content;
+      } else if (token.children) {
+        text += getTextFromTokens(token.children);
+      }
+    }
+    return text;
+  }
+  
+  // Convert markdown tokens to DOCX paragraphs
+  const paragraphs: Paragraph[] = [];
+  
+  // Add title paragraph (strip markdown from title)
+  const plainTitle = markdownToPlainText(title);
+  paragraphs.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: plainTitle,
+          bold: true,
+          size: 32
+        })
+      ],
+      spacing: { after: 200 }
+    })
+  );
+  
+  // Process content tokens
+  let i = 0;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    
+    if (token.type === "heading_open") {
+      const level = parseInt(token.tag.substring(1)); // h1 -> 1, h2 -> 2, etc.
+      i++; // Skip to content
+      const headingText = getTextFromTokens(tokens[i].children || []);
+      i++; // Skip content token
+      i++; // Skip closing tag
+      
+      const headingLevels = [
+        HeadingLevel.HEADING_1,
+        HeadingLevel.HEADING_2,
+        HeadingLevel.HEADING_3,
+        HeadingLevel.HEADING_4,
+        HeadingLevel.HEADING_5,
+        HeadingLevel.HEADING_6
+      ];
+      
+      paragraphs.push(
+        new Paragraph({
+          text: headingText,
+          heading: headingLevels[Math.min(level - 1, 5)],
+          spacing: { after: 200 }
+        })
+      );
+    } else if (token.type === "paragraph_open") {
+      i++; // Skip to content
+      const inlineTokens = tokens[i].children || [];
+      const result = parseInlineTokens(inlineTokens);
+      
+      if (result.runs.length > 0) {
+        paragraphs.push(
+          new Paragraph({
+            children: result.runs,
+            spacing: { after: 120 }
+          })
+        );
+      } else {
+        // Empty paragraph
+        paragraphs.push(
+          new Paragraph({
+            children: [new TextRun({ text: "" })],
+            spacing: { after: 120 }
+          })
+        );
+      }
+      i++; // Skip content token
+      i++; // Skip closing tag
+    } else if (token.type === "bullet_list_open") {
+      i++; // Process list items
+      while (i < tokens.length && tokens[i].type !== "bullet_list_close") {
+        if (tokens[i].type === "list_item_open") {
+          i++; // Skip to content
+          const inlineTokens = tokens[i].children || [];
+          const result = parseInlineTokens(inlineTokens);
+          i++; // Skip content
+          i++; // Skip closing tag
+          
+          paragraphs.push(
+            new Paragraph({
+              children: [
+                new TextRun({ text: "• ", bold: true }),
+                ...result.runs
+              ],
+              spacing: { after: 80 },
+              indent: { left: 400 }
+            })
+          );
+        } else {
+          i++;
+        }
+      }
+      i++; // Skip closing tag
+    } else if (token.type === "ordered_list_open") {
+      let listIndex = 1;
+      i++; // Process list items
+      while (i < tokens.length && tokens[i].type !== "ordered_list_close") {
+        if (tokens[i].type === "list_item_open") {
+          i++; // Skip to content
+          const inlineTokens = tokens[i].children || [];
+          const result = parseInlineTokens(inlineTokens);
+          i++; // Skip content
+          i++; // Skip closing tag
+          
+          paragraphs.push(
+            new Paragraph({
+              children: [
+                new TextRun({ text: `${listIndex}. `, bold: true }),
+                ...result.runs
+              ],
+              spacing: { after: 80 },
+              indent: { left: 400 }
+            })
+          );
+          listIndex++;
+        } else {
+          i++;
+        }
+      }
+      i++; // Skip closing tag
+    } else if (token.type === "blockquote_open") {
+      i++; // Skip to content
+      const inlineTokens = tokens[i].children || [];
+      // Parse with italic enabled by default
+      const result = parseInlineTokens(inlineTokens, 0, false, true);
+      i++; // Skip content
+      i++; // Skip closing tag
+      
+      paragraphs.push(
+        new Paragraph({
+          children: result.runs,
+          spacing: { after: 120 },
+          indent: { left: 400 }
+        })
+      );
+    } else if (token.type === "code_block" || token.type === "fence") {
+      const codeText = token.content || "";
+      paragraphs.push(
+        new Paragraph({
+          children: [
+            new TextRun({ 
+              text: codeText,
+              font: "Courier New"
+            })
+          ],
+          spacing: { after: 120 }
+        })
+      );
+      i++;
+    } else {
+      i++;
+    }
+  }
+  
   const doc = new Document({
     sections: [
       {
-        children: [
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: title,
-                bold: true,
-                size: 32
-              })
-            ],
-            spacing: { after: 200 }
-          }),
-          ...content.split("\n").map(
-            (line: string) =>
-              new Paragraph({
-                children: [new TextRun({ text: line })],
-                spacing: { after: 120 }
-              })
-          )
-        ]
+        children: paragraphs
       }
     ]
   });

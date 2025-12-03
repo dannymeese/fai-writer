@@ -177,6 +177,54 @@ textarea::placeholder {
   font-weight: bold;
 }
 
+/* Bold and italic text formatting - ensure visibility */
+.ProseMirror strong,
+.ProseMirror b,
+.ProseMirror p strong,
+.ProseMirror p b,
+.ProseMirror h1 strong,
+.ProseMirror h2 strong,
+.ProseMirror h3 strong,
+.ProseMirror h4 strong,
+.ProseMirror h5 strong,
+.ProseMirror h6 strong {
+  font-weight: 700 !important;
+  color: white !important;
+  font-style: normal !important;
+}
+
+.ProseMirror em,
+.ProseMirror i,
+.ProseMirror p em,
+.ProseMirror p i,
+.ProseMirror h1 em,
+.ProseMirror h2 em,
+.ProseMirror h3 em,
+.ProseMirror h4 em,
+.ProseMirror h5 em,
+.ProseMirror h6 em {
+  font-style: italic !important;
+  color: white !important;
+}
+
+/* Combined bold and italic */
+.ProseMirror strong em,
+.ProseMirror em strong,
+.ProseMirror b i,
+.ProseMirror i b {
+  font-weight: 700 !important;
+  font-style: italic !important;
+  color: white !important;
+}
+
+.ProseMirror code {
+  font-family: 'Courier New', monospace;
+  background-color: rgba(255, 255, 255, 0.1);
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: white !important;
+}
+
 .ProseMirror h1 { font-size: 1.875rem; margin-top: 2rem; margin-bottom: 1rem; line-height: 1.2; }
 .ProseMirror h2 { font-size: 1.5rem; margin-top: 1.5rem; margin-bottom: 0.75rem; line-height: 1.3; }
 .ProseMirror h3 { font-size: 1.25rem; margin-top: 1rem; margin-bottom: 0.5rem; line-height: 1.4; }

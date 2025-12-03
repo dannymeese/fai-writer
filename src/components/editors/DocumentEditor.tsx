@@ -3,7 +3,8 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import MarkdownEditor from "./MarkdownEditor";
-import { cn, generateDownloadFilename } from "@/lib/utils";
+import { cn, generateDownloadFilename, markdownToPlainText } from "@/lib/utils";
+import MarkdownIt from "markdown-it";
 import { WriterOutput } from "@/types/writer";
 import type { Editor } from "@tiptap/react";
 import jsPDF from "jspdf";
@@ -233,42 +234,195 @@ export default function DocumentEditor({
     const filename = generateDownloadFilename(title, content, format);
 
     if (format === "pdf") {
-      // Generate PDF client-side
+      // Generate PDF client-side with markdown parsing
       const pdf = new jsPDF();
       const pageWidth = pdf.internal.pageSize.getWidth();
       const margin = 20;
       const maxWidth = pageWidth - 2 * margin;
       
-      // Add title only if not untitled
+      // Parse markdown
+      const md = new MarkdownIt();
+      const tokens = md.parse(content, {});
+      
+      // Helper to extract plain text from tokens
+      function getTextFromTokens(tokens: any[]): string {
+        let text = "";
+        for (const token of tokens) {
+          if (token.type === "text") {
+            text += token.content;
+          } else if (token.children) {
+            text += getTextFromTokens(token.children);
+          }
+        }
+        return text;
+      }
+      
+      // Add title only if not untitled (strip markdown from title)
       let yPosition = margin;
       if (!isUntitled) {
+        const plainTitle = markdownToPlainText(title);
         pdf.setFontSize(18);
         pdf.setFont("helvetica", "bold");
-        const titleLines = pdf.splitTextToSize(title, maxWidth);
+        const titleLines = pdf.splitTextToSize(plainTitle, maxWidth);
         pdf.text(titleLines, margin, margin + 10);
         yPosition = margin + 20;
       }
       
-      // Add content
+      // Process markdown tokens and render with formatting
       pdf.setFontSize(12);
       pdf.setFont("helvetica", "normal");
-      const contentLines = pdf.splitTextToSize(content, maxWidth);
       
-      contentLines.forEach((line: string) => {
-        if (yPosition > pdf.internal.pageSize.getHeight() - margin) {
+      for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        
+        if (yPosition > pdf.internal.pageSize.getHeight() - margin - 10) {
           pdf.addPage();
           yPosition = margin;
         }
-        pdf.text(line, margin, yPosition);
-        yPosition += 7;
-      });
+        
+        if (token.type === "heading_open") {
+          const level = parseInt(token.tag.substring(1));
+          i++; // Skip to content
+          const headingText = getTextFromTokens(tokens[i].children || []);
+          i++; // Skip content
+          i++; // Skip closing tag
+          
+          // Set heading font size based on level
+          const headingSizes = [20, 18, 16, 14, 12, 12];
+          pdf.setFontSize(headingSizes[Math.min(level - 1, 5)]);
+          pdf.setFont("helvetica", "bold");
+          
+          const headingLines = pdf.splitTextToSize(headingText, maxWidth);
+          headingLines.forEach((line: string) => {
+            if (yPosition > pdf.internal.pageSize.getHeight() - margin - 10) {
+              pdf.addPage();
+              yPosition = margin;
+            }
+            pdf.text(line, margin, yPosition);
+            yPosition += 8;
+          });
+          yPosition += 5; // Extra spacing after heading
+          pdf.setFontSize(12);
+          pdf.setFont("helvetica", "normal");
+        } else if (token.type === "paragraph_open") {
+          i++; // Skip to content
+          const paraTokens = tokens[i].children || [];
+          
+          // Process paragraph with inline formatting
+          let currentText = "";
+          let isBold = false;
+          let isItalic = false;
+          
+          for (const paraToken of paraTokens) {
+            if (paraToken.type === "text") {
+              currentText += paraToken.content;
+            } else if (paraToken.type === "strong_open") {
+              isBold = true;
+            } else if (paraToken.type === "strong_close") {
+              isBold = false;
+            } else if (paraToken.type === "em_open") {
+              isItalic = true;
+            } else if (paraToken.type === "em_close") {
+              isItalic = false;
+            } else if (paraToken.children) {
+              currentText += getTextFromTokens(paraToken.children);
+            }
+          }
+          
+          // Render paragraph text (jsPDF has limited formatting, so we'll use bold for emphasis)
+          if (currentText.trim()) {
+            const paraLines = pdf.splitTextToSize(currentText, maxWidth);
+            paraLines.forEach((line: string) => {
+              if (yPosition > pdf.internal.pageSize.getHeight() - margin - 10) {
+                pdf.addPage();
+                yPosition = margin;
+              }
+              pdf.setFont("helvetica", isBold ? "bold" : isItalic ? "italic" : "normal");
+              pdf.text(line, margin, yPosition);
+              yPosition += 7;
+            });
+            pdf.setFont("helvetica", "normal");
+          } else {
+            yPosition += 7; // Empty paragraph spacing
+          }
+          
+          i++; // Skip content token
+          i++; // Skip closing tag
+        } else if (token.type === "bullet_list_open" || token.type === "ordered_list_open") {
+          const isOrdered = token.type === "ordered_list_open";
+          let listIndex = 1;
+          i++; // Process list items
+          
+          while (i < tokens.length && tokens[i].type !== (isOrdered ? "ordered_list_close" : "bullet_list_close")) {
+            if (tokens[i].type === "list_item_open") {
+              i++; // Skip to content
+              const itemText = getTextFromTokens(tokens[i].children || []);
+              i++; // Skip content
+              i++; // Skip closing tag
+              
+              const prefix = isOrdered ? `${listIndex}. ` : "• ";
+              const fullText = prefix + itemText;
+              const itemLines = pdf.splitTextToSize(fullText, maxWidth);
+              
+              itemLines.forEach((line: string) => {
+                if (yPosition > pdf.internal.pageSize.getHeight() - margin - 10) {
+                  pdf.addPage();
+                  yPosition = margin;
+                }
+                pdf.text(line, margin + 10, yPosition);
+                yPosition += 7;
+              });
+              
+              if (isOrdered) listIndex++;
+            } else {
+              i++;
+            }
+          }
+          i++; // Skip closing tag
+        } else if (token.type === "blockquote_open") {
+          i++; // Skip to content
+          const quoteText = getTextFromTokens(tokens[i].children || []);
+          i++; // Skip content
+          i++; // Skip closing tag
+          
+          pdf.setFont("helvetica", "italic");
+          const quoteLines = pdf.splitTextToSize(quoteText, maxWidth - 20);
+          quoteLines.forEach((line: string) => {
+            if (yPosition > pdf.internal.pageSize.getHeight() - margin - 10) {
+              pdf.addPage();
+              yPosition = margin;
+            }
+            pdf.text(line, margin + 10, yPosition);
+            yPosition += 7;
+          });
+          pdf.setFont("helvetica", "normal");
+        } else if (token.type === "code_block" || token.type === "fence") {
+          const codeText = token.content || "";
+          pdf.setFont("courier", "normal");
+          const codeLines = pdf.splitTextToSize(codeText, maxWidth);
+          codeLines.forEach((line: string) => {
+            if (yPosition > pdf.internal.pageSize.getHeight() - margin - 10) {
+              pdf.addPage();
+              yPosition = margin;
+            }
+            pdf.text(line, margin, yPosition);
+            yPosition += 7;
+          });
+          pdf.setFont("helvetica", "normal");
+          i++;
+        } else {
+          i++;
+        }
+      }
       
       pdf.save(filename);
       return;
     }
 
     if (format === "txt") {
-      const textContent = isUntitled ? content : `${title}\n\n${content}`;
+      // Strip markdown formatting for plain text
+      const plainContent = markdownToPlainText(content);
+      const textContent = isUntitled ? plainContent : `${markdownToPlainText(title)}\n\n${plainContent}`;
       const blob = new Blob([textContent], { type: "text/plain" });
       const url = window.URL.createObjectURL(blob);
       const link = window.document.createElement("a");

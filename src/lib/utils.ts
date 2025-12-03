@@ -201,3 +201,26 @@ export function clearPromptHistory(): void {
   }
 }
 
+/**
+ * Strips all markdown formatting from text, returning plain text.
+ * Used for TXT exports.
+ */
+export function markdownToPlainText(markdown: string): string {
+  if (!markdown) {
+    return "";
+  }
+  return markdown
+    .replace(/```[\s\S]*?```/g, "") // code blocks
+    .replace(/`([^`]+)`/g, "$1") // inline code
+    .replace(/!\[[^\]]*]\([^)]+\)/g, "") // images
+    .replace(/\[([^\]]+)]\([^)]+\)/g, "$1") // links
+    .replace(/[*_~]{1,3}([^*_~]+)[*_~]{1,3}/g, "$1") // emphasis/strike
+    .replace(/^#{1,6}\s+/gm, "") // headings
+    .replace(/^\s{0,3}[-*+]\s+/gm, "") // unordered lists
+    .replace(/^\s{0,3}\d+\.\s+/gm, "") // ordered lists
+    .replace(/^>\s?/gm, "") // blockquotes
+    .replace(/\r/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
