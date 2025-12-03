@@ -140,7 +140,7 @@ export default function SiteHeader({ onPanelToggle, showPanelButton = false }: S
             aria-label="Toggle panel"
           >
             <span className="material-symbols-outlined" style={{ fontSize: sidebarOpen ? '30px' : '23px' }}>
-              {sidebarOpen ? "chevron_left" : "menu"}
+              {sidebarOpen ? "chevron_left" : "dock_to_right"}
             </span>
           </button>
         )}

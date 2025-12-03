@@ -158,6 +158,7 @@ export default function DocumentEditor({
     paddingLeft: resolvedHorizontalPadding.left,
     paddingRight: resolvedHorizontalPadding.right
   };
+  const resolvedBottomPadding = Math.max(resolvedHorizontalPadding.left, resolvedHorizontalPadding.right);
 
   // Track when title scrolls out of view
   useEffect(() => {
@@ -241,8 +242,11 @@ export default function DocumentEditor({
       const maxWidth = pageWidth - 2 * margin;
       
       // Parse markdown
-      const md = new MarkdownIt();
-      const tokens = md.parse(content, {});
+      // Preprocess strikethrough: convert ~~text~~ to <s>text</s> for markdown-it parsing
+      const preprocessedContent = content.replace(/~~([^~]+)~~/g, '<s>$1</s>');
+      
+      const md = new MarkdownIt({ html: true }); // Enable HTML parsing for <s> tags
+      const tokens = md.parse(preprocessedContent, {});
       
       // Helper to extract plain text from tokens
       function getTextFromTokens(tokens: any[]): string {
@@ -308,43 +312,126 @@ export default function DocumentEditor({
           i++; // Skip to content
           const paraTokens = tokens[i].children || [];
           
-          // Process paragraph with inline formatting
+          // Process paragraph with inline formatting - render segments as we go
           let currentText = "";
           let isBold = false;
           let isItalic = false;
+          let isStrike = false;
+          let currentX = margin;
+          let currentY = yPosition;
+          
+          // Helper to render accumulated text with current formatting
+          const renderTextSegment = (text: string, bold: boolean, italic: boolean, strike: boolean) => {
+            if (!text.trim()) return;
+            
+            pdf.setFont("helvetica", bold ? "bold" : italic ? "italic" : "normal");
+            const textWidth = pdf.getTextWidth(text);
+            const lines = pdf.splitTextToSize(text, maxWidth - (currentX - margin));
+            
+            lines.forEach((line: string, lineIndex: number) => {
+              if (currentY > pdf.internal.pageSize.getHeight() - margin - 10) {
+                pdf.addPage();
+                currentY = margin;
+                currentX = margin;
+              }
+              
+              const lineWidth = pdf.getTextWidth(line);
+              pdf.text(line, currentX, currentY);
+              
+              // Draw strikethrough line if needed
+              if (strike) {
+                const lineHeight = 7;
+                const strikeY = currentY - (lineHeight * 0.3); // Position line through middle of text
+                pdf.setDrawColor(0, 0, 0);
+                pdf.setLineWidth(0.5);
+                pdf.line(currentX, strikeY, currentX + lineWidth, strikeY);
+              }
+              
+              if (lineIndex < lines.length - 1) {
+                currentY += 7;
+                currentX = margin;
+              } else {
+                currentX += lineWidth;
+              }
+            });
+          };
           
           for (const paraToken of paraTokens) {
             if (paraToken.type === "text") {
               currentText += paraToken.content;
             } else if (paraToken.type === "strong_open") {
+              if (currentText) {
+                renderTextSegment(currentText, isBold, isItalic, isStrike);
+                currentText = "";
+              }
               isBold = true;
             } else if (paraToken.type === "strong_close") {
+              if (currentText) {
+                renderTextSegment(currentText, isBold, isItalic, isStrike);
+                currentText = "";
+              }
               isBold = false;
             } else if (paraToken.type === "em_open") {
+              if (currentText) {
+                renderTextSegment(currentText, isBold, isItalic, isStrike);
+                currentText = "";
+              }
               isItalic = true;
             } else if (paraToken.type === "em_close") {
+              if (currentText) {
+                renderTextSegment(currentText, isBold, isItalic, isStrike);
+                currentText = "";
+              }
               isItalic = false;
+            } else if (paraToken.type === "s_open" || paraToken.type === "del_open") {
+              if (currentText) {
+                renderTextSegment(currentText, isBold, isItalic, isStrike);
+                currentText = "";
+              }
+              isStrike = true;
+            } else if (paraToken.type === "s_close" || paraToken.type === "del_close") {
+              if (currentText) {
+                renderTextSegment(currentText, isBold, isItalic, isStrike);
+                currentText = "";
+              }
+              isStrike = false;
+            } else if (paraToken.type === "html_inline") {
+              // Handle HTML tags like <s>text</s> or <del>text</del>
+              const htmlContent = paraToken.content || "";
+              if (htmlContent.match(/^<s[>\s]|^<del[>\s]/i)) {
+                // Opening strikethrough tag
+                if (currentText) {
+                  renderTextSegment(currentText, isBold, isItalic, isStrike);
+                  currentText = "";
+                }
+                isStrike = true;
+              } else if (htmlContent.match(/^<\/s>|^<\/del>/i)) {
+                // Closing strikethrough tag
+                if (currentText) {
+                  renderTextSegment(currentText, isBold, isItalic, isStrike);
+                  currentText = "";
+                }
+                isStrike = false;
+              } else {
+                // Extract text from HTML tag
+                const textMatch = htmlContent.match(/>([^<]+)</);
+                if (textMatch) {
+                  currentText += textMatch[1];
+                }
+              }
             } else if (paraToken.children) {
               currentText += getTextFromTokens(paraToken.children);
             }
           }
           
-          // Render paragraph text (jsPDF has limited formatting, so we'll use bold for emphasis)
+          // Render any remaining text
           if (currentText.trim()) {
-            const paraLines = pdf.splitTextToSize(currentText, maxWidth);
-            paraLines.forEach((line: string) => {
-              if (yPosition > pdf.internal.pageSize.getHeight() - margin - 10) {
-                pdf.addPage();
-                yPosition = margin;
-              }
-              pdf.setFont("helvetica", isBold ? "bold" : isItalic ? "italic" : "normal");
-              pdf.text(line, margin, yPosition);
-              yPosition += 7;
-            });
-            pdf.setFont("helvetica", "normal");
-          } else {
-            yPosition += 7; // Empty paragraph spacing
+            renderTextSegment(currentText, isBold, isItalic, isStrike);
           }
+          
+          // Update yPosition and reset formatting
+          yPosition = currentY + 7;
+          pdf.setFont("helvetica", "normal");
           
           i++; // Skip content token
           i++; // Skip closing tag
@@ -355,21 +442,50 @@ export default function DocumentEditor({
           
           while (i < tokens.length && tokens[i].type !== (isOrdered ? "ordered_list_close" : "bullet_list_close")) {
             if (tokens[i].type === "list_item_open") {
-              i++; // Skip to content
-              const itemText = getTextFromTokens(tokens[i].children || []);
-              i++; // Skip content
-              i++; // Skip closing tag
+              i++; // Skip list_item_open
+              
+              // List items may contain paragraph_open, so we need to extract text from all children
+              let itemText = "";
+              while (i < tokens.length && tokens[i].type !== "list_item_close") {
+                if (tokens[i].type === "paragraph_open") {
+                  i++; // Skip paragraph_open
+                  // Extract text from paragraph content
+                  if (tokens[i] && tokens[i].children) {
+                    itemText += getTextFromTokens(tokens[i].children);
+                  }
+                  i++; // Skip paragraph content token
+                  i++; // Skip paragraph_close
+                } else if (tokens[i].type === "text") {
+                  itemText += tokens[i].content || "";
+                  i++;
+                } else if (tokens[i].children) {
+                  itemText += getTextFromTokens(tokens[i].children);
+                  i++;
+                } else {
+                  i++;
+                }
+              }
+              i++; // Skip list_item_close
               
               const prefix = isOrdered ? `${listIndex}. ` : "• ";
-              const fullText = prefix + itemText;
-              const itemLines = pdf.splitTextToSize(fullText, maxWidth);
+              const prefixWidth = pdf.getTextWidth(prefix);
+              const indentWidth = prefixWidth + 5; // Add small gap after bullet
               
-              itemLines.forEach((line: string) => {
+              // Split only the item text (without prefix) to get proper wrapping
+              const itemLines = pdf.splitTextToSize(itemText, maxWidth - indentWidth);
+              
+              itemLines.forEach((line: string, lineIndex: number) => {
                 if (yPosition > pdf.internal.pageSize.getHeight() - margin - 10) {
                   pdf.addPage();
                   yPosition = margin;
                 }
-                pdf.text(line, margin + 10, yPosition);
+                
+                // First line includes the bullet prefix, subsequent lines are indented
+                if (lineIndex === 0) {
+                  pdf.text(prefix + line, margin + 10, yPosition);
+                } else {
+                  pdf.text(line, margin + 10 + indentWidth, yPosition);
+                }
                 yPosition += 7;
               });
               
@@ -998,7 +1114,13 @@ export default function DocumentEditor({
 
       {/* Editor Container - 7px corner radius and standard doc margins */}
       <div className="relative flex-1 overflow-auto rounded-[7px] border border-brand-stroke/60 bg-brand-panel/50 shadow-[0_25px_80px_rgba(0,0,0,0.35)]">
-        <div className="py-[90px]" style={sharedHorizontalPaddingStyle}>
+        <div
+          className="py-[90px]"
+          style={{
+            ...sharedHorizontalPaddingStyle,
+            paddingBottom: resolvedBottomPadding
+          }}
+        >
           <div className="mx-auto max-w-[680px]">
             {loading ? (
               <div className="flex flex-col gap-3 min-h-[500px]">

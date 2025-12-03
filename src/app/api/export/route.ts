@@ -41,11 +41,14 @@ export async function POST(request: Request) {
   }
 
   // Default: DOCX format - parse markdown and apply formatting
-  const md = new MarkdownIt();
-  const tokens = md.parse(content, {});
+  // Preprocess strikethrough: convert ~~text~~ to <s>text</s> for markdown-it parsing
+  const preprocessedContent = content.replace(/~~([^~]+)~~/g, '<s>$1</s>');
+  
+  const md = new MarkdownIt({ html: true }); // Enable HTML parsing for <s> tags
+  const tokens = md.parse(preprocessedContent, {});
   
   // Helper function to parse inline markdown tokens to TextRuns
-  function parseInlineTokens(tokens: any[], startIndex = 0, bold = false, italic = false): { runs: TextRun[]; nextIndex: number } {
+  function parseInlineTokens(tokens: any[], startIndex = 0, bold = false, italic = false, strike = false): { runs: TextRun[]; nextIndex: number } {
     const runs: TextRun[] = [];
     let i = startIndex;
     
@@ -57,14 +60,15 @@ export async function POST(request: Request) {
           runs.push(new TextRun({ 
             text: token.content,
             bold: bold,
-            italics: italic
+            italics: italic,
+            strike: strike
           }));
         }
         i++;
       } else if (token.type === "strong_open") {
         // Start bold section - recursively parse until strong_close
         i++;
-        const result = parseInlineTokens(tokens, i, true, italic);
+        const result = parseInlineTokens(tokens, i, true, italic, strike);
         runs.push(...result.runs);
         i = result.nextIndex;
         // Skip the strong_close token
@@ -74,11 +78,21 @@ export async function POST(request: Request) {
       } else if (token.type === "em_open") {
         // Start italic section - recursively parse until em_close
         i++;
-        const result = parseInlineTokens(tokens, i, bold, true);
+        const result = parseInlineTokens(tokens, i, bold, true, strike);
         runs.push(...result.runs);
         i = result.nextIndex;
         // Skip the em_close token
         if (i < tokens.length && tokens[i].type === "em_close") {
+          i++;
+        }
+      } else if (token.type === "s_open" || token.type === "del_open") {
+        // Start strikethrough section - recursively parse until s_close or del_close
+        i++;
+        const result = parseInlineTokens(tokens, i, bold, italic, true);
+        runs.push(...result.runs);
+        i = result.nextIndex;
+        // Skip the closing token
+        if (i < tokens.length && (tokens[i].type === "s_close" || tokens[i].type === "del_close")) {
           i++;
         }
       } else if (token.type === "code_inline") {
@@ -86,15 +100,41 @@ export async function POST(request: Request) {
           text: token.content || "",
           font: "Courier New",
           bold: bold,
-          italics: italic
+          italics: italic,
+          strike: strike
         }));
         i++;
-      } else if (token.type === "strong_close" || token.type === "em_close") {
+      } else if (token.type === "html_inline") {
+        // Handle HTML tags like <s>text</s> or <del>text</del>
+        const htmlContent = token.content || "";
+        if (htmlContent.match(/^<s[>\s]|^<del[>\s]/i)) {
+          // Opening strikethrough tag - parse content recursively with strike enabled
+          i++;
+          const result = parseInlineTokens(tokens, i, bold, italic, true);
+          runs.push(...result.runs);
+          i = result.nextIndex;
+        } else if (htmlContent.match(/^<\/s>|^<\/del>/i)) {
+          // Closing strikethrough tag - return to caller
+          return { runs, nextIndex: i };
+        } else {
+          // Other HTML - extract text content
+          const textMatch = htmlContent.match(/>([^<]+)</);
+          if (textMatch) {
+            runs.push(new TextRun({
+              text: textMatch[1],
+              bold: bold,
+              italics: italic,
+              strike: strike
+            }));
+          }
+          i++;
+        }
+      } else if (token.type === "strong_close" || token.type === "em_close" || token.type === "s_close" || token.type === "del_close") {
         // Return when we hit a closing tag (caller will handle it)
         return { runs, nextIndex: i };
       } else if (token.children) {
         // Process children with current formatting
-        const result = parseInlineTokens(token.children, 0, bold, italic);
+        const result = parseInlineTokens(token.children, 0, bold, italic, strike);
         runs.push(...result.runs);
         i++;
       } else {
@@ -191,19 +231,37 @@ export async function POST(request: Request) {
       i++; // Process list items
       while (i < tokens.length && tokens[i].type !== "bullet_list_close") {
         if (tokens[i].type === "list_item_open") {
-          i++; // Skip to content
-          const inlineTokens = tokens[i].children || [];
-          const result = parseInlineTokens(inlineTokens);
-          i++; // Skip content
-          i++; // Skip closing tag
+          i++; // Skip list_item_open
+          
+          // List items may contain paragraph_open, so we need to extract runs from all children
+          const runs: TextRun[] = [];
+          while (i < tokens.length && tokens[i].type !== "list_item_close") {
+            if (tokens[i].type === "paragraph_open") {
+              i++; // Skip paragraph_open
+              // Extract runs from paragraph content
+              if (tokens[i] && tokens[i].children) {
+                const result = parseInlineTokens(tokens[i].children);
+                runs.push(...result.runs);
+              }
+              i++; // Skip paragraph content token
+              i++; // Skip paragraph_close
+            } else if (tokens[i].children) {
+              const result = parseInlineTokens(tokens[i].children);
+              runs.push(...result.runs);
+              i++;
+            } else {
+              i++;
+            }
+          }
+          i++; // Skip list_item_close
           
           paragraphs.push(
             new Paragraph({
               children: [
                 new TextRun({ text: "• ", bold: true }),
-                ...result.runs
+                ...runs
               ],
-              spacing: { after: 80 },
+              spacing: { after: 60 },
               indent: { left: 400 }
             })
           );
@@ -217,19 +275,37 @@ export async function POST(request: Request) {
       i++; // Process list items
       while (i < tokens.length && tokens[i].type !== "ordered_list_close") {
         if (tokens[i].type === "list_item_open") {
-          i++; // Skip to content
-          const inlineTokens = tokens[i].children || [];
-          const result = parseInlineTokens(inlineTokens);
-          i++; // Skip content
-          i++; // Skip closing tag
+          i++; // Skip list_item_open
+          
+          // List items may contain paragraph_open, so we need to extract runs from all children
+          const runs: TextRun[] = [];
+          while (i < tokens.length && tokens[i].type !== "list_item_close") {
+            if (tokens[i].type === "paragraph_open") {
+              i++; // Skip paragraph_open
+              // Extract runs from paragraph content
+              if (tokens[i] && tokens[i].children) {
+                const result = parseInlineTokens(tokens[i].children);
+                runs.push(...result.runs);
+              }
+              i++; // Skip paragraph content token
+              i++; // Skip paragraph_close
+            } else if (tokens[i].children) {
+              const result = parseInlineTokens(tokens[i].children);
+              runs.push(...result.runs);
+              i++;
+            } else {
+              i++;
+            }
+          }
+          i++; // Skip list_item_close
           
           paragraphs.push(
             new Paragraph({
               children: [
                 new TextRun({ text: `${listIndex}. `, bold: true }),
-                ...result.runs
+                ...runs
               ],
-              spacing: { after: 80 },
+              spacing: { after: 60 },
               indent: { left: 400 }
             })
           );

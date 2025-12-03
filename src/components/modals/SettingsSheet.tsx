@@ -12,7 +12,7 @@ type SettingsSheetProps = {
   settings: ComposerSettingsInput;
   onChange: (next: ComposerSettingsInput) => void;
   anchorRect: DOMRect | null;
-  onBrandUpdate?: (summary: string | null) => void;
+  onBrandUpdate?: (summary: string | null, name?: string | null) => void;
   initialBrandDefined?: boolean;
 };
  
@@ -78,7 +78,7 @@ export default function SettingsSheet({
           setHasBrand(!!summary);
           setCurrentBrandName(name || "");
           setCurrentBrandInfo(summary || "");
-          onBrandUpdate?.(summary);
+          onBrandUpdate?.(summary, name);
         }
       } catch (error) {
         console.error("Failed to check brand info", error);
@@ -114,7 +114,7 @@ export default function SettingsSheet({
         setHasBrand(!!summary);
         setCurrentBrandName(name || "");
         setCurrentBrandInfo(summary || "");
-        onBrandUpdate?.(summary);
+        onBrandUpdate?.(summary, name);
       } else {
         // Handle Zod validation errors or other errors
         let errorMessage = "Unknown error";
@@ -192,7 +192,7 @@ export default function SettingsSheet({
       setCurrentBrandName("");
       setCurrentBrandInfo("");
       setHasBrand(false);
-      onBrandUpdate?.(null);
+      onBrandUpdate?.(null, null);
     } catch (error) {
       console.error("Failed to clear brand info", error);
     } finally {

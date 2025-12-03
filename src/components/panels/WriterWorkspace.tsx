@@ -43,6 +43,12 @@ type ActiveStyle = {
   description: string;
 };
 
+type BrandKeyMessage = {
+  id: string;
+  text: string;
+  createdAt: string;
+};
+
 const LOCAL_DOCS_KEY = "forgetaboutit_writer_docs_v1";
 const EDITOR_CONTEXT_WINDOW = 600;
 
@@ -65,7 +71,7 @@ function readLocalDocs(): SavedDoc[] {
       const safeEntry = entry as Partial<SavedDoc> & { folders?: unknown };
       const normalizedFolders: DocumentFolderReference[] = Array.isArray(safeEntry.folders)
         ? safeEntry.folders
-            .map((folder) => {
+            .map((folder: unknown) => {
               if (!folder || typeof folder !== "object") {
                 return null;
               }
@@ -78,7 +84,9 @@ function readLocalDocs(): SavedDoc[] {
                 name: candidate.name
               };
             })
-            .filter((folder): folder is DocumentFolderReference => Boolean(folder))
+            .filter(
+              (folder: DocumentFolderReference | null): folder is DocumentFolderReference => Boolean(folder)
+            )
         : [];
       docs.push({
         id: typeof safeEntry.id === "string" ? safeEntry.id : `local-${Date.now()}`,
@@ -309,8 +317,9 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [toast, setToast] = useState<string | null>(null);
   const [guestLimitReached, setGuestLimitReached] = useState(false);
   const [hasBrand, setHasBrand] = useState(false);
+  const [brandName, setBrandName] = useState<string | null>(null);
   const [brandSummary, setBrandSummary] = useState<string | null>(null);
-  const [brandKeyMessaging, setBrandKeyMessaging] = useState<Array<{ id: string; text: string; createdAt: string }>>([]);
+  const [brandKeyMessaging, setBrandKeyMessaging] = useState<BrandKeyMessage[]>([]);
   const [savedDocs, setSavedDocs] = useState<SavedDoc[]>([]);
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [folderDialogState, setFolderDialogState] = useState<{ assignActiveDocument?: boolean; documentId?: string | null } | null>(null);
@@ -376,7 +385,9 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
                   name: folderName
                 };
               })
-              .filter((folder): folder is DocumentFolderReference => Boolean(folder))
+              .filter(
+                (folder: DocumentFolderReference | null): folder is DocumentFolderReference => Boolean(folder)
+              )
           : [];
         return {
           id: doc.id,
@@ -431,7 +442,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       if (Array.isArray(data)) {
         // API already returns folders sorted by most recent assignment, so use as-is
         setFolders(
-          data.map((folder) => ({
+          data.map((folder: any) => ({
             id: folder.id,
             name: folder.name ?? "Untitled folder",
             createdAt: folder.createdAt ?? new Date().toISOString(),
@@ -467,9 +478,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     mediaQuery.addEventListener("change", update);
     return () => mediaQuery.removeEventListener("change", update);
   }, []);
-  function handleBrandSummaryUpdate(summary: string | null) {
+  function handleBrandSummaryUpdate(summary: string | null, name?: string | null) {
     setBrandSummary(summary);
-    setHasBrand(!!summary);
+    setBrandName(name ?? null);
+    setHasBrand(Boolean(summary?.trim()) || Boolean(name?.trim()));
   }
 
   useEffect(() => {
@@ -486,12 +498,14 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         if (response.ok) {
           const data = await response.json();
           const summary = data.brandInfo ?? null;
-          setHasBrand(!!summary);
+          const name = data.brandName ?? null;
           setBrandSummary(summary);
+          setBrandName(name);
+          setHasBrand(Boolean(summary) || Boolean(name));
         }
       } catch (error) {
         console.error("Failed to check brand info", error);
-    }
+      }
     }
     checkBrand();
   }, []);
@@ -503,7 +517,14 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       const response = await fetch("/api/brand/key-messaging");
       if (response.ok) {
         const data = await response.json();
-        setBrandKeyMessaging(data.items || []);
+        const normalized: BrandKeyMessage[] = Array.isArray(data.items)
+          ? data.items.map((item: any) => ({
+              id: item.id,
+              text: item.text,
+              createdAt: item.createdAt
+            }))
+          : [];
+        setBrandKeyMessaging(normalized);
       }
     } catch (error) {
       console.error("Failed to fetch brand key messaging items", error);
@@ -544,6 +565,58 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       console.error("Error removing key messaging item", error);
     }
   }, [isAuthenticated, fetchBrandKeyMessaging]);
+
+  const handleClearBrand = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const response = await fetch("/api/brand", { method: "DELETE" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        return { success: false, error: body?.error || "Unable to remove brand summary." };
+      }
+      setBrandSummary(null);
+      setBrandName(null);
+      setHasBrand(false);
+      return { success: true };
+    } catch (error) {
+      console.error("Failed to clear brand info", error);
+      return { success: false, error: "Unable to remove brand summary." };
+    }
+  }, []);
+
+  const handleAddKeyMessaging = useCallback(
+    async (text: string): Promise<{ success: boolean; error?: string }> => {
+      if (!isAuthenticated) {
+        return { success: false, error: "Sign in to add key messages." };
+      }
+      const payload = text.trim();
+      if (!payload) {
+        return { success: false, error: "Key message cannot be empty." };
+      }
+      try {
+        const response = await fetch("/api/brand/key-messaging", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: payload })
+        });
+        if (response.ok) {
+          await fetchBrandKeyMessaging();
+          return { success: true };
+        }
+        const errorBody = await response.json().catch(() => null);
+        let message: string | null = null;
+        if (typeof errorBody?.error === "string") {
+          message = errorBody.error;
+        } else if (errorBody?.error?.formErrors) {
+          message = errorBody.error.formErrors.filter(Boolean).join(" ");
+        }
+        return { success: false, error: message || "Failed to add key message." };
+      } catch (error) {
+        console.error("Error adding key messaging item", error);
+        return { success: false, error: "Unable to add key message right now." };
+      }
+    },
+    [isAuthenticated, fetchBrandKeyMessaging]
+  );
 
   useEffect(() => {
     fetchSavedDocs();
@@ -796,7 +869,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           prompt: currentPrompt,
           content: data.content,
           settings: newOutput.settings,
-          writingStyle: newOutput.writingStyle ?? null
+          writingStyle: newOutput.writingStyle ?? null,
+          folders: []
         });
         fetchSavedDocs();
       }
@@ -2297,14 +2371,18 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           styles={styleDocuments}
           folders={folders}
           canOrganizeFolders={isAuthenticated}
+          brandName={brandName}
           brandSummary={brandSummary}
           hasBrand={hasBrand}
           brandKeyMessaging={brandKeyMessaging}
           onRemoveKeyMessaging={handleRemoveKeyMessaging}
+          onAddKeyMessaging={handleAddKeyMessaging}
+          onClearBrand={handleClearBrand}
           userName={user.name}
           topOffset={30}
           bottomOffset={hasOutputs ? 140 : 32}
           isDesktop={isDesktop}
+          isAuthenticated={isAuthenticated}
           activeStyleId={activeStyle?.id}
           onSelect={handleLoadDoc}
               onToggle={() => setSidebarOpen((prev) => !prev)}
@@ -2729,14 +2807,18 @@ type WorkspaceSidebarProps = {
   styles: SavedDoc[];
   folders: FolderSummary[];
   canOrganizeFolders: boolean;
+  brandName: string | null;
   brandSummary: string | null;
   hasBrand: boolean;
-  brandKeyMessaging: Array<{ id: string; text: string; createdAt: string }>;
-  onRemoveKeyMessaging: (id: string) => void;
+  brandKeyMessaging: BrandKeyMessage[];
+  onRemoveKeyMessaging: (id: string) => Promise<void>;
+  onAddKeyMessaging?: (text: string) => Promise<{ success: boolean; error?: string }>;
+  onClearBrand?: () => Promise<{ success: boolean; error?: string }>;
   userName: string;
   topOffset: number;
   bottomOffset: number;
   isDesktop: boolean;
+  isAuthenticated: boolean;
   activeStyleId?: string;
   onToggle: () => void;
   onOpen: () => void;
@@ -2757,14 +2839,18 @@ function WorkspaceSidebar({
   styles,
   folders,
   canOrganizeFolders,
+  brandName,
   brandSummary,
   hasBrand,
   brandKeyMessaging,
   onRemoveKeyMessaging,
+  onAddKeyMessaging,
+  onClearBrand,
   userName,
   topOffset,
   bottomOffset,
   isDesktop,
+  isAuthenticated,
   activeStyleId,
   onToggle,
   onOpen,
@@ -2898,6 +2984,22 @@ function WorkspaceSidebar({
     const lastSpace = truncated.lastIndexOf(" ");
     return lastSpace > 0 ? truncated.substring(0, lastSpace) : truncated;
   }
+
+  const brandCards = useMemo(
+    () =>
+      hasBrand || brandKeyMessaging.length
+        ? [
+            {
+              id: "brand-primary",
+              name: brandName?.trim() || "Custom Brand",
+              summary: brandSummary,
+              hasSummary: Boolean(brandSummary?.trim()),
+              keyMessages: brandKeyMessaging
+            }
+          ]
+        : [],
+    [brandName, brandSummary, brandKeyMessaging, hasBrand]
+  );
 
   function renderDocList(items: SavedDoc[], emptyLabel: string) {
     if (!items.length) {
@@ -3048,7 +3150,7 @@ function WorkspaceSidebar({
         ) : (
           <div className="max-h-[200px] overflow-y-auto px-3">
             <div className="grid grid-cols-3 gap-2">
-            {folders.map((folder) => {
+            {folders.map((folder: FolderSummary) => {
               const isSelected = effectiveFolderFilterId === folder.id;
               const isDragTarget = dragOverFolderId === folder.id;
               const allowDrop = Boolean(onDocumentDroppedOnFolder && draggingDocId);
@@ -3141,47 +3243,42 @@ function WorkspaceSidebar({
   }
 
   function renderBrandsContent() {
+    if (!brandCards.length) {
+      return (
+        <div className="flex h-full flex-col justify-center">
+          <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-brand-background/40 p-6 text-center text-sm text-brand-muted">
+            <p className="font-semibold text-white">No brands yet</p>
+            <p className="mt-2">
+              Define your brand inside Settings to generate a summary and start saving key messages.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="space-y-4">
-        {hasBrand && brandSummary && (
-          <div className="rounded-2xl border border-brand-stroke/40 bg-brand-background/60 p-4 text-sm text-brand-muted/90">
-            <p className="text-base font-semibold text-white">Defined brand</p>
-            <p className="mt-2 whitespace-pre-line leading-relaxed">{brandSummary}</p>
-            <p className="mt-4 text-xs text-brand-muted">Update the brand summary inside Settings.</p>
-          </div>
-        )}
-        {brandKeyMessaging.length > 0 && (
-          <div>
-            <p className="mb-3 text-sm font-semibold text-white">Key Messaging</p>
-            <ul className="space-y-2">
-              {brandKeyMessaging.map((item) => (
-                <li
-                  key={item.id}
-                  className="group flex items-start justify-between gap-2 rounded-xl border border-brand-stroke/40 bg-brand-background/60 p-3 transition hover:border-white"
-                >
-                  <p className="flex-1 text-sm text-brand-muted/90">{item.text}</p>
-                  <button
-                    type="button"
-                    onMouseDown={handleButtonMouseDown}
-                    onClick={() => onRemoveKeyMessaging(item.id)}
-                    className="opacity-0 transition group-hover:opacity-100"
-                    title="Remove"
-                    tabIndex={-1}
-                  >
-                    <span className="material-symbols-outlined text-base text-brand-muted hover:text-white">
-                      close
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {!hasBrand && brandKeyMessaging.length === 0 && (
-          <p className="text-sm text-brand-muted">
-            No brand defined yet. Add one inside Settings, or select text and click &ldquo;Add to Brand&rdquo; in the formatting toolbar.
+      <div className="flex h-full flex-col gap-4">
+        <div className="rounded-2xl border border-brand-stroke/40 bg-brand-background/60 p-4 text-sm text-brand-muted/80">
+          <p className="font-semibold text-white">Manage your brand</p>
+          <p className="mt-2">
+            Enter edit mode inside a brand card to remove the summary or individual key messages. Update the summary itself inside Settings.
           </p>
-        )}
+        </div>
+        <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+          {brandCards.map((brand) => (
+            <BrandCard
+              key={brand.id}
+              name={brand.name}
+              summary={brand.summary}
+              hasSummary={brand.hasSummary}
+              keyMessages={brand.keyMessages}
+              allowKeyMessageActions={isAuthenticated && Boolean(onAddKeyMessaging)}
+              onAddKeyMessage={onAddKeyMessaging}
+              onRemoveKeyMessage={onRemoveKeyMessaging}
+              onClearBrand={onClearBrand}
+            />
+          ))}
+        </div>
       </div>
     );
   }
@@ -3247,7 +3344,7 @@ function WorkspaceSidebar({
                 <Tab.Panel className="h-full overflow-y-auto pt-8 pb-8 pr-5 focus:outline-none">
                   {renderStyleList(styles)}
                 </Tab.Panel>
-                <Tab.Panel className="h-full overflow-y-auto pt-8 pb-8 pr-5 focus:outline-none">
+                <Tab.Panel className="h-full pt-8 pb-8 pr-5 focus:outline-none">
                   {renderBrandsContent()}
                 </Tab.Panel>
               </Tab.Panels>
@@ -3280,6 +3377,203 @@ function WorkspaceSidebar({
         </div>
       ) : null}
     </aside>
+  );
+}
+
+type BrandCardProps = {
+  name: string;
+  summary: string | null;
+  hasSummary: boolean;
+  keyMessages: BrandKeyMessage[];
+  allowKeyMessageActions: boolean;
+  onAddKeyMessage?: (text: string) => Promise<{ success: boolean; error?: string }>;
+  onRemoveKeyMessage?: (id: string) => Promise<void>;
+  onClearBrand?: () => Promise<{ success: boolean; error?: string }>;
+};
+
+function BrandCard({
+  name,
+  summary,
+  hasSummary,
+  keyMessages,
+  allowKeyMessageActions,
+  onAddKeyMessage,
+  onRemoveKeyMessage,
+  onClearBrand
+}: BrandCardProps) {
+  const [editMode, setEditMode] = useState(false);
+  const [newMessage, setNewMessage] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const handleAddMessage = async () => {
+    if (!allowKeyMessageActions || !onAddKeyMessage) return;
+    const payload = newMessage.trim();
+    if (!payload) return;
+    setAdding(true);
+    setFeedback(null);
+    const result = await onAddKeyMessage(payload);
+    if (result?.success) {
+      setNewMessage("");
+    } else if (result?.error) {
+      setFeedback(result.error);
+    } else {
+      setFeedback("Unable to add key message.");
+    }
+    setAdding(false);
+  };
+
+  const handleRemoveMessage = async (id: string) => {
+    if (!editMode || !onRemoveKeyMessage) {
+      return;
+    }
+    const confirmed = window.confirm("Remove this key message?");
+    if (!confirmed) return;
+    setRemovingId(id);
+    try {
+      await onRemoveKeyMessage(id);
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
+  const handleClearSummary = async () => {
+    if (!editMode || !onClearBrand) {
+      return;
+    }
+    const confirmed = window.confirm("Remove the brand summary? Key messages stay saved until you delete them.");
+    if (!confirmed) return;
+    setClearing(true);
+    const result = await onClearBrand();
+    if (!result?.success) {
+      if (result?.error) {
+        setFeedback(result.error);
+      }
+      setClearing(false);
+      return;
+    }
+    setClearing(false);
+    setEditMode(false);
+  };
+
+  return (
+    <div className="rounded-3xl border border-brand-stroke/50 bg-brand-background/70 p-5 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] uppercase tracking-wide text-brand-muted">Brand</p>
+          <p className="text-xl font-semibold text-white">{name}</p>
+        </div>
+        <button
+          type="button"
+          className={cn(
+            "rounded-full border px-4 py-1.5 text-xs font-semibold transition",
+            editMode
+              ? "border-brand-blue text-brand-blue"
+              : "border-brand-stroke/60 text-brand-muted hover:border-brand-blue hover:text-brand-blue"
+          )}
+          onClick={() => {
+            setEditMode((prev) => !prev);
+            setFeedback(null);
+          }}
+        >
+          {editMode ? "Done" : "Edit brand"}
+        </button>
+      </div>
+      <div className="mt-4 rounded-2xl border border-brand-stroke/40 bg-brand-background/80 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-white">Brand summary</p>
+          {editMode && hasSummary && onClearBrand && (
+            <button
+              type="button"
+              className="text-xs font-semibold text-brand-muted transition hover:text-red-400 disabled:opacity-60"
+              onClick={handleClearSummary}
+              disabled={clearing}
+            >
+              {clearing ? "Removing…" : "Remove summary"}
+            </button>
+          )}
+        </div>
+        <p className="mt-2 whitespace-pre-line text-sm text-brand-muted/90">
+          {summary?.trim() || "No summary defined yet. Open Settings to add one."}
+        </p>
+      </div>
+
+      <div className="mt-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-white">Key messages</p>
+          {editMode && (
+            <span className="text-[11px] uppercase tracking-wide text-brand-muted">
+              Removal available while editing
+            </span>
+          )}
+        </div>
+        <div className="mt-3 max-h-60 space-y-2 overflow-y-auto pr-1">
+          {keyMessages.length === 0 ? (
+            <p className="text-sm text-brand-muted">No key messages yet. Add one below.</p>
+          ) : (
+            keyMessages.map((item) => (
+              <div
+                key={item.id}
+                className="group flex items-start justify-between gap-3 rounded-2xl border border-brand-stroke/40 bg-brand-background/60 p-3"
+              >
+                <div>
+                  <p className="text-sm text-brand-text/90">{item.text}</p>
+                  <p className="mt-1 text-[11px] text-brand-muted">
+                    Saved {formatTimestamp(item.createdAt)}
+                  </p>
+                </div>
+                {editMode && (
+                  <button
+                    type="button"
+                    className="rounded-full border border-transparent p-1 text-brand-muted transition hover:border-brand-stroke/50 hover:text-red-400 disabled:opacity-60"
+                    onClick={() => handleRemoveMessage(item.id)}
+                    disabled={removingId === item.id}
+                    aria-label="Remove key message"
+                  >
+                    <span className="material-symbols-outlined text-lg">delete</span>
+                  </button>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {allowKeyMessageActions ? (
+          <div className="mt-4 rounded-2xl border border-brand-stroke/40 bg-brand-background/60 p-4">
+            <label className="text-xs uppercase tracking-wide text-brand-muted">
+              Add new key message
+            </label>
+            <textarea
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              rows={3}
+              className="mt-2 w-full rounded-xl border border-brand-stroke/50 bg-black/20 px-3 py-2 text-sm text-brand-text placeholder:text-brand-muted focus:border-brand-blue focus:outline-none"
+              placeholder="Paste or type a key phrase to save to this brand."
+            />
+            {feedback && (
+              <p className="mt-2 text-xs text-red-400">{feedback}</p>
+            )}
+            <div className="mt-3 flex items-center justify-between">
+              <p className="text-[11px] text-brand-muted">You can also highlight text in the editor and choose “Add to Brand”.</p>
+              <button
+                type="button"
+                className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-blue/80 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleAddMessage}
+                disabled={adding || !newMessage.trim()}
+              >
+                {adding ? "Saving…" : "Add message"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-4 text-xs text-brand-muted">
+            Sign in to capture key messages directly from the editor.
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
