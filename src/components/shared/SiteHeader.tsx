@@ -117,7 +117,15 @@ export default function SiteHeader({ onPanelToggle, showPanelButton = false }: S
   const wordmarkHeight = isScrolled ? 24 : 34;
 
   return (
-    <header className={cn("sticky top-0 border-b border-brand-stroke/60 bg-brand-background/60 backdrop-blur-[10px] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop ? "lg:ml-[320px] pl-0 pr-5" : "px-5", settingsOpen ? "brightness-50" : undefined)} style={{ height: headerHeight, zIndex: 1200 }}>
+    <header
+      data-site-header
+      className={cn(
+        "sticky top-0 border-b border-brand-stroke/60 bg-brand-background/60 backdrop-blur-[10px] transition-all duration-300",
+        sidebarOpen && isAuthenticated && isDesktop ? "lg:ml-[320px] pl-0 pr-5" : "px-5",
+        settingsOpen ? "brightness-50" : undefined
+      )}
+      style={{ height: headerHeight, zIndex: 1200 }}
+    >
       <div className="mx-auto w-full h-full relative flex items-center transition-all duration-300 ease-in-out" style={{ maxWidth: '1720px' }}>
         {isAuthenticated && (
           <button

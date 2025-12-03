@@ -14,8 +14,6 @@ import {
 } from "@heroicons/react/24/outline";
 
 const TOOLBAR_GAP_PX = 10;
-const MAX_OVERLAY_SEGMENTS = 200;
-const MAX_OVERLAY_HEIGHT_PX = 3200;
 const SHORTCUT_CODE_MAP: Record<string, "copy" | "cut" | "paste" | "selectAll"> = {
   KeyC: "copy",
   KeyX: "cut",
@@ -80,7 +78,7 @@ export default function MarkdownEditor({
 }: MarkdownEditorProps) {
   const [persistentSelection, setPersistentSelection] = useState<{ from: number; to: number } | null>(null);
   const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
-  const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0 });
+  const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0, isSticky: false });
   const [addingToBrand, setAddingToBrand] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const addToBrandButtonRef = useRef<HTMLButtonElement>(null);
@@ -90,6 +88,55 @@ export default function MarkdownEditor({
   const toolbarSizeRef = useRef({ width: 360, height: 48 });
   const persistentSelectionRef = useRef<{ from: number; to: number } | null>(null);
   const lastSelectionRef = useRef<{ from: number; to: number } | null>(null);
+  const isSelectionDraggingRef = useRef(false);
+
+  const getToolbarSafeTop = useCallback(() => {
+    if (typeof window === "undefined") {
+      return 64;
+    }
+
+    const resolveBottom = (element: HTMLElement | null) => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      if (!rect.width || !rect.height) return null;
+      const style = window.getComputedStyle(element);
+      const isHidden =
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        style.opacity === "0" ||
+        style.pointerEvents === "none";
+      if (isHidden) return null;
+      return rect.bottom;
+    };
+
+    const doc = window.document;
+    const candidates: number[] = [];
+
+    const stickyBar = doc.querySelector<HTMLElement>("[data-document-sticky-title]");
+    const stickyBottom = resolveBottom(stickyBar);
+    if (stickyBottom !== null) {
+      candidates.push(stickyBottom + 4);
+    }
+
+    const siteHeader = doc.querySelector<HTMLElement>("[data-site-header]");
+    const siteHeaderBottom = resolveBottom(siteHeader);
+    if (siteHeaderBottom !== null) {
+      candidates.push(siteHeaderBottom + 4);
+    } else {
+      const headers = doc.querySelectorAll<HTMLElement>("header");
+      headers.forEach((header) => {
+        const style = window.getComputedStyle(header);
+        if (style.position === "sticky" || style.position === "fixed") {
+          const bottom = resolveBottom(header);
+          if (bottom !== null) {
+            candidates.push(bottom + 4);
+          }
+        }
+      });
+    }
+
+    return candidates.length ? Math.max(...candidates) : 64;
+  }, []);
   
   // Initialize markdown parser with proper configuration
   const md = useMemo(() => {
@@ -579,8 +626,33 @@ export default function MarkdownEditor({
       const toolbarWidth = toolbarRef.current?.offsetWidth || toolbarSizeRef.current.width;
       const left = selectionCenter - containerRect.left - toolbarWidth / 2;
       const clampedLeft = Math.max(10, Math.min(left, containerRect.width - toolbarWidth - 10));
+      const toolbarHeight = toolbarRef.current?.offsetHeight || toolbarSizeRef.current.height || 0;
+      let finalTop = selectionTopRelative;
+      let isSticky = false;
+      if (toolbarHeight > 0) {
+        const safeTop = getToolbarSafeTop();
+        const projectedViewportTop = containerRect.top + finalTop - toolbarHeight - TOOLBAR_GAP_PX;
+        // Check if toolbar would be covered at the top
+        if (projectedViewportTop < safeTop) {
+          isSticky = true;
+          finalTop = safeTop + toolbarHeight + TOOLBAR_GAP_PX - containerRect.top;
+        }
+        // Also check if toolbar would go off-screen at the bottom
+        const projectedViewportBottom = containerRect.top + finalTop;
+        const viewportBottom = window.innerHeight;
+        if (projectedViewportBottom > viewportBottom - 10) {
+          // If sticky, keep it sticky but adjust if needed
+          // If not sticky, clamp to bottom of viewport
+          if (!isSticky) {
+            finalTop = Math.max(0, viewportBottom - toolbarHeight - 10 - containerRect.top);
+          }
+        }
+      }
+      if (!isSticky) {
+        finalTop = Math.max(0, finalTop);
+      }
       
-      setToolbarPosition({ top: Math.max(0, selectionTopRelative), left: clampedLeft });
+      setToolbarPosition({ top: finalTop, left: clampedLeft, isSticky });
       setShowFormattingToolbar(true);
       
       // Reset flag after a short delay to allow state updates
@@ -592,7 +664,7 @@ export default function MarkdownEditor({
       setShowFormattingToolbar(false);
       isUpdatingToolbarRef.current = false;
     }
-  }, [editor]);
+  }, [editor, getToolbarSafeTop]);
 
   // Refine toolbar position after it's rendered (debounced to prevent freezing)
   useEffect(() => {
@@ -643,10 +715,35 @@ export default function MarkdownEditor({
         const measuredHeight = toolbarRef.current.offsetHeight || toolbarSizeRef.current.height;
         toolbarSizeRef.current = { width: measuredWidth, height: measuredHeight };
         const left = selectionCenter - containerRect.left - measuredWidth / 2;
+        let finalTop = selectionTopRelative;
+        let isSticky = false;
+        if (measuredHeight > 0) {
+          const safeTop = getToolbarSafeTop();
+          const projectedViewportTop = containerRect.top + finalTop - measuredHeight - TOOLBAR_GAP_PX;
+          // Check if toolbar would be covered at the top
+          if (projectedViewportTop < safeTop) {
+            isSticky = true;
+            finalTop = safeTop + measuredHeight + TOOLBAR_GAP_PX - containerRect.top;
+          }
+          // Also check if toolbar would go off-screen at the bottom
+          const projectedViewportBottom = containerRect.top + finalTop;
+          const viewportBottom = window.innerHeight;
+          if (projectedViewportBottom > viewportBottom - 10) {
+            // If sticky, keep it sticky but adjust if needed
+            // If not sticky, clamp to bottom of viewport
+            if (!isSticky) {
+              finalTop = Math.max(0, viewportBottom - measuredHeight - 10 - containerRect.top);
+            }
+          }
+        }
+        if (!isSticky) {
+          finalTop = Math.max(0, finalTop);
+        }
         
         setToolbarPosition({ 
-          top: Math.max(0, selectionTopRelative), 
-          left: Math.max(10, Math.min(left, containerRect.width - measuredWidth - 10)) 
+          top: finalTop, 
+          left: Math.max(10, Math.min(left, containerRect.width - measuredWidth - 10)),
+          isSticky
         });
       } catch (error) {
         console.error("Error in refinePosition:", error);
@@ -666,7 +763,7 @@ export default function MarkdownEditor({
       if (timeoutId) clearTimeout(timeoutId);
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
-  }, [showFormattingToolbar, editor]);
+  }, [showFormattingToolbar, editor, getToolbarSafeTop]);
 
   useEffect(() => {
     if (!showFormattingToolbar || !toolbarRef.current) {
@@ -695,13 +792,13 @@ export default function MarkdownEditor({
   useEffect(() => {
     if (!editor || !onSelectionChange) return;
 
-    let isDragging = false;
     let dragTimeout: NodeJS.Timeout | null = null;
     let dragStartInMargin = false;
     let marginDragStartPos: { x: number; y: number } | null = null;
 
     const handleMouseDown = (e: MouseEvent) => {
-      isDragging = true;
+      isSelectionDraggingRef.current = true;
+      setShowFormattingToolbar(false);
       
       // Check if mousedown started in margins
       const editorElement = editor.view.dom;
@@ -787,7 +884,7 @@ export default function MarkdownEditor({
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging || !dragStartInMargin || !marginDragStartPos) return;
+      if (!isSelectionDraggingRef.current || !dragStartInMargin || !marginDragStartPos) return;
       
       const editorElement = editor.view.dom;
       const editorContainer = editorElement.closest('.overflow-auto');
@@ -810,7 +907,7 @@ export default function MarkdownEditor({
       // Small delay to ensure selection is finalized
       if (dragTimeout) clearTimeout(dragTimeout);
       dragTimeout = setTimeout(() => {
-        isDragging = false;
+        isSelectionDraggingRef.current = false;
         const { from, to } = editor.state.selection;
         
         // Normalize selection (handle right-to-left selections)
@@ -837,13 +934,13 @@ export default function MarkdownEditor({
           const selectedText = tempDiv.textContent || '';
           onSelectionChange(selectedText);
           // Debounce toolbar position update to prevent freezing - increased delay
-          setTimeout(() => {
-            try {
-              updateToolbarPosition();
-            } catch (error) {
-              console.error("Error updating toolbar position in handleMouseUp:", error);
-            }
-          }, 100);
+        setTimeout(() => {
+          try {
+            updateToolbarPosition();
+          } catch (error) {
+            console.error("Error updating toolbar position in handleMouseUp:", error);
+          }
+        }, 100);
         } else {
           // Always track the most recent caret position
           updateLastSelectionRange({ from: selectionStart, to: selectionEnd });
@@ -888,6 +985,10 @@ export default function MarkdownEditor({
         // Debounce toolbar position update to prevent freezing - increased delay
         setTimeout(() => {
           try {
+            if (isSelectionDraggingRef.current) {
+              setShowFormattingToolbar(false);
+              return;
+            }
             updateToolbarPosition();
           } catch (error) {
             console.error("Error updating toolbar position in handleSelectionUpdate:", error);
@@ -1116,8 +1217,8 @@ export default function MarkdownEditor({
     window.document.addEventListener('paste', handlePasteEvent, true);
 
     editor.on("selectionUpdate", handleSelectionUpdate);
-    const editorElement = editor.view.dom;
-    const editorContainer = editorElement.closest('.overflow-auto');
+    const editorElement = editor.view.dom as HTMLElement;
+    const editorContainer = editorElement.closest('.overflow-auto') as HTMLElement | null;
     
     // Listen on container to catch margin clicks
     if (editorContainer) {
@@ -1130,7 +1231,7 @@ export default function MarkdownEditor({
     editorElement.addEventListener("blur", handleBlur);
 
     // Update toolbar on scroll (debounced to prevent freezing)
-    const scrollContainer = editorElement.closest('.overflow-auto');
+    const scrollContainer = editorElement.closest('.overflow-auto') as HTMLElement | null;
     let scrollTimeout: NodeJS.Timeout | null = null;
     const handleScroll = () => {
       try {
@@ -1139,11 +1240,12 @@ export default function MarkdownEditor({
           if (scrollTimeout) clearTimeout(scrollTimeout);
           scrollTimeout = setTimeout(() => {
             try {
+              // Always recalculate toolbar position on scroll to ensure it's not covered
               updateToolbarPosition();
             } catch (error) {
               console.error("Error updating toolbar position on scroll:", error);
             }
-          }, 50);
+          }, 16); // Reduced debounce for smoother updates during scroll
         }
       } catch (error) {
         console.error("Error in scroll handler:", error);
@@ -1152,6 +1254,8 @@ export default function MarkdownEditor({
     if (scrollContainer) {
       scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
     }
+    // Also listen to window scroll for cases where the page itself scrolls
+    window.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
       editor.off("selectionUpdate", handleSelectionUpdate);
@@ -1168,6 +1272,7 @@ export default function MarkdownEditor({
       window.document.removeEventListener('cut', handleClipboard, true);
       window.document.removeEventListener('paste', handlePasteEvent, true);
       scrollContainer?.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('scroll', handleScroll);
       if (dragTimeout) clearTimeout(dragTimeout);
       if (scrollTimeout) clearTimeout(scrollTimeout);
     };
@@ -1204,138 +1309,124 @@ export default function MarkdownEditor({
         // Get editor container for relative positioning
         const editorElement = editor.view.dom;
         const editorContainer = editorElement.closest('.overflow-auto') || editorElement.parentElement;
-        const containerRect = editorContainer?.getBoundingClientRect() || { left: 0, top: 0, height: 0 };
+        if (!editorContainer) {
+          return;
+        }
+        const containerRect = editorContainer.getBoundingClientRect();
+        const containerWidth = containerRect.width;
+        const containerLeft = containerRect.left;
+        const containerTop = containerRect.top;
         const marginLeft = resolvedMarginLeft;
         const marginRight = resolvedMarginRight;
+        const contentLeft = marginLeft;
+        const contentRight = containerWidth - marginRight;
+        const contentWidth = Math.max(0, contentRight - contentLeft);
+        if (contentWidth <= 0) {
+          return;
+        }
 
         // Get coordinates for start and end of selection
         const startCoords = editor.view.coordsAtPos(from);
         const endCoords = editor.view.coordsAtPos(to);
 
-        const selectionHeight = Math.abs((endCoords.bottom ?? endCoords.top) - startCoords.top);
-        const lineHeightBase = Math.max((startCoords.bottom ?? startCoords.top) - startCoords.top, 1);
-        const estimatedSegments = Math.ceil(selectionHeight / lineHeightBase);
-        if (selectionHeight > MAX_OVERLAY_HEIGHT_PX || estimatedSegments > MAX_OVERLAY_SEGMENTS) {
+        const selectionTop = Math.min(startCoords.top, endCoords.top);
+        const selectionBottom = Math.max(startCoords.bottom ?? startCoords.top, endCoords.bottom ?? endCoords.top);
+        const viewportTop = containerRect.top;
+        const viewportBottom = containerRect.bottom;
+        const renderTop = Math.max(selectionTop, viewportTop);
+        const renderBottom = Math.min(selectionBottom, viewportBottom);
+        if (renderBottom <= renderTop) {
           return;
         }
 
-        // Handle single-line selection
-        if (Math.abs(startCoords.top - endCoords.top) < 5) {
-          let left = Math.min(startCoords.left, endCoords.left);
-          let right = Math.max(startCoords.left, endCoords.right);
-          
-          // Constrain selection to content area (never in margins)
-          left = Math.max(left, containerRect.left + marginLeft);
-          right = Math.min(right, containerRect.right - marginRight);
-          
-          const top = startCoords.top;
-          const width = right - left;
-          const height = Math.max(startCoords.bottom - startCoords.top, endCoords.bottom - endCoords.top);
+        const toRelativeX = (value: number) => {
+          const clamped = Math.min(
+            Math.max(value, containerLeft + contentLeft),
+            containerLeft + contentRight
+          );
+          return clamped - containerLeft;
+        };
 
-          // Calculate position relative to container
-          const relativeLeft = left - containerRect.left;
-          const relativeTop = top - containerRect.top;
-
+        const createOverlay = (left: number, top: number, width: number, height: number) => {
+          if (width <= 0 || height <= 0) {
+            return;
+          }
           const overlay = document.createElement("div");
           overlay.className = "custom-selection-overlay";
           overlay.style.cssText = `
             position: absolute;
-            left: ${relativeLeft}px;
-            top: ${relativeTop}px;
+            left: ${left}px;
+            top: ${top}px;
             width: ${width}px;
             height: ${height}px;
             background-color: #00f;
             pointer-events: none;
             z-index: 0;
           `;
-          if (editorContainer) {
-            editorContainer.appendChild(overlay);
-          } else {
-            document.body.appendChild(overlay);
-          }
+          editorContainer.appendChild(overlay);
           selectionOverlays.push(overlay);
-        } else {
-          // Multi-line selection - create overlays for each line
-          const editorRect = editorElement.getBoundingClientRect();
-          
-          // Calculate positions relative to container
-          const containerLeft = containerRect.left;
-          const containerTop = containerRect.top;
-          const containerWidth = editorRect.width;
-          const lineHeight = lineHeightBase;
-          
-          // Create overlay for first line (from start to end of line)
-          let firstRelativeLeft = Math.max(startCoords.left - containerLeft, marginLeft);
-          const firstRelativeTop = startCoords.top - containerTop;
-          const firstWidth = Math.min(containerWidth - firstRelativeLeft, containerWidth - marginLeft - marginRight);
-          const firstOverlay = document.createElement("div");
-          firstOverlay.className = "custom-selection-overlay";
-          firstOverlay.style.cssText = `
-            position: absolute;
-            left: ${firstRelativeLeft}px;
-            top: ${firstRelativeTop}px;
-            width: ${firstWidth}px;
-            height: ${startCoords.bottom - startCoords.top}px;
-            background-color: #00f;
-            pointer-events: none;
-            z-index: 0;
-          `;
-          if (editorContainer) {
-            editorContainer.appendChild(firstOverlay);
-          } else {
-            document.body.appendChild(firstOverlay);
-          }
-          selectionOverlays.push(firstOverlay);
-          
-          // Create overlays for middle lines (content width only, not margins)
-          let currentTop = startCoords.bottom;
-          
-          while (currentTop + lineHeight < endCoords.top) {
-            const relativeTop = currentTop - containerTop;
-            const overlay = document.createElement("div");
-            overlay.className = "custom-selection-overlay";
-            overlay.style.cssText = `
-              position: absolute;
-              left: ${marginLeft}px;
-              top: ${relativeTop}px;
-              width: ${containerWidth - marginLeft - marginRight}px;
-              height: ${lineHeight}px;
-              background-color: #00f;
-              pointer-events: none;
-              z-index: 0;
-            `;
-            if (editorContainer) {
-              editorContainer.appendChild(overlay);
-            } else {
-              document.body.appendChild(overlay);
-            }
-            selectionOverlays.push(overlay);
-            currentTop += lineHeight;
-          }
-          
-          // Create overlay for last line (from start of line to end, constrained to content)
-          if (endCoords.top > startCoords.bottom) {
-            const lastRelativeTop = endCoords.top - containerTop;
-            const lastRelativeLeft = marginLeft;
-            const lastWidth = Math.max(0, Math.min(endCoords.left - containerLeft, containerWidth - marginLeft - marginRight));
-            const lastOverlay = document.createElement("div");
-            lastOverlay.className = "custom-selection-overlay";
-            lastOverlay.style.cssText = `
-              position: absolute;
-              left: ${lastRelativeLeft}px;
-              top: ${lastRelativeTop}px;
-              width: ${lastWidth}px;
-              height: ${endCoords.bottom - endCoords.top}px;
-              background-color: #00f;
-              pointer-events: none;
-              z-index: 0;
-            `;
-            if (editorContainer) {
-              editorContainer.appendChild(lastOverlay);
-            } else {
-              document.body.appendChild(lastOverlay);
-            }
-            selectionOverlays.push(lastOverlay);
+        };
+
+        const isSingleLine = Math.abs(startCoords.top - endCoords.top) < 5;
+
+        if (isSingleLine) {
+          const visibleTop = Math.max(startCoords.top, viewportTop);
+          const visibleBottom = Math.min(startCoords.bottom ?? startCoords.top, viewportBottom);
+          const relativeTop = visibleTop - containerTop;
+          const height = Math.max(1, visibleBottom - visibleTop);
+          const relativeLeft = toRelativeX(Math.min(startCoords.left, endCoords.left));
+          const relativeRight = toRelativeX(
+            Math.max(
+              typeof startCoords.right === "number" ? startCoords.right : startCoords.left,
+              typeof endCoords.right === "number" ? endCoords.right : endCoords.left
+            )
+          );
+          createOverlay(relativeLeft, relativeTop, Math.max(1, relativeRight - relativeLeft), height);
+          return;
+        }
+
+        const startVisible = (startCoords.bottom ?? startCoords.top) > viewportTop && startCoords.top < viewportBottom;
+        const endVisible = (endCoords.bottom ?? endCoords.top) > viewportTop && endCoords.top < viewportBottom;
+
+        let currentTop = renderTop;
+
+        if (startVisible) {
+          const visibleStartTop = Math.max(startCoords.top, viewportTop);
+          const visibleStartBottom = Math.min(startCoords.bottom ?? startCoords.top, viewportBottom);
+          const relativeTop = visibleStartTop - containerTop;
+          const height = Math.max(1, visibleStartBottom - visibleStartTop);
+          const relativeLeft = toRelativeX(startCoords.left);
+          const width = Math.max(1, contentRight - relativeLeft);
+          createOverlay(relativeLeft, relativeTop, width, height);
+          currentTop = Math.max(currentTop, visibleStartBottom);
+        }
+
+        const endBoundaryTop = endVisible ? Math.max(endCoords.top, viewportTop) : renderBottom;
+        if (endBoundaryTop - currentTop > 1) {
+          const relativeTop = currentTop - containerTop;
+          const height = Math.max(1, endBoundaryTop - currentTop);
+          createOverlay(
+            contentLeft,
+            relativeTop,
+            Math.max(1, contentRight - contentLeft),
+            height
+          );
+          currentTop = endBoundaryTop;
+        }
+
+        if (endVisible) {
+          const visibleEndTop = Math.max(endCoords.top, viewportTop);
+          const visibleEndBottom = Math.min(endCoords.bottom ?? endCoords.top, viewportBottom);
+          if (visibleEndBottom > visibleEndTop) {
+            const relativeTop = visibleEndTop - containerTop;
+            const height = Math.max(1, visibleEndBottom - visibleEndTop);
+            const relativeRight = toRelativeX(endCoords.left);
+            createOverlay(
+              contentLeft,
+              relativeTop,
+              Math.max(1, relativeRight - contentLeft),
+              height
+            );
           }
         }
       } catch (error) {
@@ -1763,7 +1854,7 @@ export default function MarkdownEditor({
           disabled={addingToBrand}
           className={cn(
             "absolute z-50 rounded-full border border-brand-stroke/60 bg-brand-panel px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:bg-brand-blue/20 hover:border-brand-blue",
-            addingToBrand && "opacity-60 cursor-not-allowed"
+            addingToBrand ? "opacity-60 cursor-not-allowed" : undefined
           )}
           style={{
             top: `${toolbarPosition.top}px`,

@@ -720,6 +720,7 @@ export default function DocumentEditor({
     <div className={cn("relative flex h-full flex-col", className)}>
       {/* Sticky Title Bar - appears when title scrolls out of view */}
       <div
+        data-document-sticky-title
         className={cn(
           "sticky top-[60px] w-full transition-all duration-300 ease-in-out",
           isTitleSticky

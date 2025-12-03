@@ -145,6 +145,18 @@ textarea::placeholder {
   z-index: 0; /* Behind text */
 }
 
+.ProseMirror::selection,
+.ProseMirror *::selection {
+  background-color: #00f;
+  color: #fff;
+}
+
+.ProseMirror::-moz-selection,
+.ProseMirror *::-moz-selection {
+  background-color: #00f;
+  color: #fff;
+}
+
 @keyframes blink {
   0%, 50% {
     opacity: 1;
