@@ -57,19 +57,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Document not found." }, { status: 404 });
     }
 
-    await prisma.documentFolder.upsert({
+    // Check if the assignment already exists
+    const existingAssignment = await prisma.documentFolder.findFirst({
       where: {
-        documentId_folderId: {
-          documentId,
-          folderId
-        }
-      },
-      update: {},
-      create: {
         documentId,
         folderId
       }
     });
+
+    // Only create if it doesn't exist
+    if (!existingAssignment) {
+      try {
+        await prisma.documentFolder.create({
+          data: {
+            documentId,
+            folderId
+          }
+        });
+      } catch (createError) {
+        // Handle race condition where assignment was created between check and create
+        if (createError instanceof Prisma.PrismaClientKnownRequestError) {
+          // P2002 = Unique constraint violation (shouldn't happen with composite PK, but handle anyway)
+          // P2003 = Foreign key constraint violation
+          if (createError.code === "P2002" || createError.code === "P2003") {
+            // Assignment might already exist or foreign key issue - verify it exists
+            const verifyAssignment = await prisma.documentFolder.findFirst({
+              where: {
+                documentId,
+                folderId
+              }
+            });
+            if (!verifyAssignment) {
+              throw createError; // Re-throw if it's a real error
+            }
+            // Otherwise, assignment exists now, which is fine
+          } else {
+            throw createError; // Re-throw other errors
+          }
+        } else {
+          throw createError; // Re-throw non-Prisma errors
+        }
+      }
+    }
 
     return NextResponse.json({
       documentId,

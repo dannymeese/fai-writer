@@ -27,6 +27,10 @@ type DocumentEditorProps = {
     left?: number;
     right?: number;
   };
+  onTogglePin?: () => void;
+  onRequestAddToFolder?: () => void;
+  canOrganizeDocuments?: boolean;
+  documentPinned?: boolean;
 };
 
 function derivePlaceholderMeta(content: string): Array<{ id: string; label: string }> {
@@ -115,6 +119,10 @@ export default function DocumentEditor({
   styleGuide,
   onDownload,
   horizontalPadding,
+  onTogglePin,
+  onRequestAddToFolder,
+  canOrganizeDocuments = false,
+  documentPinned = false
 }: DocumentEditorProps) {
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -130,11 +138,17 @@ export default function DocumentEditor({
   const titleRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const downloadMenuRef = useRef<HTMLDivElement>(null);
+  const [documentMenuOpen, setDocumentMenuOpen] = useState(false);
+  const [documentMenuPosition, setDocumentMenuPosition] = useState<{ left: number; top: number; height: number; variant: "default" | "sticky" } | null>(null);
+  const documentMenuRef = useRef<HTMLDivElement>(null);
+  const documentMenuOpenRef = useRef(documentMenuOpen);
+  const documentMenuVariantRef = useRef<"default" | "sticky" | null>(null);
 
   const resolvedHorizontalPadding = {
     left: horizontalPadding?.left ?? 180,
     right: horizontalPadding?.right ?? 180
   };
+  const documentActionsAvailable = Boolean(onTogglePin || onRequestAddToFolder);
   const hasContent = useMemo(() => {
     return !!(document?.content?.trim());
   }, [document?.content]);
@@ -207,6 +221,7 @@ export default function DocumentEditor({
       return () => window.document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [showDownloadMenu]);
+
 
   const performDownloadWithContent = useCallback(async (format: "docx" | "txt" | "pdf" | "md", content: string, title: string) => {
     if (!content || !content.trim()) {
@@ -438,9 +453,15 @@ export default function DocumentEditor({
   useEffect(() => {
     if (!isEditingTitle) {
       const newTitle = document?.title ?? "";
-      setTitleValue(newTitle);
+      if (newTitle === titleValue) {
+        return;
+      }
+      const timeout = window.setTimeout(() => {
+        setTitleValue(newTitle);
+      }, 0);
+      return () => window.clearTimeout(timeout);
     }
-  }, [document?.id, document?.title, isEditingTitle]);
+  }, [document?.id, document?.title, isEditingTitle, titleValue]);
 
   // Listen for download events from header
   useEffect(() => {
@@ -528,6 +549,83 @@ export default function DocumentEditor({
     setShowDownloadMenu((prev) => !prev);
   }, []);
 
+  const closeDocumentMenu = useCallback(() => {
+    setDocumentMenuOpen(false);
+    documentMenuVariantRef.current = null;
+  }, []);
+
+  const handleDocumentMenuToggle = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>, variant: "default" | "sticky") => {
+      if (!documentActionsAvailable) {
+        return;
+      }
+      event.stopPropagation();
+      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+      if (documentMenuOpen && documentMenuVariantRef.current === variant) {
+        closeDocumentMenu();
+        return;
+      }
+      documentMenuVariantRef.current = variant;
+      setDocumentMenuPosition({
+        left: rect.left + rect.width / 2,
+        top: rect.top,
+        height: rect.height,
+        variant
+      });
+      setDocumentMenuOpen(true);
+    },
+    [closeDocumentMenu, documentActionsAvailable, documentMenuOpen]
+  );
+
+  const handleDocumentMenuAction = useCallback(
+    (action?: () => void) => {
+      if (!action) {
+        return;
+      }
+      closeDocumentMenu();
+      action();
+    },
+    [closeDocumentMenu]
+  );
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (documentMenuRef.current && !documentMenuRef.current.contains(event.target as Node)) {
+        closeDocumentMenu();
+      }
+    }
+    if (documentMenuOpen) {
+      window.document.addEventListener("mousedown", handleClickOutside);
+      return () => window.document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [closeDocumentMenu, documentMenuOpen]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeDocumentMenu();
+      }
+    }
+    if (documentMenuOpen) {
+      window.addEventListener("keydown", handleKeyDown);
+      return () => window.removeEventListener("keydown", handleKeyDown);
+    }
+  }, [closeDocumentMenu, documentMenuOpen]);
+
+  useEffect(() => {
+    documentMenuOpenRef.current = documentMenuOpen;
+  }, [documentMenuOpen]);
+
+  useEffect(() => {
+    if (!documentMenuOpenRef.current) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      closeDocumentMenu();
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [closeDocumentMenu, document?.id, documentActionsAvailable]);
+
   const downloadMenu =
     showDownloadMenu && downloadMenuPosition && typeof window !== "undefined" && !!window.document?.body
       ? createPortal(
@@ -561,6 +659,58 @@ export default function DocumentEditor({
                 <span className="text-xs text-white/60">{entry.detail}</span>
               </button>
             ))}
+          </div>,
+          window.document.body
+        )
+      : null;
+
+  const documentMenu =
+    documentMenuOpen &&
+    documentMenuPosition &&
+    typeof window !== "undefined" &&
+    !!window.document?.body &&
+    documentActionsAvailable
+      ? createPortal(
+          <div
+            ref={documentMenuRef}
+            className="fixed z-[1000] w-64 rounded-2xl border border-brand-stroke/60 bg-brand-panel/95 p-2 text-left shadow-[0_25px_80px_rgba(0,0,0,0.65)]"
+            style={{
+              left: documentMenuPosition.left,
+              top:
+                documentMenuPosition.variant === "sticky"
+                  ? documentMenuPosition.top + documentMenuPosition.height + 12
+                  : documentMenuPosition.top + documentMenuPosition.height + window.scrollY + 12,
+              transform: "translateX(-50%)"
+            }}
+          >
+            {onTogglePin && (
+              <button
+                type="button"
+                onClick={() => handleDocumentMenuAction(onTogglePin)}
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-white transition hover:bg-white/10"
+              >
+                <span className="material-symbols-outlined text-base leading-none">
+                  {documentPinned ? "push_pin" : "push_pin"}
+                </span>
+                <div>
+                  <p className="font-semibold">{documentPinned ? "Unpin Document" : "Pin Document"}</p>
+                  <p className="text-xs text-white/60">Keep this doc at the top</p>
+                </div>
+              </button>
+            )}
+            {onRequestAddToFolder && (
+              <button
+                type="button"
+                onClick={() => handleDocumentMenuAction(onRequestAddToFolder)}
+                className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-white transition hover:bg-white/10"
+              >
+                <span className="material-symbols-outlined text-base leading-none">drive_folder_upload</span>
+                <div>
+                  <p className="font-semibold">Add to Folder</p>
+                  <p className="text-xs text-white/60">Organize this doc</p>
+                </div>
+              </button>
+            )}
           </div>,
           window.document.body
         )
@@ -604,6 +754,10 @@ export default function DocumentEditor({
                 downloadStatus={downloadStatus}
                 onToggleDownload={handleDownloadButtonClick}
                 hasContent={hasContent}
+                onToggleDocumentMenu={documentActionsAvailable ? handleDocumentMenuToggle : undefined}
+                menuVariant="sticky"
+                documentActionsAvailable={documentActionsAvailable}
+                documentPinned={documentPinned}
               />
             </div>
           </div>
@@ -678,6 +832,10 @@ export default function DocumentEditor({
               downloadStatus={downloadStatus}
               onToggleDownload={handleDownloadButtonClick}
               hasContent={hasContent}
+            onToggleDocumentMenu={documentActionsAvailable ? handleDocumentMenuToggle : undefined}
+            menuVariant="default"
+            documentActionsAvailable={documentActionsAvailable}
+            documentPinned={documentPinned}
             />
           </div>
         </div>
@@ -731,6 +889,7 @@ export default function DocumentEditor({
         </div>
       </div>
       {downloadMenu}
+      {documentMenu}
     </div>
   );
 }
@@ -775,6 +934,10 @@ type TitleActionButtonsProps = {
   downloadStatus?: "idle" | "loading" | "success";
   onToggleDownload?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   hasContent?: boolean;
+  onToggleDocumentMenu?: (event: React.MouseEvent<HTMLButtonElement>, variant: "default" | "sticky") => void;
+  menuVariant?: "default" | "sticky";
+  documentActionsAvailable?: boolean;
+  documentPinned?: boolean;
 };
 
 function TitleActionButtons({
@@ -783,7 +946,11 @@ function TitleActionButtons({
   copyStatus = "idle",
   downloadStatus = "idle",
   onToggleDownload,
-  hasContent = true
+  hasContent = true,
+  onToggleDocumentMenu,
+  menuVariant = "default",
+  documentActionsAvailable = false,
+  documentPinned = false
 }: TitleActionButtonsProps) {
   const copyButtonRef = useRef<HTMLButtonElement | null>(null);
   const baseButtonClass = cn(
@@ -799,8 +966,36 @@ function TitleActionButtons({
     onCopy();
   };
 
+  const showDocumentMenuButton = documentActionsAvailable && Boolean(onToggleDocumentMenu);
+  const documentMenuDisabled = !hasContent;
+
   return (
     <div className="flex items-center gap-2">
+      {showDocumentMenuButton && (
+        <button
+          type="button"
+          className={cn(
+            "transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/60",
+            compact ? "text-lg" : "text-xl",
+            documentMenuDisabled
+              ? "text-white/30 cursor-not-allowed opacity-60"
+              : "text-white/60 hover:text-white"
+          )}
+          aria-label="Document options"
+          disabled={documentMenuDisabled}
+          onClick={(event) => {
+            if (documentMenuDisabled) {
+              return;
+            }
+            onToggleDocumentMenu?.(event, menuVariant);
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <span className="material-symbols-outlined leading-none">
+            {documentPinned ? "more_horiz" : "more_horiz"}
+          </span>
+        </button>
+      )}
       <div className="relative">
         <button
           type="button"
@@ -847,7 +1042,7 @@ function TitleActionButtons({
             <span className="material-symbols-outlined leading-none">content_copy</span>
           )}
         </button>
-        {copyStatus === "copied" && copyButtonRef.current && typeof window !== "undefined" && createPortal(
+        {copyStatus === "copied" && typeof window !== "undefined" && createPortal(
           <CopyConfirmationTooltip buttonRef={copyButtonRef} />,
           document.body
         )}

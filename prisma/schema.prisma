@@ -22,28 +22,30 @@ model User {
   sessions          Session[]
   tokenUsage        TokenUsage?
   brandKeyMessaging BrandKeyMessaging[]
+  folders           Folder[]
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 }
 
 model Document {
-  id              String   @id @default(cuid())
-  title           String   @db.VarChar(255)
-  content         String   @db.LongText
+  id              String           @id @default(cuid())
+  title           String           @db.VarChar(255)
+  content         String           @db.LongText
   tone            String?
-  prompt          String?  @db.Text
+  prompt          String?          @db.Text
   characterLength Int?
   wordLength      Int?
   gradeLevel      String?
   benchmark       String?
   avoidWords      String?
-  writingStyle    String?  @db.Text
-  styleTitle      String?  @db.VarChar(100)
-  pinned          Boolean  @default(false)
-  owner           User     @relation(fields: [ownerId], references: [id])
+  writingStyle    String?          @db.Text
+  styleTitle      String?          @db.VarChar(100)
+  pinned          Boolean          @default(false)
+  owner           User             @relation(fields: [ownerId], references: [id])
   ownerId         String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  documentFolders DocumentFolder[]
 }
 
 model Account {
@@ -106,4 +108,28 @@ enum MarketTier {
   PREMIUM
   LUXURY
   UHNW
+}
+
+model Folder {
+  id              String           @id @default(cuid())
+  name            String           @db.VarChar(120)
+  owner           User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId         String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  documentFolders DocumentFolder[]
+
+  @@unique([ownerId, name])
+  @@index([ownerId])
+}
+
+model DocumentFolder {
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId String
+  folder     Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  folderId   String
+  assignedAt DateTime @default(now())
+
+  @@id([documentId, folderId])
+  @@index([folderId])
 }

@@ -10,7 +10,7 @@ import DocumentEditor from "../editors/DocumentEditor";
 import ComposeBar from "../forms/ComposeBar";
 import SettingsSheet from "../modals/SettingsSheet";
 import { ComposerSettingsInput } from "@/lib/validators";
-import { FolderSummary, OutputPlaceholder, WriterOutput } from "@/types/writer";
+import { DocumentFolderReference, FolderSummary, OutputPlaceholder, WriterOutput } from "@/types/writer";
 import { cn, formatTimestamp, smartTitleFromPrompt, deriveTitleFromContent, generateDownloadFilename, addPromptToHistory } from "@/lib/utils";
 
 type WriterWorkspaceProps = {
@@ -32,6 +32,7 @@ type SavedDoc = {
   writingStyle?: string | null;
   styleTitle?: string | null;
   pinned?: boolean;
+  folders: DocumentFolderReference[];
 };
 
 type SidebarTab = "docs" | "styles" | "brands";
@@ -61,7 +62,24 @@ function readLocalDocs(): SavedDoc[] {
       if (!entry || typeof entry !== "object") {
         continue;
       }
-      const safeEntry = entry as Partial<SavedDoc>;
+      const safeEntry = entry as Partial<SavedDoc> & { folders?: unknown };
+      const normalizedFolders: DocumentFolderReference[] = Array.isArray(safeEntry.folders)
+        ? safeEntry.folders
+            .map((folder) => {
+              if (!folder || typeof folder !== "object") {
+                return null;
+              }
+              const candidate = folder as Partial<DocumentFolderReference>;
+              if (typeof candidate.id !== "string" || typeof candidate.name !== "string") {
+                return null;
+              }
+              return {
+                id: candidate.id,
+                name: candidate.name
+              };
+            })
+            .filter((folder): folder is DocumentFolderReference => Boolean(folder))
+        : [];
       docs.push({
         id: typeof safeEntry.id === "string" ? safeEntry.id : `local-${Date.now()}`,
         title: typeof safeEntry.title === "string" ? safeEntry.title : "Untitled doc",
@@ -83,7 +101,8 @@ function readLocalDocs(): SavedDoc[] {
           typeof safeEntry.styleTitle === "string"
             ? safeEntry.styleTitle
             : safeEntry.styleTitle ?? null,
-        pinned: typeof safeEntry.pinned === "boolean" ? safeEntry.pinned : false
+        pinned: typeof safeEntry.pinned === "boolean" ? safeEntry.pinned : false,
+        folders: normalizedFolders
       });
     }
     return sortSavedDocs(docs).slice(0, 25);
@@ -98,7 +117,12 @@ function persistLocalDocEntry(doc: SavedDoc) {
   try {
     const existing = readLocalDocs();
     const next = [
-      { ...doc, lastEditedAt: doc.lastEditedAt ?? doc.createdAt, pinned: doc.pinned ?? false },
+      {
+        ...doc,
+        lastEditedAt: doc.lastEditedAt ?? doc.createdAt,
+        pinned: doc.pinned ?? false,
+        folders: Array.isArray(doc.folders) ? doc.folders : []
+      },
       ...existing.filter((entry) => entry.id !== doc.id)
     ]
       .slice(0, 25);
@@ -289,6 +313,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [brandKeyMessaging, setBrandKeyMessaging] = useState<Array<{ id: string; text: string; createdAt: string }>>([]);
   const [savedDocs, setSavedDocs] = useState<SavedDoc[]>([]);
   const [folders, setFolders] = useState<FolderSummary[]>([]);
+  const [folderDialogState, setFolderDialogState] = useState<{ assignActiveDocument?: boolean; documentId?: string | null } | null>(null);
+  const [folderDialogError, setFolderDialogError] = useState<string | null>(null);
+  const [folderDialogLoading, setFolderDialogLoading] = useState(false);
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("docs");
   const [activeStyle, setActiveStyle] = useState<ActiveStyle | null>(null);
@@ -332,6 +360,24 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       console.log("[fetchSavedDocs] fetched", docs.length, "documents from API");
       const mapped: SavedDoc[] = (docs as any[]).map((doc) => {
         const existing = savedDocsRef.current.find((entry) => entry.id === doc.id);
+        const folderRefs: DocumentFolderReference[] = Array.isArray(doc.folders)
+          ? doc.folders
+              .map((folder: any) => {
+                if (!folder || typeof folder !== "object") {
+                  return null;
+                }
+                const folderId = typeof folder.id === "string" ? folder.id : null;
+                const folderName = typeof folder.name === "string" ? folder.name : null;
+                if (!folderId || !folderName) {
+                  return null;
+                }
+                return {
+                  id: folderId,
+                  name: folderName
+                };
+              })
+              .filter((folder): folder is DocumentFolderReference => Boolean(folder))
+          : [];
         return {
           id: doc.id,
           title: doc.title ?? "Untitled doc",
@@ -349,7 +395,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           }),
           writingStyle: doc.writingStyle ?? null,
           styleTitle: doc.styleTitle ?? null,
-          pinned: typeof doc.pinned === "boolean" ? doc.pinned : existing?.pinned ?? false
+          pinned: typeof doc.pinned === "boolean" ? doc.pinned : existing?.pinned ?? false,
+          folders: folderRefs
         };
       });
       console.log("[fetchSavedDocs] mapped documents:", mapped.length);
@@ -853,7 +900,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       settings: normalizeSettings(output.settings),
       writingStyle: description,
       styleTitle: styleName,
-      pinned: false
+      pinned: false,
+      folders: []
     };
     if (guestLimitEnabled && isGuest) {
       applyLocalDoc(localStyleDoc);
@@ -917,7 +965,11 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const applyLocalDoc = useCallback((doc: SavedDoc) => {
     persistLocalDocEntry(doc);
     setSavedDocs((prev) => {
-      const normalizedDoc = { ...doc, lastEditedAt: doc.lastEditedAt ?? doc.createdAt };
+      const normalizedDoc: SavedDoc = {
+        ...doc,
+        lastEditedAt: doc.lastEditedAt ?? doc.createdAt,
+        folders: Array.isArray(doc.folders) ? doc.folders : []
+      };
       const next = [normalizedDoc, ...prev.filter((entry) => entry.id !== doc.id)];
       return sortSavedDocs(next).slice(0, 25);
     });
@@ -934,7 +986,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         const transformed = transform ? transform(target) : target;
         const updatedDoc: SavedDoc = {
           ...transformed,
-          lastEditedAt: new Date().toISOString()
+          lastEditedAt: new Date().toISOString(),
+          folders: Array.isArray(transformed.folders) ? transformed.folders : []
         };
         const next = [updatedDoc, ...prev.slice(0, index), ...prev.slice(index + 1)];
         return sortSavedDocs(next);
@@ -955,6 +1008,14 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     });
     return { docDocuments: docs, styleDocuments: styles };
   }, [savedDocs]);
+
+  const activeSavedDoc = useMemo(() => {
+    if (!activeDocumentId) {
+      return null;
+    }
+    return savedDocs.find((doc) => doc.id === activeDocumentId) ?? null;
+  }, [activeDocumentId, savedDocs]);
+  const activeDocPinned = activeSavedDoc?.pinned ?? false;
 
   function handleApplyStyle(styleDoc: SavedDoc) {
     const description = fallbackStyleDescription(styleDoc.writingStyle ?? null, styleDoc.content);
@@ -1199,7 +1260,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           settings: doc.settings,
           writingStyle: doc.writingStyle ?? null,
           styleTitle: doc.styleTitle ?? null,
-          pinned: doc.pinned ?? false
+          pinned: doc.pinned ?? false,
+          folders: Array.isArray(doc.folders) ? doc.folders : []
         });
         return doc.id;
       }
@@ -1417,25 +1479,45 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   );
 
   const assignDocumentToFolder = useCallback(
-    async (folderId: string, options?: { folderName?: string }) => {
+    async (folderId: string, options?: { folderName?: string; documentId?: string | null }) => {
       if (!isAuthenticated) {
         setToast("Sign in to organize documents into folders.");
         return;
       }
-      if (!activeDocumentId) {
-        setToast("Open a document before adding it to a folder.");
+
+      const folderFromState = folders.find((folder) => folder.id === folderId);
+      let targetDocumentId = options?.documentId ?? null;
+
+      if (targetDocumentId) {
+        const trackedDoc = savedDocsRef.current.find((doc) => doc.id === targetDocumentId);
+        if (!trackedDoc) {
+          setToast("Save the document before adding it to a folder.");
+          return;
+        }
+      }
+
+      if (!targetDocumentId) {
+        if (!activeDocumentId) {
+          setToast("Open a document before adding it to a folder.");
+          return;
+        }
+
+        const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
+        if (!currentDoc) {
+          setToast("Document is still loading.");
+          return;
+        }
+
+        const latestId = await saveCurrentDocument(activeDocumentId, currentDoc.content);
+        targetDocumentId = latestId ?? activeDocumentId;
+      }
+
+      if (!targetDocumentId) {
+        setToast("Save the document before adding it to a folder.");
         return;
       }
 
-      const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
-      if (!currentDoc) {
-        setToast("Document is still loading.");
-        return;
-      }
-
-      const latestId = await saveCurrentDocument(activeDocumentId, currentDoc.content);
-      const resolvedDocumentId = latestId ?? activeDocumentId;
-      if (!resolvedDocumentId) {
+      if (targetDocumentId.startsWith("local-")) {
         setToast("Save the document before adding it to a folder.");
         return;
       }
@@ -1446,7 +1528,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             folderId,
-            documentId: resolvedDocumentId
+            documentId: targetDocumentId
           })
         });
         const payload = await response.json().catch(() => null);
@@ -1458,23 +1540,47 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         const folderName =
           options?.folderName ||
           payload?.folder?.name ||
+          folderFromState?.name ||
           folders.find((folder) => folder.id === folderId)?.name ||
           "folder";
         setToast(`Added to ${folderName}.`);
+
+        const folderReference: DocumentFolderReference = {
+          id: payload?.folder?.id ?? folderId,
+          name: folderName
+        };
+
+        const documentWasTracked = savedDocsRef.current.some((doc) => doc.id === targetDocumentId);
+
+        setSavedDocs((prev) => {
+          let updated = false;
+          const next = prev.map((doc) => {
+            if (doc.id !== targetDocumentId) {
+              return doc;
+            }
+            const hasFolder = doc.folders.some((folder) => folder.id === folderReference.id);
+            if (hasFolder) {
+              return doc;
+            }
+            updated = true;
+            return {
+              ...doc,
+              folders: [...doc.folders, folderReference]
+            };
+          });
+          return updated ? sortSavedDocs(next) : next;
+        });
+
         fetchFolders();
+        if (!documentWasTracked) {
+          void fetchSavedDocs();
+        }
       } catch (error) {
         console.error("assign document to folder failed:", error);
         setToast("Unable to add document to folder.");
       }
     },
-    [activeDocumentId, fetchFolders, folders, isAuthenticated, saveCurrentDocument]
-  );
-
-  const handleAddToFolder = useCallback(
-    (folderId: string) => {
-      void assignDocumentToFolder(folderId);
-    },
-    [assignDocumentToFolder]
+    [activeDocumentId, fetchFolders, fetchSavedDocs, folders, isAuthenticated, saveCurrentDocument]
   );
 
   const handlePinDocument = useCallback(
@@ -1617,47 +1723,179 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     },
     [isAuthenticated, setToast, fetchSavedDocs]
   );
+  const createFolder = useCallback(
+    async (name: string): Promise<FolderSummary | null> => {
+      if (!isAuthenticated) {
+        setToast("Create a free account to organize documents into folders.");
+        return null;
+      }
 
-  const handleCreateFolder = useCallback(async () => {
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        setFolderDialogError("Folder name cannot be empty.");
+        return null;
+      }
+
+      const duplicate = folders.some((folder) => folder.name.toLowerCase() === trimmedName.toLowerCase());
+      if (duplicate) {
+        setFolderDialogError("You already have a folder with that name.");
+        return null;
+      }
+
+      try {
+        const response = await fetch("/api/folders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: trimmedName })
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          setFolderDialogError(formatErrorMessage(payload?.error, "Unable to create folder."));
+          return null;
+        }
+
+        const normalizedFolder: FolderSummary = {
+          id: payload.id,
+          name: payload.name ?? trimmedName,
+          createdAt: payload.createdAt ?? new Date().toISOString(),
+          documentCount: typeof payload.documentCount === "number" ? payload.documentCount : 0
+        };
+        setFolders((prev) => [normalizedFolder, ...prev.filter((folder) => folder.id !== normalizedFolder.id)]);
+        return normalizedFolder;
+      } catch (error) {
+        console.error("create folder failed:", error);
+        setFolderDialogError("Unable to create folder.");
+        return null;
+      }
+    },
+    [folders, isAuthenticated, setToast]
+  );
+
+  const openFolderDialog = useCallback(
+    (options?: { assignActiveDocument?: boolean; documentId?: string | null }) => {
+      if (!isAuthenticated) {
+        setToast("Create a free account to organize documents into folders.");
+        return;
+      }
+      setFolderDialogError(null);
+      setFolderDialogState({
+        assignActiveDocument: options?.assignActiveDocument,
+        documentId: options?.documentId ?? null
+      });
+    },
+    [isAuthenticated, setToast]
+  );
+
+  const closeFolderDialog = useCallback(() => {
+    if (folderDialogLoading) {
+      return;
+    }
+    setFolderDialogState(null);
+    setFolderDialogError(null);
+  }, [folderDialogLoading]);
+
+  const handleFolderDialogSubmit = useCallback(
+    async (name: string) => {
+      if (!folderDialogState) {
+        return;
+      }
+      setFolderDialogLoading(true);
+      setFolderDialogError(null);
+      try {
+        const folder = await createFolder(name);
+        if (!folder) {
+          return;
+        }
+        if (folderDialogState.assignActiveDocument) {
+          await assignDocumentToFolder(folder.id, {
+            folderName: folder.name,
+            documentId: folderDialogState.documentId ?? undefined
+          });
+        } else if (folderDialogState.documentId) {
+          await assignDocumentToFolder(folder.id, {
+            folderName: folder.name,
+            documentId: folderDialogState.documentId
+          });
+        }
+        setFolderDialogState(null);
+        setFolderDialogError(null);
+      } finally {
+        setFolderDialogLoading(false);
+      }
+    },
+    [assignDocumentToFolder, createFolder, folderDialogState]
+  );
+
+  const handleOpenFolderPicker = useCallback(() => {
     if (!isAuthenticated) {
       setToast("Create a free account to organize documents into folders.");
       return;
     }
-    const folderName = typeof window !== "undefined" ? window.prompt("Name your folder") : null;
-    if (folderName === null) {
+    if (!activeDocumentId) {
+      setToast("Open a document before adding it to a folder.");
       return;
     }
-    const trimmedName = folderName.trim();
-    if (!trimmedName) {
-      setToast("Folder name cannot be empty.");
+    if (!folders.length) {
+      openFolderDialog({ assignActiveDocument: true });
       return;
     }
+    setFolderPickerOpen(true);
+  }, [activeDocumentId, folders.length, isAuthenticated, openFolderDialog, setToast]);
 
-    try {
-      const response = await fetch("/api/folders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmedName })
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        setToast(formatErrorMessage(payload?.error, "Unable to create folder."));
+  const handleFolderSelection = useCallback(
+    (folderId: string) => {
+      setFolderPickerOpen(false);
+      void assignDocumentToFolder(folderId);
+    },
+    [assignDocumentToFolder]
+  );
+  const handleFolderPickerClose = useCallback(() => {
+    setFolderPickerOpen(false);
+  }, []);
+
+  const handleCreateFolderFromPicker = useCallback(() => {
+    setFolderPickerOpen(false);
+    openFolderDialog({ assignActiveDocument: true });
+  }, [openFolderDialog]);
+
+  const handleOpenCreateFolder = useCallback(() => {
+    openFolderDialog();
+  }, [openFolderDialog]);
+
+  const handleDocDroppedOnFolder = useCallback(
+    (folderId: string, docId: string) => {
+      if (!isAuthenticated) {
+        setToast("Create a free account to organize documents into folders.");
         return;
       }
+      if (!docId) {
+        return;
+      }
+      const targetDoc = savedDocsRef.current.find((doc) => doc.id === docId);
+      if (!targetDoc || docId.startsWith("local-")) {
+        setToast("Save the document before adding it to a folder.");
+        return;
+      }
+      void assignDocumentToFolder(folderId, {
+        folderName: folders.find((folder) => folder.id === folderId)?.name,
+        documentId: docId
+      });
+    },
+    [assignDocumentToFolder, folders, isAuthenticated, setToast]
+  );
 
-      const normalizedFolder: FolderSummary = {
-        id: payload.id,
-        name: payload.name ?? trimmedName,
-        createdAt: payload.createdAt ?? new Date().toISOString(),
-        documentCount: typeof payload.documentCount === "number" ? payload.documentCount : 0
-      };
-      setFolders((prev) => [normalizedFolder, ...prev.filter((folder) => folder.id !== normalizedFolder.id)]);
-      await assignDocumentToFolder(normalizedFolder.id, { folderName: normalizedFolder.name });
-    } catch (error) {
-      console.error("create folder failed:", error);
-      setToast("Unable to create folder.");
+  const handleDocumentMenuPinToggle = useCallback(() => {
+    if (!activeDocumentId) {
+      setToast("Save the document before pinning.");
+      return;
     }
-  }, [assignDocumentToFolder, isAuthenticated]);
+    const savedDoc = savedDocsRef.current.find((doc) => doc.id === activeDocumentId);
+    if (!savedDoc) {
+      setToast("Save the document before pinning.");
+      return;
+    }
+    void handlePinDocument(savedDoc);
+  }, [activeDocumentId, handlePinDocument, setToast]);
 
   const handleLoadDoc = useCallback(
     async (doc: SavedDoc) => {
@@ -1732,7 +1970,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       composeInputRef.current?.focus();
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
-  }, [activeDocumentId, autosaveTimeout, isAuthenticated, persistDocumentToServer, saveCurrentDocument]);
+  }, [activeDocumentId, autosaveTimeout, saveCurrentDocument]);
 
   useEffect(() => {
     const listener = () => handleStartNewDoc();
@@ -2051,6 +2289,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           activeDocumentId={activeDocumentId}
           docs={docDocuments}
           styles={styleDocuments}
+          folders={folders}
+          canOrganizeFolders={isAuthenticated}
           brandSummary={brandSummary}
           hasBrand={hasBrand}
           brandKeyMessaging={brandKeyMessaging}
@@ -2066,6 +2306,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           onApplyStyle={handleApplyStyle}
           onTabChange={(tab) => setSidebarTab(tab)}
           onPinDocument={handlePinDocument}
+          onCreateFolder={handleOpenCreateFolder}
+          onDocumentDroppedOnFolder={handleDocDroppedOnFolder}
           settingsOpen={sheetOpen}
         />
       )}
@@ -2083,6 +2325,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               brandSummary={brandSummary}
               styleGuide={activeStyle ? { name: activeStyle.name, description: activeStyle.description } : null}
               horizontalPadding={documentHorizontalPadding}
+              onTogglePin={isAuthenticated ? handleDocumentMenuPinToggle : undefined}
+              onRequestAddToFolder={isAuthenticated ? handleOpenFolderPicker : undefined}
+              canOrganizeDocuments={isAuthenticated}
+              documentPinned={activeDocPinned}
             />
             {/* Forgetaboutit Icon - positioned below document canvas */}
             <div className="flex justify-center mt-20 pointer-events-none" style={{ opacity: 1 }}>
@@ -2131,6 +2377,21 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           </div>
         </div>
       </div>
+      <FolderPickerDialog
+        open={folderPickerOpen && folders.length > 0}
+        folders={folders}
+        onClose={handleFolderPickerClose}
+        onSelect={handleFolderSelection}
+        onCreateFolder={handleCreateFolderFromPicker}
+      />
+      <FolderDialog
+        open={Boolean(folderDialogState)}
+        error={folderDialogError}
+        loading={folderDialogLoading}
+        onClose={closeFolderDialog}
+        onSubmit={handleFolderDialogSubmit}
+        onResetError={() => setFolderDialogError(null)}
+      />
       <SettingsSheet
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
@@ -2141,6 +2402,136 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         initialBrandDefined={hasBrand}
       />
       <Toast message={toast} />
+    </div>
+  );
+}
+
+type FolderDialogProps = {
+  open: boolean;
+  loading: boolean;
+  error: string | null;
+  onSubmit: (name: string) => void;
+  onClose: () => void;
+  onResetError?: () => void;
+};
+
+function FolderDialog({ open, loading, error, onSubmit, onClose, onResetError }: FolderDialogProps) {
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  }, [open]);
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/70 px-4">
+      <div className="w-full max-w-sm rounded-2xl border border-brand-stroke/60 bg-brand-panel px-5 py-6 text-left shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-white">Create folder</h3>
+          <button
+            type="button"
+            className="text-brand-muted transition hover:text-white disabled:opacity-50"
+            onClick={onClose}
+            disabled={loading}
+          >
+            <span className="material-symbols-outlined text-xl leading-none">close</span>
+          </button>
+        </div>
+        <p className="mt-1 text-sm text-brand-muted">Give your folder a name to organize docs.</p>
+        <input
+          ref={inputRef}
+          type="text"
+          className="mt-4 w-full rounded-xl border border-brand-stroke/60 bg-brand-background/40 px-3 py-2 text-sm text-white placeholder:text-brand-muted focus:border-white focus:outline-none"
+          placeholder="Folder name"
+          value={value}
+          onChange={(event) => {
+            setValue(event.target.value);
+            onResetError?.();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && value.trim() && !loading) {
+              onSubmit(value);
+            }
+          }}
+          disabled={loading}
+        />
+        {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-full border border-brand-stroke/60 px-4 py-1.5 text-xs font-semibold text-brand-muted transition hover:border-white hover:text-white disabled:opacity-50"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-blue/80 disabled:opacity-50"
+            onClick={() => onSubmit(value)}
+            disabled={loading || !value.trim()}
+          >
+            {loading ? "Creating..." : "Create"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type FolderPickerDialogProps = {
+  open: boolean;
+  folders: FolderSummary[];
+  onClose: () => void;
+  onSelect: (folderId: string) => void;
+  onCreateFolder: () => void;
+};
+
+function FolderPickerDialog({ open, folders, onClose, onSelect, onCreateFolder }: FolderPickerDialogProps) {
+  if (!open) {
+    return null;
+  }
+  return (
+    <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 px-4">
+      <div className="w-full max-w-sm rounded-2xl border border-brand-stroke/60 bg-brand-panel px-5 py-6 text-left shadow-[0_30px_80px_rgba(0,0,0,0.55)]">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-white">Add to folder</h3>
+          <button
+            type="button"
+            className="text-brand-muted transition hover:text-white"
+            onClick={onClose}
+          >
+            <span className="material-symbols-outlined text-xl leading-none">close</span>
+          </button>
+        </div>
+        <div className="mt-4 max-h-60 space-y-2 overflow-y-auto">
+          {folders.map((folder) => (
+            <button
+              key={folder.id}
+              type="button"
+              className="flex w-full items-center justify-between rounded-xl border border-brand-stroke/40 px-3 py-2 text-left text-sm text-white transition hover:border-white"
+              onClick={() => onSelect(folder.id)}
+            >
+              <span className="truncate pr-2">{folder.name}</span>
+              <span className="text-xs text-white/60">{folder.documentCount} docs</span>
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-brand-blue transition hover:text-white"
+          onClick={onCreateFolder}
+        >
+          <span className="material-symbols-outlined text-base leading-none">add_circle</span>
+          Create folder
+        </button>
+      </div>
     </div>
   );
 }
@@ -2193,6 +2584,8 @@ type WorkspaceSidebarProps = {
   activeDocumentId: string | null;
   docs: SavedDoc[];
   styles: SavedDoc[];
+  folders: FolderSummary[];
+  canOrganizeFolders: boolean;
   brandSummary: string | null;
   hasBrand: boolean;
   brandKeyMessaging: Array<{ id: string; text: string; createdAt: string }>;
@@ -2208,6 +2601,8 @@ type WorkspaceSidebarProps = {
   onSelect: (doc: SavedDoc) => void;
   onApplyStyle: (style: SavedDoc) => void;
   onPinDocument?: (doc: SavedDoc) => void;
+  onCreateFolder: () => void;
+  onDocumentDroppedOnFolder?: (folderId: string, docId: string) => void;
   settingsOpen?: boolean;
 };
 
@@ -2217,6 +2612,8 @@ function WorkspaceSidebar({
   activeDocumentId,
   docs,
   styles,
+  folders,
+  canOrganizeFolders,
   brandSummary,
   hasBrand,
   brandKeyMessaging,
@@ -2232,10 +2629,15 @@ function WorkspaceSidebar({
   onSelect,
   onApplyStyle,
   onPinDocument,
+  onCreateFolder,
+  onDocumentDroppedOnFolder,
   settingsOpen = false
 }: WorkspaceSidebarProps) {
   const [hoveredTimestampId, setHoveredTimestampId] = useState<string | null>(null);
   const timestampTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [folderFilterId, setFolderFilterId] = useState<string | null>(null);
+  const [draggingDocId, setDraggingDocId] = useState<string | null>(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
 
   const tabs: { id: SidebarTab; label: string; icon: string }[] = [
     { id: "docs", label: "Docs", icon: "draft" },
@@ -2278,6 +2680,19 @@ function WorkspaceSidebar({
     setHoveredTimestampId(null);
   }, []);
 
+  const handleDocDragStart = useCallback((docId: string, event: React.DragEvent<HTMLLIElement>) => {
+    setDraggingDocId(docId);
+    if (event.dataTransfer) {
+      event.dataTransfer.setData("text/plain", docId);
+      event.dataTransfer.effectAllowed = "move";
+    }
+  }, []);
+
+  const handleDocDragEnd = useCallback(() => {
+    setDraggingDocId(null);
+    setDragOverFolderId(null);
+  }, []);
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -2286,6 +2701,20 @@ function WorkspaceSidebar({
       }
     };
   }, []);
+
+  const effectiveFolderFilterId = useMemo(() => {
+    if (!folderFilterId) {
+      return null;
+    }
+    return folders.some((folder) => folder.id === folderFilterId) ? folderFilterId : null;
+  }, [folderFilterId, folders]);
+
+  const filteredDocs = useMemo(() => {
+    if (!effectiveFolderFilterId) {
+      return docs;
+    }
+    return docs.filter((doc) => doc.folders?.some((folder) => folder.id === effectiveFolderFilterId));
+  }, [docs, effectiveFolderFilterId]);
 
   // Helper function to extract preview text from content
   function getContentPreview(content: string, maxLength: number = 80): string {
@@ -2325,8 +2754,20 @@ function WorkspaceSidebar({
           const isActive = activeDocumentId === doc.id;
           const preview = getContentPreview(doc.content);
           const displayTitle = doc.title || "Untitled doc";
+          const docFolders = doc.folders ?? [];
+          const canDragDoc = canOrganizeFolders && !doc.id.startsWith("local-");
           return (
-            <li key={doc.id} className="relative group">
+            <li
+              key={doc.id}
+              className={cn(
+                "relative group",
+                canDragDoc ? "cursor-grab" : undefined,
+                draggingDocId === doc.id ? "opacity-70" : undefined
+              )}
+              draggable={canDragDoc}
+              onDragStart={(event) => handleDocDragStart(doc.id, event)}
+              onDragEnd={handleDocDragEnd}
+            >
               <button
                 type="button"
                 onMouseDown={handleButtonMouseDown}
@@ -2344,6 +2785,18 @@ function WorkspaceSidebar({
                   <p className="text-xs font-semibold text-brand-muted/70 mt-1">
                     {preview}
                   </p>
+                )}
+                {docFolders.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {docFolders.map((folder) => (
+                      <span
+                        key={folder.id}
+                        className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/70"
+                      >
+                        {folder.name}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </button>
               <button
@@ -2393,6 +2846,103 @@ function WorkspaceSidebar({
           );
         })}
       </ul>
+    );
+  }
+
+  function renderFolderScroller() {
+    if (!canOrganizeFolders) {
+      return (
+        <div className="mb-5 rounded-2xl border border-brand-stroke/40 bg-brand-background/60 px-4 py-3 text-xs text-brand-muted">
+          Sign in to create folders and organize docs.
+        </div>
+      );
+    }
+
+    if (!folders.length) {
+      return (
+        <div className="mb-5">
+          <button
+            type="button"
+            onMouseDown={handleButtonMouseDown}
+            onClick={onCreateFolder}
+            className="inline-flex items-center gap-2 rounded-full border border-dashed border-brand-stroke/60 px-4 py-2 text-xs font-semibold text-brand-text transition hover:border-white hover:text-white"
+          >
+            <span className="material-symbols-outlined text-base leading-none">add_circle</span>
+            Create folder
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="mb-5 overflow-x-auto">
+        <div className="flex w-max items-center gap-[3px] pb-1">
+          <button
+            type="button"
+            onMouseDown={handleButtonMouseDown}
+            onClick={() => setFolderFilterId(null)}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+              effectiveFolderFilterId === null ? "border-white bg-white/10 text-white" : "border-brand-stroke/50 text-brand-muted hover:border-white hover:text-white"
+            )}
+          >
+            All
+          </button>
+          {folders.map((folder) => {
+            const isSelected = effectiveFolderFilterId === folder.id;
+            const isDragTarget = dragOverFolderId === folder.id;
+            const allowDrop = Boolean(onDocumentDroppedOnFolder && draggingDocId);
+            return (
+              <button
+                key={folder.id}
+                type="button"
+                onMouseDown={handleButtonMouseDown}
+                onClick={() =>
+                  setFolderFilterId((current) => (current === folder.id ? null : folder.id))
+                }
+                onDragOver={(event) => {
+                  if (!allowDrop) return;
+                  event.preventDefault();
+                  setDragOverFolderId(folder.id);
+                }}
+                onDragLeave={(event) => {
+                  if (!allowDrop) return;
+                  event.preventDefault();
+                  if (dragOverFolderId === folder.id) {
+                    setDragOverFolderId(null);
+                  }
+                }}
+                onDrop={(event) => {
+                  if (!allowDrop) return;
+                  event.preventDefault();
+                  setDragOverFolderId(null);
+                  const droppedId = event.dataTransfer?.getData("text/plain") || draggingDocId;
+                  if (droppedId) {
+                    onDocumentDroppedOnFolder?.(folder.id, droppedId);
+                  }
+                }}
+                className={cn(
+                  "flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                  isSelected ? "border-white bg-white/10 text-white" : "border-brand-stroke/50 text-brand-muted hover:border-white hover:text-white",
+                  isDragTarget ? "border-brand-blue text-brand-blue" : undefined
+                )}
+              >
+                <span className="truncate max-w-[120px]">{folder.name}</span>
+                <span className="text-[10px] text-white/60">{folder.documentCount}</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onMouseDown={handleButtonMouseDown}
+            onClick={onCreateFolder}
+            className="inline-flex items-center gap-1 rounded-full border border-brand-stroke/50 px-3 py-1.5 text-xs font-semibold text-brand-muted transition hover:border-white hover:text-white"
+          >
+            <span className="material-symbols-outlined text-base leading-none">add</span>
+            Folder
+          </button>
+        </div>
+      </div>
     );
   }
 
@@ -2516,7 +3066,11 @@ function WorkspaceSidebar({
             <div className="flex-1 min-h-0 overflow-hidden pl-5 pr-0">
               <Tab.Panels className="h-full">
                 <Tab.Panel className="h-full overflow-y-auto pt-8 pb-8 pr-5 focus:outline-none">
-                  {renderDocList(docs, "No docs yet. Generate something to see it here.")}
+                  {renderFolderScroller()}
+                  {renderDocList(
+                    filteredDocs,
+                    effectiveFolderFilterId ? "No docs in this folder yet." : "No docs yet. Generate something to see it here."
+                  )}
                 </Tab.Panel>
                 <Tab.Panel className="h-full overflow-y-auto pt-8 pb-8 pr-5 focus:outline-none">
                   {renderStyleList(styles)}

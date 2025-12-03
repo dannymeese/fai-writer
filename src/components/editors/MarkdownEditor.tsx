@@ -31,6 +31,27 @@ const SHORTCUT_KEY_MAP: Record<string, "copy" | "cut" | "paste" | "selectAll"> =
   a: "selectAll"
 } as const;
 
+function stripLinksFromHtml(html: string): { sanitized: string; removed: boolean } {
+  const tempDiv = window.document.createElement("div");
+  tempDiv.innerHTML = html;
+  const anchors = Array.from(tempDiv.querySelectorAll("a"));
+  if (!anchors.length) {
+    return { sanitized: html, removed: false };
+  }
+  anchors.forEach((anchor) => {
+    if (anchor.childNodes.length) {
+      const fragment = document.createDocumentFragment();
+      while (anchor.firstChild) {
+        fragment.appendChild(anchor.firstChild);
+      }
+      anchor.replaceWith(fragment);
+    } else {
+      anchor.replaceWith(anchor.textContent ?? "");
+    }
+  });
+  return { sanitized: tempDiv.innerHTML, removed: true };
+}
+
 type MarkdownEditorProps = {
   content: string;
   onChange: (content: string) => void;
@@ -1034,7 +1055,8 @@ export default function MarkdownEditor({
     const handleClipboard = (e: ClipboardEvent) => {
       // Only handle clipboard events from the editor
       const target = e.target as Node | null;
-      if (!target || !editorElement.contains(target)) {
+      const editorDom = editor.view.dom;
+      if (!target || !editorDom.contains(target)) {
         return;
       }
 
@@ -1063,10 +1085,35 @@ export default function MarkdownEditor({
         e.clipboardData?.setData('text/plain', plainText);
       }
     };
+
+    const handlePasteEvent = (e: ClipboardEvent) => {
+      const target = e.target as Node | null;
+      const editorDom = editor.view.dom;
+      if (!target || !editorDom.contains(target)) {
+        return;
+      }
+      const html = e.clipboardData?.getData("text/html");
+      if (!html || !/<a[\s>]/i.test(html)) {
+        return;
+      }
+      e.preventDefault();
+      const { sanitized } = stripLinksFromHtml(html);
+      const fallbackText = e.clipboardData?.getData("text/plain") ?? "";
+      const contentToInsert = sanitized || fallbackText;
+      if (!contentToInsert) {
+        return;
+      }
+      editor
+        .chain()
+        .focus()
+        .insertContent(contentToInsert)
+        .run();
+    };
     
     window.document.addEventListener('keydown', handleGlobalKeyDown, true);
     window.document.addEventListener('copy', handleClipboard, true);
     window.document.addEventListener('cut', handleClipboard, true);
+    window.document.addEventListener('paste', handlePasteEvent, true);
 
     editor.on("selectionUpdate", handleSelectionUpdate);
     const editorElement = editor.view.dom;
@@ -1119,6 +1166,7 @@ export default function MarkdownEditor({
       window.document.removeEventListener('keydown', handleGlobalKeyDown, true);
       window.document.removeEventListener('copy', handleClipboard, true);
       window.document.removeEventListener('cut', handleClipboard, true);
+      window.document.removeEventListener('paste', handlePasteEvent, true);
       scrollContainer?.removeEventListener('scroll', handleScroll);
       if (dragTimeout) clearTimeout(dragTimeout);
       if (scrollTimeout) clearTimeout(scrollTimeout);

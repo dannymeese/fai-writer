@@ -5,6 +5,11 @@ export type OutputPlaceholder = {
   label: string;
 };
 
+export type DocumentFolderReference = {
+  id: string;
+  name: string;
+};
+
 export type WriterOutput = {
   id: string;
   title: string;
@@ -18,6 +23,7 @@ export type WriterOutput = {
   writingStyle?: string | null;
   styleTitle?: string | null;
   pinned?: boolean;
+  folders?: DocumentFolderReference[];
 };
 
 export type FolderSummary = {
