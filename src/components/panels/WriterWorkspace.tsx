@@ -3303,6 +3303,22 @@ function WorkspaceSidebar({
     >
       {open ? (
         <div className="flex h-full flex-col">
+          {!isDesktop && (
+            <div className="flex items-center justify-between border-b border-brand-stroke/40 px-4 py-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-brand-muted">Library</p>
+                <p className="text-sm font-semibold text-white">Docs, styles & brands</p>
+              </div>
+              <button
+                type="button"
+                onClick={onToggle}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-brand-stroke/60 text-white transition hover:border-white hover:text-white/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                aria-label="Hide panel"
+              >
+                <span className="material-symbols-outlined text-2xl leading-none">chevron_left</span>
+              </button>
+            </div>
+          )}
           <Tab.Group className="flex flex-1 flex-col min-h-0" selectedIndex={selectedIndex} onChange={handleTabChange}>
             <Tab.List className="flex bg-brand-background/40 text-xs font-semibold uppercase flex-shrink-0 w-full p-1.5">
               {tabs.map((tab) => (
