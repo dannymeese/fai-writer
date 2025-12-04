@@ -59,3 +59,4 @@ npm run dev
 
 With these steps the full stack (Next.js + MySQL + LanguageTool) runs locally and matches the environment we just validated (`docker compose up -d` + `npm run dev` reachable on `http://localhost:3002`). Adjust ports as needed if other apps occupy 3000/3307/8010.
 
+
