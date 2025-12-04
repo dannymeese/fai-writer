@@ -113,6 +113,7 @@ enum MarketTier {
 model Folder {
   id              String           @id @default(cuid())
   name            String           @db.VarChar(120)
+  pinned          Boolean          @default(false)
   owner           User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   ownerId         String
   createdAt       DateTime         @default(now())

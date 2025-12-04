@@ -35,8 +35,13 @@ export async function GET() {
       take: 100
     });
 
-    // Sort folders by most recent document assignment, then by creation date
+    // Sort folders: pinned first, then by most recent document assignment, then by creation date
     const sortedFolders = folders.sort((a, b) => {
+      // Pinned folders come first
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      
+      // Within pinned/unpinned groups, sort by most recent document assignment
       const aLastAssigned = a.documentFolders[0]?.assignedAt ?? a.createdAt;
       const bLastAssigned = b.documentFolders[0]?.assignedAt ?? b.createdAt;
       return bLastAssigned.getTime() - aLastAssigned.getTime();
@@ -47,7 +52,8 @@ export async function GET() {
         id: folder.id,
         name: folder.name,
         createdAt: folder.createdAt,
-        documentCount: folder._count.documentFolders
+        documentCount: folder._count.documentFolders,
+        pinned: folder.pinned
       }))
     );
   } catch (error) {

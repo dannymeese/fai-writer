@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } fr
 import { Tab } from "@headlessui/react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { ArrowRightOnRectangleIcon } from "@heroicons/react/24/outline";
 import NextImage from "next/image";
 import DocumentEditor from "../editors/DocumentEditor";
 import ComposeBar from "../forms/ComposeBar";
@@ -446,7 +445,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             id: folder.id,
             name: folder.name ?? "Untitled folder",
             createdAt: folder.createdAt ?? new Date().toISOString(),
-            documentCount: typeof folder.documentCount === "number" ? folder.documentCount : 0
+            documentCount: typeof folder.documentCount === "number" ? folder.documentCount : 0,
+            pinned: folder.pinned ?? false
           }))
         );
       } else {
@@ -1051,7 +1051,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }, []);
 
   const bumpSavedDoc = useCallback(
-    (docId: string, transform?: (doc: SavedDoc) => SavedDoc) => {
+    (docId: string, transform?: (doc: SavedDoc) => SavedDoc, updateTimestamp: boolean = true) => {
       setSavedDocs((prev) => {
         const index = prev.findIndex((doc) => doc.id === docId);
         if (index === -1) {
@@ -1061,7 +1061,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         const transformed = transform ? transform(target) : target;
         const updatedDoc: SavedDoc = {
           ...transformed,
-          lastEditedAt: new Date().toISOString(),
+          lastEditedAt: updateTimestamp ? new Date().toISOString() : (transformed.lastEditedAt ?? transformed.createdAt),
           folders: Array.isArray(transformed.folders) ? transformed.folders : []
         };
         const next = [updatedDoc, ...prev.slice(0, index), ...prev.slice(index + 1)];
@@ -1346,6 +1346,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         try {
           // Include pinned status in patch if available
           const savedDoc = savedDocsRef.current.find((saved) => saved.id === doc.id);
+          
+          // Skip PATCH if content hasn't changed (prevents unnecessary timestamp updates)
+          if (savedDoc && savedDoc.content === contentValue) {
+            // Content hasn't changed, just return the existing doc id
+            return doc.id;
+          }
+          
           const patchData: any = { content: contentValue };
           if (savedDoc && typeof savedDoc.pinned === 'boolean') {
             patchData.pinned = savedDoc.pinned;
@@ -1358,10 +1365,14 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           });
 
           if (patchResponse.ok) {
-            // Update lastEditedAt in local state from server response
+            // Only update lastEditedAt if content actually changed
+            // Prisma automatically updates updatedAt on any PATCH, so we need to check if content changed
             try {
               const updatedDoc = await patchResponse.json();
-              if (updatedDoc?.updatedAt) {
+              const savedDoc = savedDocsRef.current.find((d) => d.id === doc.id);
+              const contentChanged = !savedDoc || savedDoc.content !== contentValue;
+              
+              if (contentChanged && updatedDoc?.updatedAt) {
                 setSavedDocs((prev) => {
                   const next = prev.map((entry) =>
                     entry.id === doc.id
@@ -1798,6 +1809,90 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     },
     [isAuthenticated, setToast, fetchSavedDocs]
   );
+
+  const handlePinFolder = useCallback(
+    async (folder: FolderSummary) => {
+      const newPinnedState = !folder.pinned;
+      
+      // Update local state immediately for instant UI feedback
+      setFolders((prev) => {
+        const next = prev.map((entry) =>
+          entry.id === folder.id ? { ...entry, pinned: newPinnedState } : entry
+        );
+        // Sort: pinned first, then by creation date
+        return next.sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+      });
+      
+      // Persist to database for authenticated users
+      if (!isAuthenticated) {
+        return;
+      }
+      
+      try {
+        const response = await fetch(`/api/folders/${folder.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pinned: newPinnedState })
+        });
+        
+        if (response.ok) {
+          await fetchFolders();
+        } else {
+          // Revert optimistic update on error
+          setFolders((prev) => {
+            const next = prev.map((entry) =>
+              entry.id === folder.id ? { ...entry, pinned: folder.pinned ?? false } : entry
+            );
+            return next.sort((a, b) => {
+              if (a.pinned && !b.pinned) return -1;
+              if (!a.pinned && b.pinned) return 1;
+              return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+          });
+          
+          // Try to parse error message from response
+          let errorMessage = "Unknown error";
+          try {
+            const errorData = await response.json().catch(() => null);
+            if (errorData?.error) {
+              errorMessage = typeof errorData.error === "string" ? errorData.error : JSON.stringify(errorData.error);
+            } else {
+              const errorText = await response.text().catch(() => null);
+              if (errorText) {
+                errorMessage = errorText;
+              }
+            }
+          } catch {
+            const errorText = await response.text().catch(() => null);
+            if (errorText) {
+              errorMessage = errorText;
+            }
+          }
+          
+          setToast(`Failed to update folder pin status: ${errorMessage}`);
+        }
+      } catch (error) {
+        // Revert optimistic update on network errors
+        setFolders((prev) => {
+          const next = prev.map((entry) =>
+            entry.id === folder.id ? { ...entry, pinned: folder.pinned ?? false } : entry
+          );
+          return next.sort((a, b) => {
+            if (a.pinned && !b.pinned) return -1;
+            if (!a.pinned && b.pinned) return 1;
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          });
+        });
+        setToast(`Failed to update folder pin status: Network error. Please try again.`);
+      }
+    },
+    [isAuthenticated, setToast, fetchFolders]
+  );
+
   const createFolder = useCallback(
     async (name: string): Promise<FolderSummary | null> => {
       if (!isAuthenticated) {
@@ -1977,6 +2072,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     void handlePinDocument(savedDoc);
   }, [activeDocumentId, handlePinDocument, setToast]);
 
+  const isLoadingDocRef = useRef(false);
+  
   const handleLoadDoc = useCallback(
     async (doc: SavedDoc) => {
       if (activeDocumentId && activeDocumentId !== doc.id) {
@@ -1986,6 +2083,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         }
       }
 
+      isLoadingDocRef.current = true;
       const restored = ensurePlaceholderState({
         id: doc.id,
         title: doc.title,
@@ -2005,6 +2103,11 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         setSidebarOpen(false);
       }
       window.scrollTo({ top: 0, behavior: "smooth" });
+      
+      // Reset flag after a short delay to allow editor to initialize
+      setTimeout(() => {
+        isLoadingDocRef.current = false;
+      }, 100);
     },
     [activeDocumentId, isDesktop, saveCurrentDocument]
   );
@@ -2077,10 +2180,14 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         )
       );
 
+      // Check if title actually changed before updating lastEditedAt
+      const savedDoc = savedDocsRef.current.find((d) => d.id === activeDocumentId);
+      const titleChanged = !savedDoc || savedDoc.title !== title;
+      
       bumpSavedDoc(activeDocumentId, (doc) => ({
         ...doc,
         title
-      }));
+      }), titleChanged);
 
       // Clear existing title autosave timeout
       if (titleAutosaveTimeout) {
@@ -2196,11 +2303,20 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
 
       // For subsequent changes, use debounced autosave (only if content is non-empty)
       if (isNowNonEmpty) {
-        // Update saved docs list for existing documents
+        // Skip updating if we're currently loading a document (prevents order changes on click)
+        if (isLoadingDocRef.current) {
+          return;
+        }
+        
+        // Check if content actually changed before updating lastEditedAt
+        const savedDoc = savedDocsRef.current.find((d) => d.id === activeDocumentId);
+        const contentChanged = !savedDoc || savedDoc.content !== content;
+        
+        // Update saved docs list for existing documents (only update timestamp if content changed)
         bumpSavedDoc(activeDocumentId, (doc) => ({
           ...doc,
           content
-        }));
+        }), contentChanged);
 
         const timeout = setTimeout(async () => {
           const currentDoc = outputsRef.current.find((o) => o.id === activeDocumentId);
@@ -2390,6 +2506,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           onApplyStyle={handleApplyStyle}
           onTabChange={(tab) => setSidebarTab(tab)}
           onPinDocument={handlePinDocument}
+          onPinFolder={handlePinFolder}
           onCreateFolder={handleOpenCreateFolder}
           onDocumentDroppedOnFolder={handleDocDroppedOnFolder}
           settingsOpen={sheetOpen}
@@ -2736,7 +2853,7 @@ function FolderPickerDialog({ open, folders, onClose, onSelect, onCreateFolder }
             <button
               key={folder.id}
               type="button"
-              className="flex w-full items-center justify-between rounded-xl border border-brand-stroke/40 px-3 py-2 text-left text-sm text-white transition hover:border-white"
+              className="flex w-full items-center justify-between rounded-3xl border border-brand-stroke/40 px-3 py-2 text-left text-sm text-white transition hover:border-white"
               onClick={() => onSelect(folder.id)}
             >
               <span className="truncate pr-2">{folder.name}</span>
@@ -2761,10 +2878,10 @@ function Toast({ message }: { message: string | null }) {
   return (
     <div
       className={cn(
-        "pointer-events-none fixed top-1/2 left-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 transform rounded-2xl bg-brand-panel px-4 py-3 text-center text-sm text-brand-text shadow-[0_20px_60px_rgba(0,0,0,0.45)] transition-all duration-300 z-[9999]",
+        "fixed top-1/2 left-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 transform rounded-2xl bg-brand-panel px-4 py-3 text-center text-sm text-brand-text shadow-[0_20px_60px_rgba(0,0,0,0.45)] transition-all duration-300 z-[9999] select-text",
         {
-          "opacity-100 translate-y-[-50%]": Boolean(message),
-          "opacity-0 translate-y-[-40%]": !message
+          "opacity-100 translate-y-[-50%] pointer-events-auto": Boolean(message),
+          "opacity-0 translate-y-[-40%] pointer-events-none": !message
         }
       )}
     >
@@ -2826,6 +2943,7 @@ type WorkspaceSidebarProps = {
   onSelect: (doc: SavedDoc) => void;
   onApplyStyle: (style: SavedDoc) => void;
   onPinDocument?: (doc: SavedDoc) => void;
+  onPinFolder?: (folder: FolderSummary) => void;
   onCreateFolder: () => void;
   onDocumentDroppedOnFolder?: (folderId: string, docId: string) => void;
   settingsOpen?: boolean;
@@ -2858,6 +2976,7 @@ function WorkspaceSidebar({
   onSelect,
   onApplyStyle,
   onPinDocument,
+  onPinFolder,
   onCreateFolder,
   onDocumentDroppedOnFolder,
   settingsOpen = false
@@ -3006,7 +3125,7 @@ function WorkspaceSidebar({
       return <p className="text-sm text-brand-muted">{emptyLabel}</p>;
     }
     return (
-      <ul className="space-y-3">
+      <ul className="space-y-1.5">
         {items.map((doc) => {
           const isActive = activeDocumentId === doc.id;
           const preview = getContentPreview(doc.content);
@@ -3111,30 +3230,17 @@ function WorkspaceSidebar({
     }
 
     return (
-      <div className="pt-3 border-t border-brand-stroke/40 bg-brand-panel/95 backdrop-blur-sm">
-        <div className="mb-4 flex items-center justify-between px-3">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-white">Folders</p>
-            <button
-              type="button"
-              onMouseDown={handleButtonMouseDown}
-              onClick={onCreateFolder}
-              className="inline-flex items-center justify-center rounded-full border border-brand-stroke/50 p-1 text-xs text-brand-muted transition hover:border-white hover:text-white"
-              title="Create folder"
-            >
-              <span className="material-symbols-outlined text-base leading-none">add</span>
-            </button>
-          </div>
+      <div className="border-t border-brand-stroke/40 bg-brand-panel/95 backdrop-blur-sm">
+        <div className="pt-2 mb-2 pb-2 flex items-center gap-2 px-3 bg-black/20 rounded">
+          <p className="text-sm font-semibold text-white">Folders</p>
           <button
             type="button"
             onMouseDown={handleButtonMouseDown}
-            onClick={() => setFolderFilterId(null)}
-            className={cn(
-              "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-              effectiveFolderFilterId === null ? "border-white bg-white/10 text-white" : "border-brand-stroke/50 text-brand-muted hover:border-white hover:text-white"
-            )}
+            onClick={onCreateFolder}
+            className="inline-flex items-center justify-center rounded-full border border-brand-stroke/50 py-0.5 px-0.5 text-xs text-brand-muted transition hover:border-white hover:text-white"
+            title="Create folder"
           >
-            All
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: '16px' }}>add</span>
           </button>
         </div>
         {folders.length === 0 ? (
@@ -3184,11 +3290,32 @@ function WorkspaceSidebar({
                     }
                   }}
                   className={cn(
-                    "aspect-square relative flex flex-col items-center justify-start rounded-lg border transition p-[7px]",
+                    "aspect-square relative flex flex-col items-center justify-start rounded-2xl border transition p-[7px] group",
                     isSelected ? "border-white bg-white/10 text-white" : "border-brand-stroke/50 bg-black/10 text-brand-muted hover:border-white hover:text-white hover:bg-black/15",
                     isDragTarget ? "border-brand-blue text-brand-blue bg-black/15" : undefined
                   )}
                 >
+                  {onPinFolder && (
+                    <div
+                      role="button"
+                      aria-label="Pin folder"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onPinFolder(folder);
+                      }}
+                      className={cn(
+                        "absolute top-1 right-1 pt-[5px] pr-[5px] pb-0.5 pl-0.5 text-xs text-white/70 opacity-0 transition group-hover:opacity-50 focus-visible:opacity-50 hover:opacity-100 hover:text-white z-10 cursor-pointer",
+                        folder.pinned ? "opacity-100 group-hover:opacity-100 hover:!opacity-50 text-brand-blue hover:text-brand-blue" : undefined
+                      )}
+                      tabIndex={-1}
+                    >
+                      <span className="material-symbols-rounded text-base leading-none" style={{ transform: 'rotate(45deg) scale(0.66)' }}>push_pin</span>
+                    </div>
+                  )}
                   <div className="flex-1 w-full min-h-0">
                     <AutoFitText 
                       className="text-white"
@@ -3347,7 +3474,37 @@ function WorkspaceSidebar({
             <div className="flex-1 min-h-0 overflow-hidden">
               <Tab.Panels className="h-full">
                 <Tab.Panel className="h-full flex flex-col focus:outline-none">
-                  <div className="flex-1 min-h-0 overflow-y-auto pt-3 px-3">
+                  {(() => {
+                    const activeFolder = effectiveFolderFilterId ? folders.find((f) => f.id === effectiveFolderFilterId) : null;
+                    if (!activeFolder) return null;
+                    return (
+                      <div className="h-[24px] pt-[6px] flex items-center justify-between px-3 mb-2 flex-shrink-0 bg-black/20 rounded">
+                        <div className="flex items-center gap-1 text-xs font-semibold">
+                          <button
+                            type="button"
+                            onMouseDown={handleButtonMouseDown}
+                            onClick={() => setFolderFilterId(null)}
+                            className="text-brand-muted hover:text-white transition font-semibold"
+                          >
+                            All
+                          </button>
+                          <span className="material-symbols-outlined leading-none text-brand-muted" style={{ fontSize: '10.5px' }}>chevron_right</span>
+                          <span className="material-symbols-outlined leading-none text-white" style={{ fontSize: '10px' }}>folder</span>
+                          <span className="text-white font-semibold">{activeFolder.name}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onMouseDown={handleButtonMouseDown}
+                          onClick={() => setFolderFilterId(null)}
+                          className="text-brand-muted hover:text-white transition pt-[3px]"
+                          aria-label="Close folder"
+                        >
+                          <span className="material-symbols-outlined leading-none" style={{ fontSize: '16px' }}>close</span>
+                        </button>
+                      </div>
+                    );
+                  })()}
+                  <div className="flex-1 min-h-0 overflow-y-auto pt-[4px] px-3">
                     {renderDocList(
                       filteredDocs,
                       effectiveFolderFilterId ? "No docs in this folder yet." : "No docs yet. Generate something to see it here."
@@ -3366,28 +3523,22 @@ function WorkspaceSidebar({
               </Tab.Panels>
             </div>
           </Tab.Group>
-          <div className="mt-auto border-t border-brand-stroke/40 pt-5 pb-6 px-5 flex-shrink-0">
+          <div className="mt-auto border-t border-brand-stroke/40 pt-2.5 pb-3 px-5 flex-shrink-0">
             <div className="flex items-center justify-between gap-3">
-              <Link href="/membership" className="flex items-center gap-[5px] hover:opacity-80 transition-opacity">
-                <ProfileAvatar name={userName} size={32} />
-                <div>
-                  <p className="text-[10px] text-brand-muted">Account</p>
-                  <p className="mt-[1px] text-sm font-semibold text-white">{userName}</p>
-                </div>
+              <Link href="/membership" className="flex items-center gap-[3px] hover:opacity-80 transition-opacity">
+                <ProfileAvatar name={userName} size={16} />
+                <p className="text-xs font-semibold text-white">{userName}</p>
               </Link>
-              <div className="flex-shrink-0">
-                <button
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                  }}
-                  onClick={() => signOut({ callbackUrl: "/sign-in" })}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-brand-stroke/70 px-3 py-1.5 text-xs font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
-                  tabIndex={-1}
-                >
-                  <ArrowRightOnRectangleIcon className="h-3 w-3" />
-                  Sign out
-                </button>
-              </div>
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                }}
+                onClick={() => signOut({ callbackUrl: "/sign-in" })}
+                className="text-xs text-brand-muted hover:text-white transition"
+                tabIndex={-1}
+              >
+                Sign out
+              </button>
             </div>
           </div>
         </div>

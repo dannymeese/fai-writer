@@ -31,5 +31,6 @@ export type FolderSummary = {
   name: string;
   createdAt: string;
   documentCount: number;
+  pinned?: boolean;
 };
 
