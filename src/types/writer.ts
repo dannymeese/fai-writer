@@ -12,6 +12,11 @@ export type DocumentFolderReference = {
 
 export type WriterOutput = {
   id: string;
+  /**
+   * Stable client-side key used to keep the editor mounted even if the server id changes.
+   * Defaults to the initial client id.
+   */
+  instanceKey?: string;
   title: string;
   content: string;
   createdAt: string;

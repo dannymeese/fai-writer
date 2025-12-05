@@ -263,6 +263,7 @@ function ensurePlaceholderState(output: WriterOutput): WriterOutput {
   });
   return {
     ...output,
+    instanceKey: output.instanceKey ?? output.id,
     placeholderMeta,
     placeholderValues: nextValues
   };
@@ -297,9 +298,12 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [composeValue, setComposeValue] = useState("");
   const [settings, setSettings] = useState<ComposerSettingsInput>(defaultSettings);
   // Always start with a blank document - don't load previous documents on initial load
-  const [outputs, setOutputs] = useState<WriterOutput[]>(() => {
-    const blankDoc: WriterOutput = ensurePlaceholderState({
-      id: crypto.randomUUID(),
+  const initialBlankDocRef = useRef<WriterOutput | null>(null);
+  if (!initialBlankDocRef.current) {
+    const clientId = crypto.randomUUID();
+    initialBlankDocRef.current = ensurePlaceholderState({
+      id: clientId,
+      instanceKey: clientId,
       title: "Untitled doc",
       content: "",
       createdAt: new Date().toISOString(),
@@ -308,8 +312,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       writingStyle: null,
       styleTitle: null
     });
-    return [blankDoc];
-  });
+  }
+  const [outputs, setOutputs] = useState<WriterOutput[]>(() => [initialBlankDocRef.current!]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetAnchor, setSheetAnchor] = useState<DOMRect | null>(null);
   const [loading, setLoading] = useState(false);
@@ -331,7 +335,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [activeStyle, setActiveStyle] = useState<ActiveStyle | null>(null);
   const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(true);
-  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(() => initialBlankDocRef.current?.id ?? null);
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [autosaveTimeout, setAutosaveTimeout] = useState<NodeJS.Timeout | null>(null);
   const [titleAutosaveTimeout, setTitleAutosaveTimeout] = useState<NodeJS.Timeout | null>(null);
@@ -959,6 +963,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     const tempId = crypto.randomUUID();
     const pendingOutput: WriterOutput = ensurePlaceholderState({
       id: tempId,
+      instanceKey: tempId,
       title: smartTitleFromPrompt(currentPrompt),
       content: "",
       createdAt: new Date().toISOString(),
@@ -999,6 +1004,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       const nextCount = outputs.length + 1;
       const newOutput: WriterOutput = ensurePlaceholderState({
         id: finalId,
+        instanceKey: tempId,
         title: data.title ?? smartTitleFromPrompt(currentPrompt),
         content: data.content,
         createdAt: data.createdAt ?? new Date().toISOString(),
@@ -2393,8 +2399,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     async (content: string) => {
       // If no active document but there's content, create one automatically
       if (!activeDocumentId && content.trim()) {
+        const clientId = crypto.randomUUID();
         const newDoc: WriterOutput = ensurePlaceholderState({
-          id: crypto.randomUUID(),
+          id: clientId,
+          instanceKey: clientId,
           title: "Untitled doc",
           content: content.trim(),
           createdAt: new Date().toISOString(),
@@ -2411,9 +2419,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         // Immediately save to server (no debounce for initial creation)
         const savedId = await persistDocumentToServer(newDoc, content.trim());
         if (savedId && savedId !== newDoc.id) {
+          const instanceKey = newDoc.instanceKey ?? newDoc.id;
           setOutputs((prev) =>
             prev.map((entry) =>
-              entry.id === newDoc.id ? { ...entry, id: savedId } : entry
+              entry.id === newDoc.id ? { ...entry, id: savedId, instanceKey } : entry
             )
           );
           setActiveDocumentId(savedId);
@@ -2453,9 +2462,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           savedId
         });
         if (savedId && savedId !== activeDocumentId) {
+          const instanceKey = currentDoc?.instanceKey ?? activeDocumentId;
           setOutputs((prev) =>
             prev.map((entry) =>
-              entry.id === activeDocumentId ? { ...entry, id: savedId } : entry
+              entry.id === activeDocumentId ? { ...entry, id: savedId, instanceKey } : entry
             )
           );
           setActiveDocumentId(savedId);
@@ -2492,9 +2502,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             pinned: savedDocsRef.current.find((s) => s.id === activeDocumentId)?.pinned
           });
           if (savedId && savedId !== activeDocumentId) {
+            const instanceKey = currentDoc?.instanceKey ?? activeDocumentId;
             setOutputs((prev) =>
               prev.map((entry) =>
-                entry.id === activeDocumentId ? { ...entry, id: savedId } : entry
+                entry.id === activeDocumentId ? { ...entry, id: savedId, instanceKey } : entry
               )
             );
             setActiveDocumentId(savedId);
@@ -3432,7 +3443,7 @@ function WorkspaceSidebar({
 
     return (
       <div className="border-t border-brand-stroke/40 bg-brand-panel/95 backdrop-blur-sm">
-        <div className="pt-2 mb-2 pb-2 flex items-center gap-2 px-3 bg-black/20 rounded">
+        <div className="pt-2 pb-2 flex items-center gap-2 px-3 bg-black/20 rounded">
           <p className="text-sm font-semibold text-white">Folders</p>
           <button
             type="button"
@@ -3455,7 +3466,7 @@ function WorkspaceSidebar({
             Create folder
           </button>
         ) : (
-          <div className="max-h-[200px] overflow-y-auto px-3">
+          <div className="max-h-[200px] overflow-y-auto px-3 pt-2">
             <div className="grid grid-cols-3 gap-2">
             {folders.map((folder: FolderSummary) => {
               const isSelected = effectiveFolderFilterId === folder.id;
@@ -3651,7 +3662,7 @@ function WorkspaceSidebar({
             </div>
           )}
           <Tab.Group className="flex flex-1 flex-col min-h-0" selectedIndex={selectedIndex} onChange={handleTabChange}>
-            <Tab.List className="flex bg-brand-background/40 text-xs font-semibold uppercase flex-shrink-0 w-full p-1.5">
+            <Tab.List className="flex bg-brand-background/40 text-xs font-semibold uppercase flex-shrink-0 w-full p-1.5 h-[60px]">
               {tabs.map((tab) => (
                 <Tab
                   key={tab.id}

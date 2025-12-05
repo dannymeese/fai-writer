@@ -224,6 +224,7 @@ export default function MarkdownEditor({
     immediatelyRender: false, // Prevent SSR hydration issues
     onUpdate: ({ editor }) => {
       // Mark this as an internal update to prevent cursor reset
+      // Keep it set until after onChange completes to prevent content sync loop
       isInternalUpdateRef.current = true;
       
       // Small delay to ensure formatting is applied before converting to markdown
@@ -279,12 +280,16 @@ export default function MarkdownEditor({
           return Array.from(tempDiv.childNodes)
             .map(convertNode)
             .join('')
-            .replace(/\n{3,}/g, '\n\n')
-            .trim();
+            .replace(/\n{3,}/g, '\n\n'); // do not trim; preserve trailing newlines/blank lines
         }
         
         const markdown = htmlToMarkdown(html);
         onChange(markdown);
+        // Reset the flag after onChange completes, but use another setTimeout
+        // to ensure any state updates from onChange have been processed
+        setTimeout(() => {
+          isInternalUpdateRef.current = false;
+        }, 0);
       }, 0);
     },
     editorProps: {
@@ -396,9 +401,10 @@ export default function MarkdownEditor({
 
       // Get cursor position relative to editor container
       const coords = editor.view.coordsAtPos(from);
-      const coordsEnd = editor.view.coordsAtPos(from + 1); // Get next position to calculate line height
-      const lineHeight = coordsEnd.top - coords.top || 24; // Default to 24px if can't calculate
-      const cursorHeight = lineHeight * 1.5; // 1.5x taller (keep current height)
+      // Fix the cursor height to 40px to avoid jitter across lines
+      const cursorHeight = 40;
+      // Use a consistent line height for positioning the cursor
+      const lineHeight = 40;
 
       // Get editor container position
       const editorElement = editor.view.dom;
@@ -420,7 +426,7 @@ export default function MarkdownEditor({
       const animation = editor.isFocused ? 'blink 1s infinite' : 'none';
 
       // Calculate position relative to container using dynamic margins
-      let relativeLeft = coords.left - containerRect.left;
+      let relativeLeft = coords.left - containerRect.left - 2; // shift cursor 2px left
       
       // Constrain cursor to content area (never in margins)
       if (relativeLeft < resolvedMarginLeft) {
@@ -433,7 +439,7 @@ export default function MarkdownEditor({
       // Capital X center is typically around 35-40% down from the top of the line
       // We want to center the cursor on that point
       const capitalXCenter = coords.top + (lineHeight * 0.375); // ~37.5% down for capital X center
-      const relativeTop = capitalXCenter - containerRect.top - (cursorHeight / 2);
+      const relativeTop = capitalXCenter - containerRect.top - (cursorHeight / 2) - 6; // lift cursor up 6px
 
       // Update position and size
       cursorMarker.style.cssText = `
@@ -1570,8 +1576,8 @@ export default function MarkdownEditor({
     if (!editor) return;
     
     // Skip if this update came from the editor itself (user typing)
+    // Don't reset the flag here - let it be reset after onChange completes
     if (isInternalUpdateRef.current) {
-      isInternalUpdateRef.current = false;
       return;
     }
     

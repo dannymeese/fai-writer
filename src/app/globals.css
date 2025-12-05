@@ -135,6 +135,7 @@ textarea::placeholder {
   pointer-events: none;
   z-index: 1; /* Behind text */
   animation: blink 1s infinite;
+  height: 40px; /* Fixed height to prevent jitter */
 }
 
 /* Custom selection overlay - behind text */

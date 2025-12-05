@@ -1150,7 +1150,7 @@ export default function DocumentEditor({
               </div>
             ) : (
               <MarkdownEditor
-                key={displayDocument.id}
+                key={displayDocument.instanceKey || displayDocument.id}
                 content={displayDocument.content}
                 onChange={onDocumentChange}
                 onSelectionChange={handleSelectionChange}
