@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
-import { Tab } from "@headlessui/react";
+import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect, Fragment } from "react";
+import { Tab, Dialog, Transition } from "@headlessui/react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import NextImage from "next/image";
+import { MinusSmallIcon } from "@heroicons/react/24/outline";
 import DocumentEditor from "../editors/DocumentEditor";
 import ComposeBar from "../forms/ComposeBar";
 import SettingsSheet from "../modals/SettingsSheet";
@@ -699,20 +700,12 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }, [fetchBrandKeyMessaging]);
 
   // Handle removing a key messaging item
+  // Note: The actual deletion is handled in BrandCard.handleRemoveMessage
+  // This function just refreshes the list after deletion
   const handleRemoveKeyMessaging = useCallback(async (id: string) => {
     if (!isAuthenticated) return;
-    try {
-      const response = await fetch(`/api/brand/key-messaging?id=${id}`, {
-        method: "DELETE"
-      });
-      if (response.ok) {
-        await fetchBrandKeyMessaging();
-      } else {
-        console.error("Failed to remove key messaging item");
-      }
-    } catch (error) {
-      console.error("Error removing key messaging item", error);
-    }
+    // Just refresh the list - deletion is already handled by BrandCard
+    await fetchBrandKeyMessaging();
   }, [isAuthenticated, fetchBrandKeyMessaging]);
 
   const handleClearBrand = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
@@ -2806,6 +2799,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         anchorRect={sheetAnchor}
         onBrandUpdate={handleBrandSummaryUpdate}
         initialBrandDefined={hasBrand}
+        activeBrandId={activeBrandId}
       />
       <Toast message={toast} onClose={() => setToast(null)} />
     </div>
@@ -3790,202 +3784,299 @@ function BrandCard({
   isActive = false
 }: BrandCardProps) {
   const [localActive, setLocalActive] = useState(isActive);
-  const [editMode, setEditMode] = useState(false);
-  const [newMessage, setNewMessage] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [removingId, setRemovingId] = useState<string | null>(null);
-  const [clearing, setClearing] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [brandName, setBrandName] = useState(name);
+  const [brandInfo, setBrandInfo] = useState(summary || "");
+  const [brandProcessing, setBrandProcessing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [removingMessageId, setRemovingMessageId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalActive(isActive);
   }, [isActive]);
 
-  const handleAddMessage = async () => {
-    if (!allowKeyMessageActions || !onAddKeyMessage) return;
-    const payload = newMessage.trim();
-    if (!payload) return;
-    setAdding(true);
-    setFeedback(null);
-    const result = await onAddKeyMessage(payload);
-    if (result?.success) {
-      setNewMessage("");
-    } else if (result?.error) {
-      setFeedback(result.error);
-    } else {
-      setFeedback("Unable to add key message.");
+  useEffect(() => {
+    setBrandName(name);
+  }, [name]);
+
+  useEffect(() => {
+    setBrandInfo(summary || "");
+  }, [summary]);
+
+  const handleSelectBrand = () => {
+    if (onUseBrand) {
+      setLocalActive(true);
+      onUseBrand(id);
     }
-    setAdding(false);
   };
 
-  const handleRemoveMessage = async (id: string) => {
-    if (!editMode || !onRemoveKeyMessage) {
+  const handleEditBrand = async () => {
+    if (!brandInfo.trim()) {
+      setErrorMessage("Brand information is required");
       return;
     }
-    const confirmed = window.confirm("Remove this key message?");
-    if (!confirmed) return;
-    setRemovingId(id);
+
+    setBrandProcessing(true);
+    setErrorMessage(null);
+
     try {
-      await onRemoveKeyMessage(id);
+      const requestBody = {
+        brandName: brandName?.trim() || undefined,
+        brandInfo: brandInfo.trim()
+      };
+
+      const response = await fetch("/api/brand", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody)
+      });
+
+      const data = await response.json();
+
+      if (response.ok && !data?.error) {
+        setEditModalOpen(false);
+        // Refresh the page or update parent state
+        window.location.reload();
+      } else {
+        setErrorMessage(data?.error || "Failed to update brand");
+      }
+    } catch (error) {
+      console.error("Failed to update brand", error);
+      setErrorMessage("Failed to update brand. Please try again.");
     } finally {
-      setRemovingId(null);
+      setBrandProcessing(false);
     }
   };
 
-  const handleClearSummary = async () => {
-    if (!editMode || !onClearBrand) {
+  const handleRemoveMessage = async (messageId: string) => {
+    if (confirmDeleteId !== messageId) {
+      // First click - show confirmation
+      setConfirmDeleteId(messageId);
       return;
     }
-    const confirmed = window.confirm("Remove the brand summary? Key messages stay saved until you delete them.");
-    if (!confirmed) return;
-    setClearing(true);
-    const result = await onClearBrand();
-    if (!result?.success) {
-      if (result?.error) {
-        setFeedback(result.error);
+
+    // Second click - confirm deletion
+    setRemovingMessageId(messageId);
+    setConfirmDeleteId(null);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(`/api/brand/key-messaging?id=${messageId}`, {
+        method: "DELETE"
+      });
+
+      if (response.ok) {
+        // Call the parent callback if provided, or reload
+        if (onRemoveKeyMessage) {
+          await onRemoveKeyMessage(messageId);
+        } else {
+          window.location.reload();
+        }
+      } else {
+        const data = await response.json().catch(() => ({ error: "Failed to remove message" }));
+        setErrorMessage(data?.error || "Failed to remove message");
+        setRemovingMessageId(null);
       }
-      setClearing(false);
-      return;
+    } catch (error) {
+      console.error("Failed to remove message", error);
+      setErrorMessage("Failed to remove message. Please try again.");
+      setRemovingMessageId(null);
     }
-    setClearing(false);
-    setEditMode(false);
   };
+
+  const firstLetter = name?.charAt(0)?.toUpperCase() || "?";
 
   return (
-    <div className="rounded-3xl border border-brand-stroke/50 bg-brand-background/70 p-5 shadow-[0_18px_35px_rgba(0,0,0,0.45)]">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-brand-muted">Brand</p>
-          <p className="text-xl font-semibold text-white">{name}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {onUseBrand && (
-            <button
-              type="button"
-              className={cn(
-                "rounded-full border px-4 py-1.5 text-xs font-semibold transition",
-                localActive
-                  ? "border-brand-blue bg-brand-blue/20 text-brand-blue"
-                  : "border-brand-stroke/60 text-brand-muted hover:border-brand-blue hover:text-brand-blue"
+    <>
+      <div
+        className={cn(
+          "group relative rounded-2xl border transition-all duration-200 cursor-pointer",
+          isActive
+            ? "border-brand-blue bg-brand-background/80 shadow-[0_8px_24px_rgba(59,130,246,0.3)]"
+            : "border-brand-stroke/40 bg-brand-background/60 hover:border-brand-stroke/60 hover:bg-brand-background/70"
+        )}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        <div className="p-6">
+          {/* Large capital first letter */}
+          <div className="flex items-center gap-4 mb-4">
+            <div className={cn(
+              "flex items-center justify-center rounded-xl w-16 h-16 text-4xl font-bold transition-colors",
+              isActive
+                ? "bg-brand-blue/20 text-brand-blue"
+                : "bg-brand-background/80 text-brand-text/60 group-hover:text-brand-text/80"
+            )}>
+              {firstLetter}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-semibold text-white truncate">{name}</h3>
+              {isActive && (
+                <p className="text-xs text-brand-blue mt-1">Active</p>
               )}
-              onClick={() => {
-                setLocalActive(true); // optimistic immediate UI update
-                onUseBrand?.(id);
-              }}
-            >
-              {localActive ? "Active" : "Use this brand"}
-            </button>
+            </div>
+          </div>
+
+          {/* Hover overlay with Select Brand button */}
+          {isHovered && !isActive && onUseBrand && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/60 backdrop-blur-sm transition-opacity">
+              <button
+                type="button"
+                onClick={handleSelectBrand}
+                className="rounded-full bg-brand-blue px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-blue/80 shadow-lg"
+              >
+                Select Brand
+              </button>
+            </div>
           )}
+
+          {/* Edit button - always visible */}
           <button
             type="button"
+            onClick={() => setEditModalOpen(true)}
             className={cn(
-              "rounded-full border px-4 py-1.5 text-xs font-semibold transition",
-              editMode
-                ? "border-brand-blue text-brand-blue"
-                : "border-brand-stroke/60 text-brand-muted hover:border-brand-blue hover:text-brand-blue"
+              "absolute top-3 right-3 rounded-full p-2 transition",
+              isActive
+                ? "text-brand-blue hover:bg-brand-blue/20"
+                : "text-brand-muted hover:text-brand-text hover:bg-brand-background/80"
             )}
-            onClick={() => {
-              setEditMode((prev) => !prev);
-              setFeedback(null);
-            }}
+            aria-label="Edit brand"
           >
-            {editMode ? "Done" : "Edit brand"}
+            <span className="material-symbols-outlined text-lg">edit</span>
           </button>
         </div>
       </div>
-      <div className="mt-4 rounded-2xl border border-brand-stroke/40 bg-brand-background/80 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-white">Brand summary</p>
-          {editMode && hasSummary && onClearBrand && (
-            <button
-              type="button"
-              className="text-xs font-semibold text-brand-muted transition hover:text-red-400 disabled:opacity-60"
-              onClick={handleClearSummary}
-              disabled={clearing}
+
+      {/* Edit Brand Modal */}
+      <Transition show={editModalOpen} as={Fragment}>
+        <Dialog onClose={() => setEditModalOpen(false)} className="relative z-[1200]">
+          <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-200"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-150"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
             >
-              {clearing ? "Removing…" : "Remove summary"}
-            </button>
-          )}
-        </div>
-        <p className="mt-2 whitespace-pre-line text-sm text-brand-muted/90">
-          {summary?.trim() || "No summary defined yet. Open Settings to add one."}
-        </p>
-      </div>
-
-      <div className="mt-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-semibold text-white">Key messages</p>
-          {editMode && (
-            <span className="text-[11px] uppercase tracking-wide text-brand-muted">
-              Removal available while editing
-            </span>
-          )}
-        </div>
-        <div className="mt-3 max-h-60 space-y-2 overflow-y-auto pr-1">
-          {keyMessages.length === 0 ? (
-            <p className="text-sm text-brand-muted">No key messages yet. Add one below.</p>
-          ) : (
-            keyMessages.map((item) => (
-              <div
-                key={item.id}
-                className="group flex items-start justify-between gap-3 rounded-2xl border border-brand-stroke/40 bg-brand-background/60 p-3"
-              >
-                <div>
-                  <p className="text-sm text-brand-text/90">{item.text}</p>
-                  <p className="mt-1 text-[11px] text-brand-muted">
-                    Saved {formatTimestamp(item.createdAt)}
-                  </p>
-                </div>
-                {editMode && (
+              <Dialog.Panel className="w-full max-w-2xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/95 p-6 text-brand-text shadow-[0_30px_80px_rgba(0,0,0,0.55)]">
+                <header className="mb-4 flex items-center justify-between">
+                  <Dialog.Title className="font-display text-2xl text-brand-text">Edit Brand</Dialog.Title>
                   <button
-                    type="button"
-                    className="rounded-full border border-transparent p-1 text-brand-muted transition hover:border-brand-stroke/50 hover:text-red-400 disabled:opacity-60"
-                    onClick={() => handleRemoveMessage(item.id)}
-                    disabled={removingId === item.id}
-                    aria-label="Remove key message"
+                    onClick={() => setEditModalOpen(false)}
+                    className="rounded-full border border-brand-stroke/70 p-2 text-brand-text hover:text-brand-blue"
+                    aria-label="Close"
                   >
-                    <span className="material-symbols-outlined text-lg">delete</span>
+                    <MinusSmallIcon className="h-5 w-5" />
                   </button>
-                )}
-              </div>
-            ))
-          )}
-        </div>
+                </header>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm text-brand-muted">Brand Name</label>
+                    <input
+                      type="text"
+                      value={brandName}
+                      onChange={(e) => setBrandName(e.target.value.substring(0, 100))}
+                      placeholder="Enter brand name (optional)"
+                      maxLength={100}
+                      className="mt-2 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-brand-muted">
+                      Paste your brand information, style guides, vocabulary, tone, and any other details about your brand. The AI will create a concise 400-character summary.
+                    </label>
+                    <textarea
+                      value={brandInfo}
+                      onChange={(e) => setBrandInfo(e.target.value)}
+                      placeholder="Paste brand information here..."
+                      className="mt-2 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
+                      rows={12}
+                    />
+                  </div>
 
-        {allowKeyMessageActions ? (
-          <div className="mt-4 rounded-2xl border border-brand-stroke/40 bg-brand-background/60 p-4">
-            <label className="text-xs uppercase tracking-wide text-brand-muted">
-              Add new key message
-            </label>
-            <textarea
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              rows={3}
-              className="mt-2 w-full rounded-xl border border-brand-stroke/50 bg-black/20 px-3 py-2 text-sm text-brand-text placeholder:text-brand-muted focus:border-brand-blue focus:outline-none"
-              placeholder="Paste or type a key phrase to save to this brand."
-            />
-            {feedback && (
-              <p className="mt-2 text-xs text-red-400">{feedback}</p>
-            )}
-            <div className="mt-3 flex items-center justify-between">
-              <p className="text-[11px] text-brand-muted">You can also highlight text in the editor and choose “Add to Brand”.</p>
-              <button
-                type="button"
-                className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-blue/80 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={handleAddMessage}
-                disabled={adding || !newMessage.trim()}
-              >
-                {adding ? "Saving…" : "Add message"}
-              </button>
-            </div>
+                  {/* Key Messages Section */}
+                  {keyMessages.length > 0 && (
+                    <div>
+                      <label className="text-sm text-brand-muted mb-2 block">
+                        Key Messages
+                      </label>
+                      <div className="mt-2 space-y-2 max-h-60 overflow-y-auto pr-1">
+                        {keyMessages.map((message) => (
+                          <div
+                            key={message.id}
+                            className={cn(
+                              "group flex items-start justify-between gap-3 rounded-xl border p-3 transition-colors",
+                              confirmDeleteId === message.id
+                                ? "border-red-400/50 bg-red-400/10"
+                                : "border-brand-stroke/40 bg-brand-background/60"
+                            )}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-brand-text/90">{message.text}</p>
+                              <p className="mt-1 text-[11px] text-brand-muted">
+                                Saved {formatTimestamp(message.createdAt)}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {confirmDeleteId === message.id && (
+                                <span className="text-xs text-red-400 mr-2">Confirm?</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveMessage(message.id)}
+                                disabled={removingMessageId === message.id}
+                                className={cn(
+                                  "rounded-full p-1.5 transition",
+                                  confirmDeleteId === message.id
+                                    ? "bg-red-400/20 text-red-400 hover:bg-red-400/30"
+                                    : "text-brand-muted hover:text-red-400 hover:bg-brand-background/80",
+                                  removingMessageId === message.id ? "opacity-60 cursor-not-allowed" : undefined
+                                )}
+                                aria-label="Remove key message"
+                              >
+                                <span className="material-symbols-outlined text-lg">
+                                  {confirmDeleteId === message.id ? "check" : "remove"}
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {errorMessage && (
+                    <p className="text-sm text-red-400">{errorMessage}</p>
+                  )}
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditModalOpen(false)}
+                      className="rounded-full border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleEditBrand}
+                      disabled={!brandInfo.trim() || brandProcessing}
+                      className="rounded-full bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-blue/80 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {brandProcessing ? "Processing..." : "Save Brand"}
+                    </button>
+                  </div>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
           </div>
-        ) : (
-          <p className="mt-4 text-xs text-brand-muted">
-            Sign in to capture key messages directly from the editor.
-          </p>
-        )}
-      </div>
-    </div>
+        </Dialog>
+      </Transition>
+    </>
   );
 }
 
@@ -4057,4 +4148,5 @@ function ProfileAvatar({ name, size = 32 }: { name: string; size?: number }) {
     </div>
   );
 }
+
 

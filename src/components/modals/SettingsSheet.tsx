@@ -15,6 +15,7 @@ type SettingsSheetProps = {
   anchorRect: DOMRect | null;
   onBrandUpdate?: (summary: string | null, name?: string | null) => void;
   initialBrandDefined?: boolean;
+  activeBrandId?: string | null;
 };
  
 const marketLabels = {
@@ -45,7 +46,8 @@ export default function SettingsSheet({
   onChange,
   anchorRect,
   onBrandUpdate,
-  initialBrandDefined = false
+  initialBrandDefined = false,
+  activeBrandId
 }: SettingsSheetProps) {
   const [brandModalOpen, setBrandModalOpen] = useState(false);
   const [brandInput, setBrandInput] = useState("");
@@ -70,6 +72,58 @@ export default function SettingsSheet({
     setHasBrand(initialBrandDefined);
   }, [initialBrandDefined]);
 
+  // Sync selectedBrandId when activeBrandId changes from parent (e.g., when brand is selected in sidebar)
+  useEffect(() => {
+    // Only sync if activeBrandId prop is provided and different from current selection
+    if (activeBrandId === undefined) return; // Don't sync if prop not provided
+    
+    if (activeBrandId !== null && activeBrandId !== selectedBrandId) {
+      // Find the brand in current options
+      const brand = brandOptions.find((b) => b.id === activeBrandId);
+      if (brand) {
+        // Only update if actually different to avoid unnecessary re-renders
+        setSelectedBrandId(activeBrandId);
+        const summary = brand.info ?? null;
+        const name = brand.name ?? null;
+        const newHasBrand = Boolean(summary) || Boolean(name);
+        if (newHasBrand !== hasBrand || currentBrandName !== name || currentBrandInfo !== summary) {
+          setHasBrand(newHasBrand);
+          setCurrentBrandName(name || "");
+          setCurrentBrandInfo(summary || "");
+          onBrandUpdate?.(summary, name);
+        }
+      } else {
+        // Brand not in current options, fetch fresh list
+        fetch("/api/brand?all=true")
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.brands && Array.isArray(data.brands)) {
+              setBrandOptions(data.brands);
+              const brand = data.brands.find((b: any) => b.id === activeBrandId);
+              if (brand) {
+                setSelectedBrandId(activeBrandId);
+                const summary = brand.info ?? null;
+                const name = brand.name ?? null;
+                setHasBrand(Boolean(summary) || Boolean(name));
+                setCurrentBrandName(name || "");
+                setCurrentBrandInfo(summary || "");
+                onBrandUpdate?.(summary, name);
+              }
+            }
+          })
+          .catch((err) => console.error("Failed to sync brand", err));
+      }
+    } else if (activeBrandId === null && selectedBrandId) {
+      // Brand was deselected in parent
+      setSelectedBrandId("");
+      setHasBrand(false);
+      setCurrentBrandName("");
+      setCurrentBrandInfo("");
+      onBrandUpdate?.(null, null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBrandId]); // Only depend on activeBrandId to avoid unnecessary runs
+
   // Check if brand is defined on mount and when modal opens
   useEffect(() => {
     if (!open) {
@@ -85,7 +139,8 @@ export default function SettingsSheet({
           const data = await listResponse.json();
           if (Array.isArray(data.brands) && data.brands.length > 0) {
             setBrandOptions(data.brands);
-            const activeId = data.activeBrandId ?? "";
+            // Use activeBrandId prop if provided, otherwise use data.activeBrandId
+            const activeId = activeBrandId ?? data.activeBrandId ?? "";
             // Only set on initial load (when selectedBrandId is empty) or if activeBrandId changed
             const finalSelectedId = (() => {
               // If user hasn't selected anything yet, use activeBrandId
@@ -142,7 +197,7 @@ export default function SettingsSheet({
       // Reset selectedBrandId when modal closes so it can reload fresh next time
       setSelectedBrandId("");
     }
-  }, [open]);
+  }, [open, activeBrandId]);
 
   async function handleDefineBrand() {
     console.log("handleDefineBrand called", { 

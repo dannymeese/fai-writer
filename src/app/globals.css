@@ -138,6 +138,21 @@ textarea::placeholder {
   height: 40px; /* Fixed height to prevent jitter */
 }
 
+/* Always show scrollbars for scrollable sidebar sections */
+.overflow-y-auto {
+  scrollbar-width: thin;
+}
+.overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+}
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+
 /* Custom selection overlay - behind text */
 .custom-selection-overlay {
   position: absolute;
