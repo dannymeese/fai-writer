@@ -63,6 +63,8 @@ export default function SettingsSheet({
   const [hoveredMarketTier, setHoveredMarketTier] = useState<string | null>(null);
   const [marketTierTooltipTimeout, setMarketTierTooltipTimeout] = useState<NodeJS.Timeout | null>(null);
   const [errorPopup, setErrorPopup] = useState<ErrorDetails | null>(null);
+  const [brandOptions, setBrandOptions] = useState<Array<{ id: string; name: string | null; info: string }>>([]);
+  const [selectedBrandId, setSelectedBrandId] = useState<string>("");
 
   useEffect(() => {
     setHasBrand(initialBrandDefined);
@@ -70,14 +72,62 @@ export default function SettingsSheet({
 
   // Check if brand is defined on mount and when modal opens
   useEffect(() => {
+    if (!open) {
+      // Don't reset selectedBrandId when modal closes - preserve user's selection
+      return;
+    }
+    
     async function checkBrand() {
       try {
+        // Prefer full brands list (includes activeBrandId and stored brands even if deselected)
+        const listResponse = await fetch("/api/brand?all=true");
+        if (listResponse.ok) {
+          const data = await listResponse.json();
+          if (Array.isArray(data.brands) && data.brands.length > 0) {
+            setBrandOptions(data.brands);
+            const activeId = data.activeBrandId ?? "";
+            // Only set on initial load (when selectedBrandId is empty) or if activeBrandId changed
+            const finalSelectedId = (() => {
+              // If user hasn't selected anything yet, use activeBrandId
+              if (!selectedBrandId) return activeId;
+              // If user selected a brand, keep their selection unless it's no longer valid
+              const isValidSelection = data.brands.some((b: any) => b.id === selectedBrandId);
+              if (isValidSelection) return selectedBrandId;
+              // If selection is invalid, fall back to activeBrandId
+              return activeId;
+            })();
+            
+            setSelectedBrandId(finalSelectedId);
+            
+            // Use the selected brand (either user's selection or active brand) to set state
+            const selectedBrand = data.brands.find((b: any) => b.id === finalSelectedId);
+            if (selectedBrand) {
+              const summary = selectedBrand.info ?? null;
+              const name = selectedBrand.name ?? null;
+              setHasBrand(Boolean(summary) || Boolean(name));
+              setCurrentBrandName(name || "");
+              setCurrentBrandInfo(summary || "");
+              onBrandUpdate?.(summary, name);
+            } else {
+              // No selection; keep defaults but allow dropdown to show options
+              setHasBrand(false);
+              setCurrentBrandName("");
+              setCurrentBrandInfo("");
+            }
+            return;
+          } else {
+            setBrandOptions([]);
+            setSelectedBrandId("");
+          }
+        }
+
+        // Fallback to legacy single-brand endpoint (guests or no brands)
         const response = await fetch("/api/brand");
         if (response.ok) {
           const data = await response.json();
           const summary = data.brandInfo ?? null;
           const name = data.brandName ?? null;
-          setHasBrand(!!summary);
+          setHasBrand(Boolean(summary) || Boolean(name));
           setCurrentBrandName(name || "");
           setCurrentBrandInfo(summary || "");
           onBrandUpdate?.(summary, name);
@@ -88,8 +138,11 @@ export default function SettingsSheet({
     }
     if (open) {
       checkBrand();
+    } else {
+      // Reset selectedBrandId when modal closes so it can reload fresh next time
+      setSelectedBrandId("");
     }
-  }, [open, onBrandUpdate]);
+  }, [open]);
 
   async function handleDefineBrand() {
     console.log("handleDefineBrand called", { 
@@ -430,6 +483,7 @@ export default function SettingsSheet({
       setCurrentBrandName("");
       setCurrentBrandInfo("");
       setHasBrand(false);
+      setSelectedBrandId(""); // Reset dropdown to "Select Brand"
       onBrandUpdate?.(null, null);
     } catch (error) {
       console.error("Failed to clear brand info", error);
@@ -459,7 +513,7 @@ export default function SettingsSheet({
     onChange({ ...settings, [field]: value || null });
    }
 
-  function clearAllAdjustments() {
+  async function clearAllAdjustments() {
     onChange({
       marketTier: null,
       characterLength: null,
@@ -468,6 +522,11 @@ export default function SettingsSheet({
       benchmark: null,
       avoidWords: null
     });
+    
+    // Also deselect brand if one is selected
+    if (hasBrand) {
+      await handleClearBrand();
+    }
   }
 
   const hasCustomAdjustments = Boolean(
@@ -476,7 +535,8 @@ export default function SettingsSheet({
     settings.wordLength ||
     settings.gradeLevel ||
     settings.benchmark ||
-    settings.avoidWords
+    settings.avoidWords ||
+    hasBrand
   );
  
    return (
@@ -723,89 +783,80 @@ export default function SettingsSheet({
                   />
                 </div>
                 <div className="pt-2 border-t border-brand-stroke/60">
-                  <div className="flex items-center gap-3 mb-4">
-                    <label className="text-sm text-brand-muted whitespace-nowrap w-24">Select brand</label>
-                    <select
-                      value={hasBrand ? "current" : ""}
-                      onChange={(e) => {
-                        if (e.target.value === "current" && hasBrand) {
-                          // Brand is already selected, this is just for display
-                        }
-                      }}
-                      className="flex-1 rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
-                      disabled={!hasBrand}
-                    >
-                      {hasBrand ? (
-                        <option value="current">{currentBrandName || "Untitled Brand"}</option>
-                      ) : (
-                        <option value="">No brand defined</option>
-                      )}
-                    </select>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-brand-muted whitespace-nowrap w-24">Brand</label>
-                    {hasBrand && (
-                      <div className="flex-1 flex items-center gap-2">
-                        {editingBrandName ? (
-                          <>
-                            <input
-                              type="text"
-                              value={currentBrandName}
-                              onChange={(e) => setCurrentBrandName(e.target.value)}
-                              onBlur={handleUpdateBrandName}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  handleUpdateBrandName();
-                                } else if (e.key === "Escape") {
-                                  // Reset to original value
-                                  setCurrentBrandName(brandName || "");
-                                  setEditingBrandName(false);
-                                }
-                              }}
-                              maxLength={100}
-                              className="flex-1 rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
-                              autoFocus
-                            />
-                          </>
-                        ) : (
-                          <div
-                            onClick={() => {
-                              setBrandName(currentBrandName);
-                              setEditingBrandName(true);
-                            }}
-                            className="flex-1 rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text cursor-text hover:border-brand-blue transition"
-                          >
-                            {currentBrandName || "Untitled Brand"}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (hasBrand) {
-                          setBrandInput(currentBrandInfo);
-                          setBrandName(currentBrandName);
-                        } else {
+                  {brandOptions.length > 0 ? (
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-brand-muted whitespace-nowrap w-24">Brand</label>
+                      <select
+                        value={selectedBrandId}
+                        onChange={(e) => {
+                          const nextId = e.target.value;
+                          setSelectedBrandId(nextId);
+                          if (!nextId) {
+                            setHasBrand(false);
+                            setCurrentBrandName("");
+                            setCurrentBrandInfo("");
+                            onBrandUpdate?.(null, null);
+                            return;
+                          }
+                          const match = brandOptions.find((b) => b.id === nextId);
+                          if (match) {
+                            const summary = match.info ?? null;
+                            const name = match.name ?? null;
+                            setHasBrand(Boolean(summary) || Boolean(name));
+                            setCurrentBrandName(name || "");
+                            setCurrentBrandInfo(summary || "");
+                            onBrandUpdate?.(summary, name);
+                          }
+                        }}
+                        className="flex-1 rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
+                      >
+                        <option value="">Select Brand</option>
+                        {brandOptions.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name || "Untitled Brand"}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (hasBrand) {
+                            setBrandInput(currentBrandInfo);
+                            setBrandName(currentBrandName);
+                          } else {
+                            setBrandInput("");
+                            setBrandName("");
+                          }
+                          setBrandModalOpen(true);
+                        }}
+                        className="rounded-full border border-brand-stroke/70 bg-brand-ink p-2 text-brand-text transition hover:border-brand-blue hover:text-brand-blue flex-shrink-0"
+                        aria-label="Define brand"
+                        title="Define brand"
+                      >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-brand-muted whitespace-nowrap w-24">Brand</label>
+                      <button
+                        type="button"
+                        onClick={() => {
                           setBrandInput("");
                           setBrandName("");
-                        }
-                        setBrandModalOpen(true);
-                      }}
-                      className="rounded-full border border-brand-stroke/70 bg-brand-ink px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue whitespace-nowrap"
-                    >
-                      {hasBrand ? "Update Brand" : "Define Brand"}
-                    </button>
-                  </div>
-                  {hasBrand && (
-                    <button
-                      type="button"
-                      onClick={handleClearBrand}
-                      disabled={clearingBrand}
-                      className="mt-2 ml-[108px] rounded-full border border-brand-stroke/60 px-4 py-2 text-xs font-semibold text-brand-muted transition hover:border-brand-blue hover:text-brand-blue disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {clearingBrand ? "Deselecting..." : "Deselect Brand"}
-                    </button>
+                          setBrandModalOpen(true);
+                        }}
+                        className="rounded-full border border-brand-stroke/70 bg-brand-ink p-2 text-brand-text transition hover:border-brand-blue hover:text-brand-blue flex-shrink-0"
+                        aria-label="Define brand"
+                        title="Define brand"
+                      >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                      </button>
+                    </div>
                   )}
                 </div>
                </div>
