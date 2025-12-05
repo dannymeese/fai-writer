@@ -5,6 +5,59 @@ import { WrenchIcon } from "@heroicons/react/24/solid";
 import { cn, getPromptHistory, PromptHistoryEntry } from "@/lib/utils";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+// TypeScript definitions for Web Speech API
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
+}
+
+interface SpeechRecognitionResultList {
+  readonly length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  readonly length: number;
+  readonly isFinal: boolean;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  readonly transcript: string;
+  readonly confidence: number;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition: {
+      new (): SpeechRecognition;
+    };
+    webkitSpeechRecognition: {
+      new (): SpeechRecognition;
+    };
+  }
+}
+
 type ComposeBarProps = {
   value: string;
   onChange: (value: string) => void;
@@ -73,6 +126,9 @@ export default function ComposeBar({
   const [rewritePlaceholderIndex, setRewritePlaceholderIndex] = useState(0);
   const [writePlaceholderIndex, setWritePlaceholderIndex] = useState(0);
   const [typingChar, setTypingChar] = useState("1");
+  const [isListening, setIsListening] = useState(false);
+  const [recognitionError, setRecognitionError] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
     if (hasSelection) {
@@ -107,6 +163,131 @@ export default function ComposeBar({
     textarea.style.height = `${nextHeight}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [value, textareaRef]);
+
+  // Initialize speech recognition
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    // Speech recognition requires HTTPS (except localhost)
+    const isSecureContext = window.isSecureContext || window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!isSecureContext) {
+      console.warn('Speech recognition requires HTTPS');
+      return;
+    }
+    
+    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      // Browser doesn't support speech recognition
+      console.warn('Speech recognition not supported in this browser');
+      return;
+    }
+    
+    // Check for iOS Safari specific requirements
+    const isIOSSafari = /iPhone|iPad|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/Chrome|CriOS|FxiOS|OPiOS/.test(navigator.userAgent);
+    if (isIOSSafari) {
+      // iOS Safari requires Siri to be enabled for speech recognition
+      console.info('iOS Safari detected - Siri must be enabled for speech recognition');
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      // Update the textarea value with both interim and final transcripts
+      const currentValue = value.trim();
+      const newValue = currentValue 
+        ? `${currentValue} ${finalTranscript}${interimTranscript}`.trim()
+        : `${finalTranscript}${interimTranscript}`.trim();
+      
+      onChange(newValue);
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.log('Speech recognition error:', event.error, event.message);
+      setIsListening(false);
+      
+      // Handle different error types
+      switch (event.error) {
+        case 'not-allowed':
+          // Speech recognition permission denied
+          // Provide helpful guidance based on browser
+          const userAgent = navigator.userAgent;
+          const isChrome = /Chrome/.test(userAgent) && !/Edge|OPR/.test(userAgent);
+          const isSafari = /Safari/.test(userAgent) && !/Chrome|Edge|CriOS|FxiOS|OPiOS/.test(userAgent);
+          const isEdge = /Edge/.test(userAgent);
+          const isIOSSafari = /iPhone|iPad|iPod/.test(userAgent) && isSafari;
+          
+          let errorMsg = 'Microphone access denied. ';
+          if (isIOSSafari) {
+            errorMsg += 'Make sure Siri is enabled in iOS Settings > Siri & Search, and allow microphone access when prompted.';
+          } else if (isChrome) {
+            errorMsg += 'Click the lock icon (🔒) in your address bar, allow microphone access, then try again.';
+          } else if (isEdge) {
+            errorMsg += 'Click the lock icon (🔒) in your address bar, allow microphone access, then try again.';
+          } else if (isSafari) {
+            errorMsg += 'Go to Safari > Settings > Websites > Microphone and allow access for this site, then refresh the page.';
+          } else {
+            errorMsg += 'Please allow microphone permissions in your browser settings and try again.';
+          }
+          setRecognitionError(errorMsg);
+          break;
+        case 'no-speech':
+          // User stopped speaking or no speech detected - this is normal, don't show error
+          setRecognitionError(null);
+          break;
+        case 'aborted':
+          // User or system aborted - don't show error
+          setRecognitionError(null);
+          break;
+        case 'network':
+          setRecognitionError('Network error. Please check your internet connection.');
+          break;
+        case 'service-not-allowed':
+          setRecognitionError('Speech recognition service is not allowed. Please check your browser settings.');
+          break;
+        default:
+          // Only log unexpected errors, don't show to user unless critical
+          if (event.error !== 'no-speech' && event.error !== 'aborted') {
+            console.warn('Speech recognition error:', event.error);
+            setRecognitionError(`Speech recognition error: ${event.error}`);
+          }
+      }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          // Ignore errors when stopping
+        }
+      }
+    };
+  }, [value, onChange]);
 
   // Load prompt history
   useEffect(() => {
@@ -146,6 +327,90 @@ export default function ComposeBar({
     setTimeout(() => {
       textareaRef.current?.focus();
     }, 0);
+  };
+
+  const getBrowserSupportInfo = () => {
+    const userAgent = navigator.userAgent;
+    const isChrome = /Chrome/.test(userAgent) && !/Edge|OPR/.test(userAgent);
+    const isEdge = /Edge/.test(userAgent);
+    const isSafari = /Safari/.test(userAgent) && !/Chrome|Edge|CriOS|FxiOS|OPiOS/.test(userAgent);
+    const isFirefox = /Firefox/.test(userAgent);
+    const isOpera = /OPR/.test(userAgent);
+    const isIOSSafari = /iPhone|iPad|iPod/.test(userAgent) && isSafari;
+    
+    if (isChrome || isEdge || isOpera) {
+      return { supported: true, message: null };
+    } else if (isIOSSafari) {
+      return { 
+        supported: true, 
+        message: 'Note: Siri must be enabled in iOS Settings for voice input to work.' 
+      };
+    } else if (isSafari) {
+      return { supported: true, message: null };
+    } else if (isFirefox) {
+      return { 
+        supported: false, 
+        message: 'Firefox does not support voice. Use Safari, Chrome or Edge for this feature.' 
+      };
+    } else {
+      return { 
+        supported: false, 
+        message: 'Voice input may not be supported in your browser. Please use Chrome, Edge, or Safari.' 
+      };
+    }
+  };
+
+  const toggleSpeechRecognition = () => {
+    if (!recognitionRef.current) {
+      const supportInfo = getBrowserSupportInfo();
+      const errorMessage = supportInfo.message || 'Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.';
+      setRecognitionError(errorMessage);
+      
+      // Keep Firefox warning visible for 15 seconds, others for 7 seconds
+      const isFirefox = /Firefox/.test(navigator.userAgent);
+      const timeoutDuration = isFirefox ? 15000 : 7000;
+      setTimeout(() => setRecognitionError(null), timeoutDuration);
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      setRecognitionError(null);
+    } else {
+      // Clear any previous errors
+      setRecognitionError(null);
+      
+      // Just try to start recognition - let the browser handle permissions
+      // The onerror handler will catch and display any permission issues
+      try {
+        console.log('Attempting to start speech recognition...');
+        recognitionRef.current.start();
+      } catch (error: any) {
+        console.error('Error starting speech recognition:', error);
+        // Handle specific errors
+        if (error.name === 'InvalidStateError' || error.message?.includes('already started')) {
+          // Recognition already started, try to stop and restart
+          try {
+            recognitionRef.current.stop();
+            setTimeout(() => {
+              try {
+                recognitionRef.current?.start();
+              } catch (retryError) {
+                console.error('Error restarting speech recognition:', retryError);
+                // Don't show error here - let the onerror handler deal with it
+              }
+            }, 100);
+          } catch (stopError) {
+            console.error('Error stopping speech recognition:', stopError);
+          }
+        } else {
+          // Show a generic error for unexpected startup errors
+          setRecognitionError('Unable to start voice input. Please check your microphone permissions and try again.');
+          setTimeout(() => setRecognitionError(null), 5000);
+        }
+      }
+    }
   };
 
   const content = (
@@ -189,6 +454,11 @@ export default function ComposeBar({
         <p className="text-center text-xl font-semibold text-white">
           What should I write?
         </p>
+      )}
+      {recognitionError && (
+        <div className="mx-auto mt-2 max-w-md rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-2 text-center text-sm text-red-400">
+          {recognitionError}
+        </div>
       )}
       <div className="relative flex w-full items-end gap-1 mt-[6px]">
         <button
@@ -286,6 +556,24 @@ export default function ComposeBar({
             )}
             rows={1}
           />
+          <button
+            type="button"
+            onClick={toggleSpeechRecognition}
+            aria-label={isListening ? "Stop recording" : "Start voice input"}
+            className={cn(
+              "flex items-center justify-center px-3 text-brand-muted transition hover:text-brand-blue self-stretch",
+              isListening && "text-brand-blue"
+            )}
+          >
+            <span 
+              className={cn(
+                "material-symbols-outlined text-xl",
+                isListening && "animate-pulse"
+              )}
+            >
+              mic
+            </span>
+          </button>
         </div>
         <button
           type="button"

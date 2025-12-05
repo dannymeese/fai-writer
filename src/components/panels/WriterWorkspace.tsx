@@ -497,8 +497,44 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }
 
   async function handleUseBrand(brandId?: string) {
+    // Handle clearing/deactivating brand
     if (!brandId) {
-      setToast("No brand ID provided.");
+      const previousActiveBrandId = activeBrandId;
+      setActiveBrandId(null);
+      setBrandName(null);
+      setBrandSummary(null);
+      setHasBrand(false);
+      
+      // For authenticated users, deactivate via API
+      if (isAuthenticated) {
+        try {
+          const response = await fetch("/api/brand", {
+            method: "DELETE"
+          });
+          
+          if (response.ok) {
+            setToast("Brand deactivated. Writing will no longer use brand context.");
+            // Update local list to remove active state
+            setAllBrands((prev) =>
+              prev.length
+                ? prev.map((b) => ({ ...b, isActive: false }))
+                : prev
+            );
+          } else {
+            // Revert on error
+            setActiveBrandId(previousActiveBrandId);
+            setToast("Failed to deactivate brand. Please try again.");
+          }
+        } catch (error) {
+          console.error("Failed to deactivate brand", error);
+          // Revert on error
+          setActiveBrandId(previousActiveBrandId);
+          setToast("Failed to deactivate brand. Please try again.");
+        }
+      } else {
+        // For guests, just clear local state
+        setToast("Brand cleared.");
+      }
       return;
     }
     
@@ -1195,6 +1231,14 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     applyLocalDoc(hydratedStyleDoc);
     fetchSavedDocs();
     setToast(`Saved "${styleName}".`);
+  }
+
+  function handleSaveCurrentStyle() {
+    if (!activeDocument) {
+      setToast("No document to save as style.");
+      return;
+    }
+    handleSaveStyle(activeDocument);
   }
 
   const hasOutputs = outputs.length > 0;
@@ -2702,6 +2746,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               onToggle={() => setSidebarOpen((prev) => !prev)}
           onOpen={() => setSidebarOpen(true)}
           onApplyStyle={handleApplyStyle}
+          onClearStyle={handleClearStyle}
           onTabChange={(tab) => setSidebarTab(tab)}
           onPinDocument={handlePinDocument}
           onPinFolder={handlePinFolder}
@@ -2728,6 +2773,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               onRequestAddToFolder={isAuthenticated ? handleOpenFolderPicker : undefined}
               canOrganizeDocuments={isAuthenticated}
               documentPinned={activeDocPinned}
+              onSaveStyle={handleSaveCurrentStyle}
             />
             {/* Forgetaboutit Icon - positioned below document canvas */}
             <div className="flex justify-center mt-20 pointer-events-none" style={{ opacity: 1 }}>
@@ -2800,6 +2846,10 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         onBrandUpdate={handleBrandSummaryUpdate}
         initialBrandDefined={hasBrand}
         activeBrandId={activeBrandId}
+        styles={styleDocuments}
+        activeStyleId={activeStyle?.id}
+        onApplyStyle={handleApplyStyle}
+        onClearStyle={handleClearStyle}
       />
       <Toast message={toast} onClose={() => setToast(null)} />
     </div>
@@ -3160,6 +3210,7 @@ type WorkspaceSidebarProps = {
   onTabChange: (tab: SidebarTab) => void;
   onSelect: (doc: SavedDoc) => void;
   onApplyStyle: (style: SavedDoc) => void;
+  onClearStyle?: () => void;
   onPinDocument?: (doc: SavedDoc) => void;
   onPinFolder?: (folder: FolderSummary) => void;
   onCreateFolder: () => void;
@@ -3196,6 +3247,7 @@ function WorkspaceSidebar({
   onTabChange,
   onSelect,
   onApplyStyle,
+  onClearStyle,
   onPinDocument,
   onPinFolder,
   onCreateFolder,
@@ -3547,38 +3599,58 @@ function WorkspaceSidebar({
     if (!items.length) {
       return <p className="text-sm text-brand-muted">Save a style from any output and it&apos;ll appear here.</p>;
     }
+
+    const activeStyle = activeStyleId ? items.find((style) => style.id === activeStyleId) : null;
+
     return (
-      <ul className="space-y-3">
-        {items.map((style) => (
-          <li key={style.id}>
+      <div className="flex h-full flex-col">
+        {activeStyle && onClearStyle && (
+          <div className="h-[24px] pt-[6px] flex items-center justify-center px-3 mb-2 flex-shrink-0 bg-black/20 rounded">
             <button
               type="button"
               onMouseDown={handleButtonMouseDown}
-              onClick={() => onApplyStyle(style)}
-              className={cn(
-                "w-full rounded-[5px] border border-brand-stroke/40 bg-brand-background/60 px-3 py-3 text-left transition hover:border-white",
-                activeStyleId === style.id ? "border-white bg-white/10" : undefined
-              )}
-              tabIndex={-1}
+              onClick={() => onClearStyle()}
+              className="flex items-center gap-1 text-brand-muted hover:text-[#f00] transition font-semibold text-xs"
             >
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-white">{style.title || "Saved Style"}</p>
-                {activeStyleId === style.id && <span className="text-[10px] font-semibold uppercase text-brand-muted">Applied</span>}
-          </div>
-              {style.writingStyle && (
-                <p className="mt-2 line-clamp-3 text-xs text-brand-muted/90">{style.writingStyle}</p>
-              )}
+              <div className="w-2.5 h-2.5 bg-current" />
+              Stop Writing in this Style
             </button>
-          </li>
-        ))}
-      </ul>
+          </div>
+        )}
+        <div className="flex-1 min-h-0 overflow-y-auto pt-[4px] px-3">
+          <ul className="space-y-3">
+            {items.map((style) => (
+              <li key={style.id}>
+                <button
+                  type="button"
+                  onMouseDown={handleButtonMouseDown}
+                  onClick={() => onApplyStyle(style)}
+                  className={cn(
+                    "w-full rounded-[5px] border border-brand-stroke/40 bg-brand-background/60 px-3 py-3 text-left transition hover:border-white",
+                    activeStyleId === style.id ? "border-white bg-white/10" : undefined
+                  )}
+                  tabIndex={-1}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-white">{style.title || "Saved Style"}</p>
+                    {activeStyleId === style.id && <span className="text-[10px] font-semibold uppercase text-brand-muted">Applied</span>}
+              </div>
+                  {style.writingStyle && (
+                    <p className="mt-2 line-clamp-3 text-xs text-brand-muted/90">{style.writingStyle}</p>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
     );
   }
 
   function renderBrandsContent() {
     if (!brandCards.length) {
       return (
-        <div className="flex h-full flex-col justify-center">
+        <div className="flex h-full flex-col justify-center pt-[4px] px-3">
           <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-brand-background/40 p-6 text-center text-sm text-brand-muted">
             <p className="font-semibold text-white">No brands yet</p>
             <p className="mt-2">
@@ -3589,15 +3661,24 @@ function WorkspaceSidebar({
       );
     }
 
+    const activeBrand = activeBrandId ? brandCards.find((brand) => brand.id === activeBrandId) : null;
+
     return (
-      <div className="flex h-full flex-col gap-4">
-        <div className="rounded-2xl border border-brand-stroke/40 bg-brand-background/60 p-4 text-sm text-brand-muted/80">
-          <p className="font-semibold text-white">Manage your brand</p>
-          <p className="mt-2">
-            Enter edit mode inside a brand card to remove the summary or individual key messages. Update the summary itself inside Settings.
-          </p>
-        </div>
-        <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+      <div className="flex h-full flex-col">
+        {activeBrand && (
+          <div className="h-[24px] pt-[6px] flex items-center justify-center px-3 mb-2 flex-shrink-0 bg-black/20 rounded">
+            <button
+              type="button"
+              onMouseDown={handleButtonMouseDown}
+              onClick={() => onUseBrand?.(undefined)}
+              className="flex items-center gap-1 text-brand-muted hover:text-[#f00] transition font-semibold text-xs"
+            >
+              <div className="w-2.5 h-2.5 bg-current" />
+              Stop Writing As Brand
+            </button>
+          </div>
+        )}
+        <div className="flex-1 min-h-0 overflow-y-auto pt-[4px] px-3 space-y-4">
           {brandCards.map((brand) => (
             <BrandCard
               key={brand.id}
@@ -3723,10 +3804,10 @@ function WorkspaceSidebar({
                     {renderFolderGrid()}
                   </div>
                 </Tab.Panel>
-                <Tab.Panel className="h-full overflow-y-auto pt-8 pb-8 pr-5 focus:outline-none">
+                <Tab.Panel className="h-full focus:outline-none">
                   {renderStyleList(styles)}
                 </Tab.Panel>
-                <Tab.Panel className="h-full pt-8 pb-8 pr-5 focus:outline-none">
+                <Tab.Panel className="h-full focus:outline-none">
                   {renderBrandsContent()}
                 </Tab.Panel>
               </Tab.Panels>
@@ -3808,6 +3889,7 @@ function BrandCard({
   const handleSelectBrand = () => {
     if (onUseBrand) {
       setLocalActive(true);
+      setIsHovered(false); // Clear hover state immediately to prevent overlay flicker
       onUseBrand(id);
     }
   };
@@ -3900,52 +3982,51 @@ function BrandCard({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        <div className="p-6">
+        <div className="p-4">
           {/* Large capital first letter */}
-          <div className="flex items-center gap-4 mb-4">
+          <div className="flex items-center gap-3 mb-2">
             <div className={cn(
-              "flex items-center justify-center rounded-xl w-16 h-16 text-4xl font-bold transition-colors",
+              "flex items-center justify-center text-3xl font-bold transition-colors",
               isActive
-                ? "bg-brand-blue/20 text-brand-blue"
-                : "bg-brand-background/80 text-brand-text/60 group-hover:text-brand-text/80"
+                ? "text-brand-blue"
+                : "text-brand-text/60 group-hover:text-brand-text/80"
             )}>
               {firstLetter}
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-lg font-semibold text-white truncate">{name}</h3>
-              {isActive && (
-                <p className="text-xs text-brand-blue mt-1">Active</p>
-              )}
+              <h3 className="text-base font-semibold text-white truncate">{name}</h3>
             </div>
           </div>
 
-          {/* Hover overlay with Select Brand button */}
-          {isHovered && !isActive && onUseBrand && (
+          {/* Hover overlay with Write for Brand button */}
+          {isHovered && !localActive && !isActive && onUseBrand && (
             <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/60 backdrop-blur-sm transition-opacity">
               <button
                 type="button"
                 onClick={handleSelectBrand}
                 className="rounded-full bg-brand-blue px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-blue/80 shadow-lg"
               >
-                Select Brand
+                Write for Brand
               </button>
             </div>
           )}
 
-          {/* Edit button - always visible */}
-          <button
-            type="button"
-            onClick={() => setEditModalOpen(true)}
-            className={cn(
-              "absolute top-3 right-3 rounded-full p-2 transition",
-              isActive
-                ? "text-brand-blue hover:bg-brand-blue/20"
-                : "text-brand-muted hover:text-brand-text hover:bg-brand-background/80"
-            )}
-            aria-label="Edit brand"
-          >
-            <span className="material-symbols-outlined text-lg">edit</span>
-          </button>
+          {/* Edit button - only visible on hover or when active */}
+          {(isHovered || localActive || isActive) && (
+            <button
+              type="button"
+              onClick={() => setEditModalOpen(true)}
+              className={cn(
+                "absolute top-2 right-2 rounded-full p-1.5 transition",
+                isActive
+                  ? "text-brand-blue hover:bg-brand-blue/20"
+                  : "text-brand-muted hover:text-brand-text hover:bg-brand-background/80"
+              )}
+              aria-label="Edit brand"
+            >
+              <span className="material-symbols-outlined text-sm">edit</span>
+            </button>
+          )}
         </div>
       </div>
 

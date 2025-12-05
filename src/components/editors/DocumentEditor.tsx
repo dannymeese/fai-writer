@@ -32,6 +32,7 @@ type DocumentEditorProps = {
   onRequestAddToFolder?: () => void;
   canOrganizeDocuments?: boolean;
   documentPinned?: boolean;
+  onSaveStyle?: () => void;
 };
 
 function derivePlaceholderMeta(content: string): Array<{ id: string; label: string }> {
@@ -123,7 +124,8 @@ export default function DocumentEditor({
   onTogglePin,
   onRequestAddToFolder,
   canOrganizeDocuments = false,
-  documentPinned = false
+  documentPinned = false,
+  onSaveStyle
 }: DocumentEditorProps) {
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -1160,6 +1162,7 @@ export default function DocumentEditor({
                 className="min-h-[500px]"
                 hasBrand={!!brandSummary}
                 horizontalPadding={horizontalPadding}
+                onSaveStyle={onSaveStyle}
               />
             )}
           </div>

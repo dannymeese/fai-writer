@@ -7,6 +7,15 @@ import { MinusSmallIcon } from "@heroicons/react/24/outline";
  import { cn } from "@/lib/utils";
  import { ErrorPopup, type ErrorDetails } from "@/components/shared/ErrorPopup";
  
+// Simplified type for styles passed to SettingsSheet
+// The actual SavedDoc type has more fields, but we only need these for the dropdown
+type StyleDoc = {
+  id: string;
+  title: string;
+  writingStyle?: string | null;
+  [key: string]: unknown; // Allow other properties to satisfy SavedDoc type
+};
+
 type SettingsSheetProps = {
   open: boolean;
   onClose: () => void;
@@ -16,6 +25,10 @@ type SettingsSheetProps = {
   onBrandUpdate?: (summary: string | null, name?: string | null) => void;
   initialBrandDefined?: boolean;
   activeBrandId?: string | null;
+  styles?: StyleDoc[];
+  activeStyleId?: string;
+  onApplyStyle?: (style: StyleDoc) => void;
+  onClearStyle?: () => void;
 };
  
 const marketLabels = {
@@ -47,7 +60,11 @@ export default function SettingsSheet({
   anchorRect,
   onBrandUpdate,
   initialBrandDefined = false,
-  activeBrandId
+  activeBrandId,
+  styles = [],
+  activeStyleId,
+  onApplyStyle,
+  onClearStyle
 }: SettingsSheetProps) {
   const [brandModalOpen, setBrandModalOpen] = useState(false);
   const [brandInput, setBrandInput] = useState("");
@@ -629,7 +646,7 @@ export default function SettingsSheet({
             leaveTo="opacity-0 translate-y-4"
           >
             <Dialog.Panel
-              className="pointer-events-auto w-full max-w-lg rounded-3xl border border-brand-stroke/60 bg-[#0a0a0a]/90 backdrop-blur-[10px] p-6 text-brand-text"
+              className="pointer-events-auto w-full max-w-lg rounded-3xl border border-brand-stroke/60 bg-[#0a0a0a]/90 backdrop-blur-[10px] p-6 text-brand-text overflow-visible"
               style={{
                 zIndex: 1101,
                 ...(anchorRect
@@ -838,6 +855,44 @@ export default function SettingsSheet({
                   />
                 </div>
                 <div className="pt-2 border-t border-brand-stroke/60">
+                  {styles.length > 0 ? (
+                    <div className="flex items-center gap-3 mb-4">
+                      <label className="text-sm text-brand-muted whitespace-nowrap w-24 flex-shrink-0">Style</label>
+                      <select
+                        value={activeStyleId || ""}
+                        onChange={(e) => {
+                          const nextId = e.target.value;
+                          if (!nextId) {
+                            onClearStyle?.();
+                            return;
+                          }
+                          const match = styles.find((s) => s.id === nextId);
+                          if (match && onApplyStyle) {
+                            onApplyStyle(match);
+                          }
+                        }}
+                        className="flex-1 min-w-0 rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
+                      >
+                        <option value="">Select Style</option>
+                        {styles.map((s) => {
+                          const title = s.title || "Untitled Style";
+                          const truncatedTitle = title.length > 50 ? title.substring(0, 47) + "..." : title;
+                          return (
+                            <option key={s.id} value={s.id} title={title}>
+                              {truncatedTitle}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 mb-4">
+                      <label className="text-sm text-brand-muted whitespace-nowrap w-24">Style</label>
+                      <div className="flex-1 rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-sm text-brand-muted/50">
+                        Select Text in Doc to Add Styles
+                      </div>
+                    </div>
+                  )}
                   {brandOptions.length > 0 ? (
                     <div className="flex items-center gap-3">
                       <label className="text-sm text-brand-muted whitespace-nowrap w-24">Brand</label>

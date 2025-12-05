@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { useEffect, useCallback, useState, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import MarkdownIt from "markdown-it";
 import { 
@@ -11,7 +12,8 @@ import {
   ItalicIcon, 
   ListBulletIcon,
   LinkIcon,
-  StrikethroughIcon
+  StrikethroughIcon,
+  PlusIcon
 } from "@heroicons/react/24/outline";
 
 const TOOLBAR_GAP_PX = 10;
@@ -64,6 +66,7 @@ type MarkdownEditorProps = {
     left?: number;
     right?: number;
   };
+  onSaveStyle?: () => void;
 };
 
 export default function MarkdownEditor({
@@ -75,14 +78,19 @@ export default function MarkdownEditor({
   className,
   onReady,
   hasBrand = false,
-  horizontalPadding
+  horizontalPadding,
+  onSaveStyle
 }: MarkdownEditorProps) {
   const [persistentSelection, setPersistentSelection] = useState<{ from: number; to: number } | null>(null);
   const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
   const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0, isSticky: false });
   const [addingToBrand, setAddingToBrand] = useState(false);
+  const [showPlusMenu, setShowPlusMenu] = useState(false);
+  const [plusMenuPosition, setPlusMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const addToBrandButtonRef = useRef<HTMLButtonElement>(null);
+  const plusButtonRef = useRef<HTMLButtonElement>(null);
+  const plusMenuRef = useRef<HTMLDivElement>(null);
   const isInternalUpdateRef = useRef(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const isUpdatingToolbarRef = useRef(false);
@@ -90,6 +98,8 @@ export default function MarkdownEditor({
   const persistentSelectionRef = useRef<{ from: number; to: number } | null>(null);
   const lastSelectionRef = useRef<{ from: number; to: number } | null>(null);
   const isSelectionDraggingRef = useRef(false);
+  const pendingUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTypingTimeRef = useRef<number>(0);
 
 
   const getToolbarSafeTop = useCallback(() => {
@@ -226,10 +236,17 @@ export default function MarkdownEditor({
       // Mark this as an internal update to prevent cursor reset
       // Keep it set until after onChange completes to prevent content sync loop
       isInternalUpdateRef.current = true;
+      lastTypingTimeRef.current = Date.now();
+      
+      // Clear any pending update timeout
+      if (pendingUpdateTimeoutRef.current) {
+        clearTimeout(pendingUpdateTimeoutRef.current);
+      }
       
       // Small delay to ensure formatting is applied before converting to markdown
       // This prevents race conditions where formatting gets lost
-      setTimeout(() => {
+      // Use a debounce to batch rapid updates
+      pendingUpdateTimeoutRef.current = setTimeout(() => {
         // Convert HTML to markdown for storage
         const html = editor.getHTML();
         
@@ -285,11 +302,15 @@ export default function MarkdownEditor({
         
         const markdown = htmlToMarkdown(html);
         onChange(markdown);
-        // Reset the flag after onChange completes, but use another setTimeout
-        // to ensure any state updates from onChange have been processed
+        // Reset the flag after onChange completes, but use a longer delay
+        // to ensure any state updates from onChange have been processed and
+        // to prevent race conditions when typing quickly
+        // Wait longer if user was typing recently
+        const timeSinceLastTyping = Date.now() - lastTypingTimeRef.current;
+        const delay = timeSinceLastTyping < 100 ? 150 : 50;
         setTimeout(() => {
           isInternalUpdateRef.current = false;
-        }, 0);
+        }, delay);
       }, 0);
     },
     editorProps: {
@@ -336,6 +357,14 @@ export default function MarkdownEditor({
     if (!editor) {
       return;
     }
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (pendingUpdateTimeoutRef.current) {
+        clearTimeout(pendingUpdateTimeoutRef.current);
+        pendingUpdateTimeoutRef.current = null;
+      }
+    };
   }, [editor, showFormattingToolbar]);
 
   // Notify parent when editor is ready
@@ -855,6 +884,64 @@ export default function MarkdownEditor({
     return () => observer.disconnect();
   }, [showFormattingToolbar]);
 
+  // Close plus menu when formatting toolbar disappears
+  useEffect(() => {
+    if (!showFormattingToolbar) {
+      setShowPlusMenu(false);
+      setPlusMenuPosition(null);
+    }
+  }, [showFormattingToolbar]);
+
+  // Update plus menu position when toolbar position changes or on scroll/resize
+  useEffect(() => {
+    if (!showPlusMenu || !plusButtonRef.current) {
+      return;
+    }
+
+    const updatePosition = () => {
+      if (!plusButtonRef.current) return;
+      
+      const buttonRect = plusButtonRef.current.getBoundingClientRect();
+      setPlusMenuPosition({
+        top: buttonRect.top - 8, // 8px gap above button
+        left: buttonRect.left
+      });
+    };
+
+    // Update immediately
+    updatePosition();
+    
+    // Update on scroll (capture phase to catch all scroll events)
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [showPlusMenu, toolbarPosition.top, toolbarPosition.left, showFormattingToolbar]);
+
+  // Handle clicking outside plus menu to close it
+  useEffect(() => {
+    if (!showPlusMenu) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        plusButtonRef.current &&
+        plusMenuRef.current &&
+        !plusButtonRef.current.contains(target) &&
+        !plusMenuRef.current.contains(target)
+      ) {
+        setShowPlusMenu(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showPlusMenu]);
+
   // Handle selection changes and maintain persistent selection
   useEffect(() => {
     if (!editor || !onSelectionChange) return;
@@ -870,8 +957,11 @@ export default function MarkdownEditor({
         return; // Don't hide toolbar or start drag when clicking toolbar buttons
       }
       
-      // Also check if clicking on the "Add to Brand" button
-      if (target && addToBrandButtonRef.current && addToBrandButtonRef.current.contains(target)) {
+      // Also check if clicking on the plus button or menu
+      if (target && plusButtonRef.current && plusButtonRef.current.contains(target)) {
+        return;
+      }
+      if (target && plusMenuRef.current && plusMenuRef.current.contains(target)) {
         return;
       }
       
@@ -1576,8 +1666,9 @@ export default function MarkdownEditor({
     if (!editor) return;
     
     // Skip if this update came from the editor itself (user typing)
-    // Don't reset the flag here - let it be reset after onChange completes
-    if (isInternalUpdateRef.current) {
+    // Also skip if user was typing recently (within last 200ms) to prevent race conditions
+    const timeSinceLastTyping = Date.now() - lastTypingTimeRef.current;
+    if (isInternalUpdateRef.current || timeSinceLastTyping < 200) {
       return;
     }
     
@@ -1589,18 +1680,29 @@ export default function MarkdownEditor({
     // This ensures markdown syntax like **bold** gets properly rendered
     const html = md.render(markdownContent);
     
-    // Get current HTML for comparison
+    // Get current HTML and text for comparison
     const currentHtml = editor.getHTML();
+    const currentText = editor.getText();
     
     // Normalize HTML for comparison (remove extra whitespace/newlines)
     const normalizeHtml = (html: string) => html.replace(/\s+/g, ' ').trim();
     const normalizedHtml = normalizeHtml(html);
     const normalizedCurrentHtml = normalizeHtml(currentHtml);
     
+    // Also compare plain text content to catch cases where HTML structure differs
+    // but content is the same (e.g., different paragraph wrapping)
+    const normalizeText = (text: string) => text.replace(/\s+/g, ' ').trim();
+    const normalizedText = normalizeText(markdownContent);
+    const normalizedCurrentText = normalizeText(currentText);
+    
     // Only update if content actually changed (avoid infinite loops)
     // Also check if the raw markdown content changed, not just the HTML
     const lastMarkdown = (editor as any).__lastMarkdownContent;
     const markdownChanged = markdownContent !== lastMarkdown;
+    
+    // If text content is the same, don't update even if HTML structure differs
+    // This prevents unnecessary updates that can cause cursor jumps
+    const textContentSame = normalizedText === normalizedCurrentText;
     
     // Handle empty content - always reset if content is empty and editor has content
     if (markdownContent === '') {
@@ -1612,21 +1714,109 @@ export default function MarkdownEditor({
     }
     
     // Handle non-empty content - update if content changed
-    if (normalizedHtml !== normalizedCurrentHtml || markdownChanged) {
+    // Only update if both HTML structure AND text content differ (or markdown changed)
+    // This prevents unnecessary updates when only HTML structure differs but content is the same
+    if ((normalizedHtml !== normalizedCurrentHtml && !textContentSame) || markdownChanged) {
       // Store the markdown content for comparison
       (editor as any).__lastMarkdownContent = markdownContent;
       
-      // Preserve cursor position when syncing from parent
-      const { from } = editor.state.selection;
+      // Preserve cursor position and selection when syncing from parent
+      const { from, to } = editor.state.selection;
+      const hasSelection = from !== to;
+      
+      // Store text before cursor and selection BEFORE calling setContent
+      // This helps maintain cursor position even if HTML structure changes slightly
+      const oldDocSize = editor.state.doc.content.size;
+      
+      // Get text content with proper line breaks to match positions accurately
+      // Use textBetween with '\n' to preserve line structure
+      const textBeforeCursor = editor.state.doc.textBetween(0, from, '\n');
+      const textAfterCursor = editor.state.doc.textBetween(from, oldDocSize, '\n');
+      const selectedText = hasSelection ? editor.state.doc.textBetween(from, to, '\n') : '';
+      
       editor.commands.setContent(html, { emitUpdate: false }); // don't emit update event
+      
       // Restore cursor position after content update
+      // Use text-based position restoration for better accuracy
       try {
         const docSize = editor.state.doc.content.size;
-        const newPos = Math.min(from, docSize);
-        editor.commands.setTextSelection(newPos);
+        const fullDocText = editor.state.doc.textBetween(0, docSize, '\n');
+        
+        if (hasSelection && selectedText) {
+          // If there was a selection, try to restore it using text matching
+          // Find the selection text in the new document
+          const searchText = textBeforeCursor + selectedText;
+          const newFromIndex = fullDocText.indexOf(searchText);
+          if (newFromIndex !== -1) {
+            // Calculate position accurately: cursor is AFTER textBeforeCursor
+            const newFrom = newFromIndex + textBeforeCursor.length;
+            const newTo = newFrom + selectedText.length;
+            if (newTo <= docSize) {
+              editor.commands.setTextSelection({ from: newFrom, to: newTo });
+              return;
+            }
+          }
+          
+          // Fallback to simple position restoration
+          const newFrom = Math.min(from, docSize);
+          const newTo = Math.min(to, docSize);
+          if (newFrom < newTo) {
+            editor.commands.setTextSelection({ from: newFrom, to: newTo });
+          } else {
+            editor.commands.setTextSelection(newFrom);
+          }
+        } else {
+          // For cursor position, use a more accurate method
+          // Find the exact position where textBeforeCursor ends and textAfterCursor begins
+          let newPos = -1;
+          
+          if (textBeforeCursor.length > 0) {
+            // Search for textBeforeCursor and verify textAfterCursor follows immediately
+            // This ensures we find the correct occurrence
+            const searchPattern = textBeforeCursor + (textAfterCursor.length > 0 ? textAfterCursor.slice(0, Math.min(50, textAfterCursor.length)) : '');
+            const patternIndex = fullDocText.indexOf(searchPattern);
+            
+            if (patternIndex !== -1) {
+              // Found the pattern - cursor is right after textBeforeCursor
+              newPos = patternIndex + textBeforeCursor.length;
+            } else {
+              // Pattern not found, try searching from the end (most likely near cursor)
+              // Use lastIndexOf to find the most recent occurrence
+              const searchStart = Math.max(0, fullDocText.length - Math.min(200, fullDocText.length));
+              const lastIndex = fullDocText.lastIndexOf(textBeforeCursor, searchStart + textBeforeCursor.length);
+              
+              if (lastIndex !== -1) {
+                // Verify textAfterCursor follows (or document ends)
+                const verifyStart = lastIndex + textBeforeCursor.length;
+                const verifyText = fullDocText.slice(verifyStart, verifyStart + Math.min(textAfterCursor.length || 50, 50));
+                
+                // If textAfterCursor matches or is empty, this is likely the right position
+                if (textAfterCursor.length === 0 || verifyText === textAfterCursor.slice(0, verifyText.length)) {
+                  newPos = lastIndex + textBeforeCursor.length;
+                }
+              }
+            }
+          }
+          
+          if (newPos !== -1 && newPos >= 0 && newPos <= docSize) {
+            // Found accurate position - cursor is AFTER textBeforeCursor
+            editor.commands.setTextSelection(newPos);
+          } else {
+            // Fallback: try to maintain relative position
+            const relativePos = oldDocSize > 0 ? from / oldDocSize : 0;
+            const newPosFallback = Math.min(Math.floor(relativePos * docSize), docSize);
+            editor.commands.setTextSelection(newPosFallback);
+          }
+        }
       } catch (error) {
         // If cursor position is invalid, just set to end
         console.error("Error restoring cursor position:", error);
+        try {
+          const docSize = editor.state.doc.content.size;
+          editor.commands.setTextSelection(docSize);
+        } catch {
+          // Ignore errors in fallback
+        }
       }
     }
   }, [content, editor, md]);
@@ -1994,32 +2184,84 @@ export default function MarkdownEditor({
           >
             123
           </button>
+
+          {/* Divider */}
+          <div className="mx-1 h-6 w-px bg-brand-stroke/40" />
+
+          {/* Plus Button */}
+          <div className="relative">
+            <button
+              ref={plusButtonRef}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (plusButtonRef.current) {
+                  const buttonRect = plusButtonRef.current.getBoundingClientRect();
+                  setPlusMenuPosition({
+                    top: buttonRect.top - 8,
+                    left: buttonRect.left
+                  });
+                }
+                setShowPlusMenu((prev) => !prev);
+              }}
+              className="rounded-full bg-brand-blue p-2 text-white transition hover:bg-brand-blue/80"
+              title="More options"
+            >
+              <PlusIcon className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Add to Brand Button - Separate pill to the right */}
-      {showFormattingToolbar && editor && hasBrand && persistentSelection && persistentSelection.from !== persistentSelection.to && (
-        <button
-          ref={addToBrandButtonRef}
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            handleAddToBrand();
-          }}
-          disabled={addingToBrand}
-          className={cn(
-            "absolute z-50 rounded-full border border-brand-stroke/60 bg-brand-panel px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:bg-brand-blue/20 hover:border-brand-blue",
-            addingToBrand ? "opacity-60 cursor-not-allowed" : undefined
-          )}
+      {/* Plus Menu Dropdown - Rendered in Portal to avoid clipping */}
+      {showPlusMenu && plusMenuPosition && typeof window !== "undefined" && createPortal(
+        <div
+          ref={plusMenuRef}
+          className="fixed z-[60] w-48 rounded-xl border border-brand-stroke/60 bg-brand-panel shadow-[0_20px_60px_rgba(0,0,0,0.45)] overflow-hidden"
           style={{
-            top: `${toolbarPosition.top}px`,
-            left: `${toolbarPosition.left + toolbarSizeRef.current.width + 12}px`,
-            transform: `translateY(calc(-100% - ${TOOLBAR_GAP_PX}px))`,
+            top: `${plusMenuPosition.top}px`,
+            left: `${plusMenuPosition.left}px`,
+            transform: 'translateY(-100%)'
           }}
         >
-          {addingToBrand ? "Adding..." : "Add to Brand"}
-        </button>
+          {hasBrand && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowPlusMenu(false);
+                handleAddToBrand();
+              }}
+              disabled={addingToBrand}
+              className={cn(
+                "w-full px-4 py-2.5 text-left text-sm text-white transition hover:bg-white/10",
+                addingToBrand && "opacity-60 cursor-not-allowed"
+              )}
+            >
+              {addingToBrand ? "Adding..." : "Add to Brand"}
+            </button>
+          )}
+          {onSaveStyle && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowPlusMenu(false);
+                onSaveStyle();
+              }}
+              className={cn(
+                "w-full px-4 py-2.5 text-left text-sm text-white transition hover:bg-white/10",
+                hasBrand && "border-t border-brand-stroke/40"
+              )}
+            >
+              Save Writing Style
+            </button>
+          )}
+        </div>,
+        document.body
       )}
     </div>
   );
