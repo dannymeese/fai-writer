@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "prisma generate && next dev",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint"
@@ -12,7 +12,7 @@
     "@auth/prisma-adapter": "^2.11.1",
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.1.5",
-    "@prisma/client": "^6.0.1",
+    "@prisma/client": "^6.19.0",
     "@stripe/react-stripe-js": "^5.4.1",
     "@stripe/stripe-js": "^8.5.3",
     "@tiptap/extension-placeholder": "^3.11.1",

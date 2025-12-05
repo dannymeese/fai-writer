@@ -5,6 +5,7 @@
 import { MinusSmallIcon } from "@heroicons/react/24/outline";
  import { ComposerSettingsInput, marketTiers } from "@/lib/validators";
  import { cn } from "@/lib/utils";
+ import { ErrorPopup, type ErrorDetails } from "@/components/shared/ErrorPopup";
  
 type SettingsSheetProps = {
   open: boolean;
@@ -61,6 +62,7 @@ export default function SettingsSheet({
   const [gradeLevelTooltipTimeout, setGradeLevelTooltipTimeout] = useState<NodeJS.Timeout | null>(null);
   const [hoveredMarketTier, setHoveredMarketTier] = useState<string | null>(null);
   const [marketTierTooltipTimeout, setMarketTierTooltipTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [errorPopup, setErrorPopup] = useState<ErrorDetails | null>(null);
 
   useEffect(() => {
     setHasBrand(initialBrandDefined);
@@ -90,22 +92,79 @@ export default function SettingsSheet({
   }, [open, onBrandUpdate]);
 
   async function handleDefineBrand() {
+    console.log("handleDefineBrand called", { 
+      brandInput: brandInput, 
+      brandInputLength: brandInput?.length,
+      brandInputTrimmed: brandInput?.trim(),
+      hasContent: !!brandInput?.trim()
+    });
+    
     if (!brandInput.trim()) {
+      console.warn("Brand input is empty, returning early");
       return;
     }
     
+    console.log("Starting brand save process...");
     setBrandProcessing(true);
     try {
+      const requestBody = { 
+        brandName: brandName?.trim() || undefined,
+        brandInfo: brandInput.trim() 
+      };
+      
+      console.log("Sending brand save request:", { 
+        hasBrandName: !!requestBody.brandName,
+        hasBrandInfo: !!requestBody.brandInfo,
+        brandInfoLength: requestBody.brandInfo?.length
+      });
+      
       const response = await fetch("/api/brand", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          brandName: brandName?.trim() || undefined,
-          brandInfo: brandInput.trim() 
-        })
+        body: JSON.stringify(requestBody)
       });
-      const data = await response.json();
-      if (response.ok && !data.error) {
+      
+      console.log("Response received:", {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+      
+      let data: any = null;
+      let responseText = "";
+      
+      try {
+        responseText = await response.text();
+        console.log("Response text length:", responseText.length);
+        console.log("Response text preview:", responseText.substring(0, 200));
+        
+        if (responseText) {
+          try {
+            data = JSON.parse(responseText);
+            console.log("Parsed JSON data:", data);
+          } catch (parseError) {
+            console.error("Failed to parse JSON:", parseError);
+            // Not JSON, use as text
+            data = { error: responseText };
+          }
+        } else {
+          // Empty response
+          console.warn("Empty response received");
+          data = {};
+        }
+      } catch (textError) {
+        console.error("Failed to read response", textError);
+        responseText = "Unable to read response";
+        data = { error: "Unable to read response from server" };
+      }
+      
+      // Check if response is successful and has the expected data
+      if (response.ok && !data?.error && (data?.brandInfo || data?.brandName || data?.success)) {
+        console.log("Brand save successful:", { 
+          brandName: data.brandName, 
+          hasBrandInfo: !!data.brandInfo 
+        });
         const summary = data.brandInfo ?? null;
         const name = data.brandName ?? null;
         setBrandInput("");
@@ -117,32 +176,122 @@ export default function SettingsSheet({
         onBrandUpdate?.(summary, name);
       } else {
         // Handle Zod validation errors or other errors
-        let errorMessage = "Unknown error";
-        if (data.error) {
+        let errorMessage = "Failed to save brand";
+        let errorDetails: string | unknown = null;
+        
+        // Log full response for debugging - log each piece separately to avoid serialization issues
+        console.error("=== BRAND SAVE ERROR DEBUG ===");
+        console.error("Response Status:", response.status);
+        console.error("Response StatusText:", response.statusText);
+        console.error("Response OK:", response.ok);
+        console.error("Response Text:", responseText);
+        console.error("Response Text Length:", responseText?.length || 0);
+        console.error("Parsed Data:", data);
+        console.error("Data Type:", typeof data);
+        console.error("Data is null?", data === null);
+        console.error("Data is undefined?", data === undefined);
+        console.error("Has Error:", !!data?.error);
+        console.error("Error Type:", typeof data?.error);
+        console.error("Data Keys:", data ? Object.keys(data) : "no data");
+        console.error("=============================");
+        
+        // Create debug info object for error popup
+        const debugInfo = {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok,
+          data: data,
+          responseText: responseText,
+          responseTextLength: responseText?.length || 0,
+          hasError: !!data?.error,
+          errorType: typeof data?.error,
+          dataKeys: data ? Object.keys(data) : []
+        };
+        
+        // Try to stringify for logging
+        try {
+          console.error("Debug Info JSON:", JSON.stringify(debugInfo, null, 2));
+        } catch (stringifyError) {
+          console.error("Could not stringify debug info:", stringifyError);
+          console.error("Debug Info (raw):", debugInfo);
+        }
+        
+        if (data?.error) {
           if (typeof data.error === "string") {
             errorMessage = data.error;
-          } else if (data.error.formErrors && data.error.formErrors.length > 0) {
+          } else if (data.error.formErrors && Array.isArray(data.error.formErrors) && data.error.formErrors.length > 0) {
             errorMessage = data.error.formErrors.join(", ");
+            errorDetails = data.error;
           } else if (data.error.fieldErrors) {
             const fieldMessages = Object.entries(data.error.fieldErrors)
               .flatMap(([field, errors]) => 
                 Array.isArray(errors) ? errors.map(err => `${field}: ${err}`) : []
               );
             errorMessage = fieldMessages.length > 0 ? fieldMessages.join(", ") : "Validation failed";
+            errorDetails = data.error;
           } else if (data.error.details) {
-            errorMessage = data.error.details;
+            errorMessage = typeof data.error.details === "string" ? data.error.details : "Error details available";
+            errorDetails = data.error.details;
+          } else {
+            // Error is an object but doesn't match expected structure
+            errorMessage = "An error occurred while saving the brand";
+            errorDetails = data.error;
           }
+        } else if (!response.ok) {
+          // Response not OK but no error in data
+          if (response.status === 500) {
+            errorMessage = "Server error occurred";
+          } else if (response.status === 400) {
+            errorMessage = "Invalid request";
+          } else if (response.status === 401) {
+            errorMessage = "Authentication required";
+          } else if (response.status === 403) {
+            errorMessage = "Permission denied";
+          } else {
+            errorMessage = `Request failed with status ${response.status}`;
+          }
+          errorDetails = responseText || data || `HTTP ${response.status}: ${response.statusText}`;
+        } else if (responseText) {
+          errorMessage = responseText;
+          errorDetails = responseText;
+        } else if (data && Object.keys(data).length > 0) {
+          // Data exists but doesn't have expected structure
+          errorMessage = "Unexpected response format";
+          errorDetails = data;
         }
-        console.error("Failed to save brand info", {
+        
+        setErrorPopup({
+          message: errorMessage,
           status: response.status,
           statusText: response.statusText,
-          error: data.error,
-          errorMessage
+          details: errorDetails,
+          fullError: { 
+            response: { 
+              status: response.status, 
+              statusText: response.statusText,
+              ok: response.ok
+            }, 
+            data, 
+            responseText,
+            debugInfo
+          }
         });
-        alert(`Failed to save brand: ${errorMessage}`);
       }
     } catch (error) {
-      console.error("Failed to save brand info", error);
+      console.error("Failed to save brand info - Exception:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      setErrorPopup({
+        message: `Network or unexpected error: ${errorMessage}`,
+        details: errorStack || errorMessage,
+        fullError: {
+          error,
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+          message: errorMessage,
+          stack: errorStack
+        }
+      });
     } finally {
       setBrandProcessing(false);
     }
@@ -161,18 +310,65 @@ export default function SettingsSheet({
               brandInfo: currentBrandInfo 
             })
           });
-          const data = await response.json();
-          if (response.ok && !data.error) {
+          
+          let data: any = null;
+          let responseText = "";
+          
+          try {
+            responseText = await response.text();
+            if (responseText) {
+              try {
+                data = JSON.parse(responseText);
+              } catch {
+                data = { error: responseText };
+              }
+            }
+          } catch (textError) {
+            console.error("Failed to read response", textError);
+            responseText = "Unable to read response";
+          }
+          
+          if (response.ok && !data?.error) {
             setCurrentBrandName(data.brandName || "");
             setBrandName(data.brandName || "");
           } else {
             // Revert on error
             setCurrentBrandName(originalName);
+            
+            let errorMessage = "Failed to update brand name";
+            let errorDetails: string | unknown = null;
+            
+            if (data?.error) {
+              if (typeof data.error === "string") {
+                errorMessage = data.error;
+              } else if (data.error.details) {
+                errorMessage = typeof data.error.details === "string" ? data.error.details : "Error details available";
+                errorDetails = data.error.details;
+              } else {
+                errorDetails = data.error;
+              }
+            } else if (responseText) {
+              errorMessage = responseText;
+              errorDetails = responseText;
+            }
+            
+            setErrorPopup({
+              message: errorMessage,
+              status: response.status,
+              statusText: response.statusText,
+              details: errorDetails,
+              fullError: { response: { status: response.status, statusText: response.statusText }, data, responseText }
+            });
           }
         } catch (error) {
           console.error("Failed to update brand name", error);
           // Revert on error
           setCurrentBrandName(originalName);
+          setErrorPopup({
+            message: "Failed to update brand name",
+            details: error instanceof Error ? error.message : String(error),
+            fullError: error
+          });
         }
       }
     }
@@ -183,10 +379,52 @@ export default function SettingsSheet({
     setClearingBrand(true);
     try {
       const response = await fetch("/api/brand", { method: "DELETE" });
+      
+      let data: any = null;
+      let responseText = "";
+      
+      try {
+        responseText = await response.text();
+        if (responseText) {
+          try {
+            data = JSON.parse(responseText);
+          } catch {
+            data = { error: responseText };
+          }
+        }
+      } catch (textError) {
+        console.error("Failed to read response", textError);
+        responseText = "Unable to read response";
+      }
+      
       if (!response.ok) {
-        console.error("Failed to clear brand info");
+        let errorMessage = "Failed to deselect brand";
+        let errorDetails: string | unknown = null;
+        
+        if (data?.error) {
+          if (typeof data.error === "string") {
+            errorMessage = data.error;
+          } else if (data.error.details) {
+            errorMessage = typeof data.error.details === "string" ? data.error.details : "Error details available";
+            errorDetails = data.error.details;
+          } else {
+            errorDetails = data.error;
+          }
+        } else if (responseText) {
+          errorMessage = responseText;
+          errorDetails = responseText;
+        }
+        
+        setErrorPopup({
+          message: errorMessage,
+          status: response.status,
+          statusText: response.statusText,
+          details: errorDetails,
+          fullError: { response: { status: response.status, statusText: response.statusText }, data, responseText }
+        });
         return;
       }
+      
       setBrandInput("");
       setBrandName("");
       setCurrentBrandName("");
@@ -195,6 +433,11 @@ export default function SettingsSheet({
       onBrandUpdate?.(null, null);
     } catch (error) {
       console.error("Failed to clear brand info", error);
+      setErrorPopup({
+        message: "Failed to deselect brand",
+        details: error instanceof Error ? error.message : String(error),
+        fullError: error
+      });
     } finally {
       setClearingBrand(false);
     }
@@ -480,6 +723,25 @@ export default function SettingsSheet({
                   />
                 </div>
                 <div className="pt-2 border-t border-brand-stroke/60">
+                  <div className="flex items-center gap-3 mb-4">
+                    <label className="text-sm text-brand-muted whitespace-nowrap w-24">Select brand</label>
+                    <select
+                      value={hasBrand ? "current" : ""}
+                      onChange={(e) => {
+                        if (e.target.value === "current" && hasBrand) {
+                          // Brand is already selected, this is just for display
+                        }
+                      }}
+                      className="flex-1 rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
+                      disabled={!hasBrand}
+                    >
+                      {hasBrand ? (
+                        <option value="current">{currentBrandName || "Untitled Brand"}</option>
+                      ) : (
+                        <option value="">No brand defined</option>
+                      )}
+                    </select>
+                  </div>
                   <div className="flex items-center gap-3">
                     <label className="text-sm text-brand-muted whitespace-nowrap w-24">Brand</label>
                     {hasBrand && (
@@ -542,7 +804,7 @@ export default function SettingsSheet({
                       disabled={clearingBrand}
                       className="mt-2 ml-[108px] rounded-full border border-brand-stroke/60 px-4 py-2 text-xs font-semibold text-brand-muted transition hover:border-brand-blue hover:text-brand-blue disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {clearingBrand ? "Clearing..." : "Clear Custom Brand"}
+                      {clearingBrand ? "Deselecting..." : "Deselect Brand"}
                     </button>
                   )}
                 </div>
@@ -621,8 +883,9 @@ export default function SettingsSheet({
              </Transition.Child>
            </div>
          </Dialog>
-       </Transition>
-     </Transition>
+      </Transition>
+      <ErrorPopup error={errorPopup} onClose={() => setErrorPopup(null)} />
+    </Transition>
    );
  }
 

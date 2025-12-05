@@ -319,6 +319,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [brandName, setBrandName] = useState<string | null>(null);
   const [brandSummary, setBrandSummary] = useState<string | null>(null);
   const [brandKeyMessaging, setBrandKeyMessaging] = useState<BrandKeyMessage[]>([]);
+  const [allBrands, setAllBrands] = useState<Array<{ id: string; name: string | null; info: string; isActive: boolean }>>([]);
   const [savedDocs, setSavedDocs] = useState<SavedDoc[]>([]);
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [folderDialogState, setFolderDialogState] = useState<{ assignActiveDocument?: boolean; documentId?: string | null } | null>(null);
@@ -328,6 +329,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("docs");
   const [activeStyle, setActiveStyle] = useState<ActiveStyle | null>(null);
+  const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(true);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [selectedText, setSelectedText] = useState<string | null>(null);
@@ -482,13 +484,107 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     setBrandSummary(summary);
     setBrandName(name ?? null);
     setHasBrand(Boolean(summary?.trim()) || Boolean(name?.trim()));
+    
+    // Refresh all brands list for authenticated users
+    if (isAuthenticated) {
+      fetchAllBrands();
+    }
   }
 
-  useEffect(() => {
-    if (!toast) return;
-    const id = setTimeout(() => setToast(null), 3000);
-    return () => clearTimeout(id);
-  }, [toast]);
+  async function handleUseBrand(brandId?: string) {
+    if (!brandId) {
+      setToast("No brand ID provided.");
+      return;
+    }
+    
+    // Optimistically update UI immediately
+    const previousActiveBrandId = activeBrandId;
+    setActiveBrandId(brandId);
+    
+    // Find brand immediately from current list for UI/labels
+    const brand = allBrands.find((b) => b.id === brandId);
+    const brandDisplayName = brand?.name || brandName || "Custom Brand";
+    if (brand) {
+      // Update brand info state so button/dot reflect immediately
+      setBrandName(brand.name ?? null);
+      setBrandSummary(brand.info ?? null);
+      setHasBrand(Boolean(brand.info) || Boolean(brand.name));
+    }
+    
+    // For authenticated users, activate via API
+    if (isAuthenticated) {
+      try {
+        const response = await fetch(`/api/brand?activate=${brandId}`, {
+          method: "POST"
+        });
+        
+        if (response.ok) {
+          // Show toast immediately
+          setToast(`Brand "${brandDisplayName}" is now active and will be used for all compositions.`);
+          // Immediately update local list so UI reflects active state (button + blue dot) without waiting for refetch
+          setAllBrands((prev) =>
+            prev.length
+              ? prev.map((b) => ({ ...b, isActive: b.id === brandId }))
+              : prev
+          );
+          
+          // Refresh brands list in background to sync with server
+          fetch("/api/brand?all=true")
+            .then(brandsResponse => {
+              if (brandsResponse.ok) {
+                return brandsResponse.json();
+              }
+              return null;
+            })
+            .then(brandsData => {
+              if (brandsData?.brands && Array.isArray(brandsData.brands)) {
+                setAllBrands(brandsData.brands);
+              }
+            })
+            .catch(err => {
+              console.error("Failed to refresh brands list", err);
+              // Don't show error to user, UI is already updated optimistically
+            });
+          
+          // Close sidebar on mobile after selection for better UX
+          if (!isDesktop) {
+            setTimeout(() => setSidebarOpen(false), 500);
+          }
+        } else {
+          // Revert on error
+          setActiveBrandId(previousActiveBrandId);
+          setToast("Failed to activate brand. Please try again.");
+        }
+      } catch (error) {
+        console.error("Failed to activate brand", error);
+        // Revert on error
+        setActiveBrandId(previousActiveBrandId);
+        setToast("Failed to activate brand. Please try again.");
+      }
+    } else {
+      // For guests, just set local state
+      if (hasBrand) {
+        // Ensure brand info state is set so indicators update
+        if (brand) {
+          setBrandName(brand.name ?? null);
+          setBrandSummary(brand.info ?? null);
+          setHasBrand(Boolean(brand.info) || Boolean(brand.name));
+        } else {
+          setHasBrand(true);
+        }
+        setToast(`Brand "${brandDisplayName}" is now active and will be used for all compositions.`);
+        // Close sidebar on mobile after selection for better UX
+        if (!isDesktop) {
+          setTimeout(() => setSidebarOpen(false), 500);
+        }
+      } else {
+        setActiveBrandId(previousActiveBrandId); // Revert
+        setToast("No brand defined. Define a brand in Settings first.");
+      }
+    }
+  }
+
+  // Removed auto-dismiss - toasts now stay open until manually closed
 
   // Check if brand is defined (works for both authenticated users and guests)
   useEffect(() => {
@@ -509,6 +605,55 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     }
     checkBrand();
   }, []);
+
+  // Fetch all brands for authenticated users
+  const fetchAllBrands = useCallback(async () => {
+    if (!isAuthenticated) {
+      // For guests, use the single brand from state
+      if (hasBrand) {
+        setAllBrands([{
+          id: "brand-primary",
+          name: brandName,
+          info: brandSummary || "",
+          isActive: true
+        }]);
+      } else {
+        setAllBrands([]);
+      }
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/brand?all=true");
+      if (response.ok) {
+        const data = await response.json();
+        if (data.brands && Array.isArray(data.brands)) {
+          setAllBrands(data.brands);
+          // Update activeBrandId if we have one
+          if (data.activeBrandId) {
+            setActiveBrandId(data.activeBrandId);
+          } else {
+            setActiveBrandId(null);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch all brands", error);
+    }
+  }, [isAuthenticated, hasBrand, brandName, brandSummary]);
+
+  useEffect(() => {
+    fetchAllBrands();
+  }, [fetchAllBrands]);
+
+  // Set active brand on mount if brand exists
+  useEffect(() => {
+    if (hasBrand && !activeBrandId) {
+      setActiveBrandId("brand-primary");
+    } else if (!hasBrand) {
+      setActiveBrandId(null);
+    }
+  }, [hasBrand, activeBrandId]);
 
   // Fetch brand key messaging items
   const fetchBrandKeyMessaging = useCallback(async () => {
@@ -571,17 +716,35 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       const response = await fetch("/api/brand", { method: "DELETE" });
       if (!response.ok) {
         const body = await response.json().catch(() => null);
-        return { success: false, error: body?.error || "Unable to remove brand summary." };
+        return { success: false, error: body?.error || "Unable to deselect brand." };
       }
+      // Only clear active brand state, don't clear the brands list
       setBrandSummary(null);
       setBrandName(null);
       setHasBrand(false);
+      setActiveBrandId(null);
+      
+      // Refresh all brands list to update active status
+      if (isAuthenticated) {
+        try {
+          const brandsResponse = await fetch("/api/brand?all=true");
+          if (brandsResponse.ok) {
+            const brandsData = await brandsResponse.json();
+            if (brandsData.brands && Array.isArray(brandsData.brands)) {
+              setAllBrands(brandsData.brands);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to refresh brands list", error);
+        }
+      }
+      
       return { success: true };
     } catch (error) {
-      console.error("Failed to clear brand info", error);
-      return { success: false, error: "Unable to remove brand summary." };
+      console.error("Failed to deselect brand", error);
+      return { success: false, error: "Unable to deselect brand." };
     }
-  }, []);
+  }, [isAuthenticated]);
 
   const handleAddKeyMessaging = useCallback(
     async (text: string): Promise<{ success: boolean; error?: string }> => {
@@ -2430,6 +2593,34 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     return activeDocumentId ? outputs.find((o) => o.id === activeDocumentId) ?? null : null;
   }, [activeDocumentId, outputs]);
 
+  // Calculate brand cards for display
+  const brandCards = useMemo(() => {
+    if (isAuthenticated && allBrands.length > 0) {
+      // For authenticated users, use all brands from database
+      // Use activeBrandId state directly for immediate UI updates
+      return allBrands.map((brand) => ({
+        id: brand.id,
+        name: brand.name?.trim() || "Custom Brand",
+        summary: brand.info,
+        hasSummary: Boolean(brand.info?.trim()),
+        // Only show key messages for active brand; fallback to brand.isActive for any legacy data
+        keyMessages: activeBrandId === brand.id || brand.isActive ? brandKeyMessaging : []
+      }));
+    } else if (hasBrand || brandKeyMessaging.length) {
+      // For guests or legacy, use single brand from state
+      return [
+        {
+          id: "brand-primary",
+          name: brandName?.trim() || "Custom Brand",
+          summary: brandSummary,
+          hasSummary: Boolean(brandSummary?.trim()),
+          keyMessages: brandKeyMessaging
+        }
+      ];
+    }
+    return [];
+  }, [isAuthenticated, allBrands, brandName, brandSummary, brandKeyMessaging, hasBrand, activeBrandId]);
+
   const documentHorizontalPadding = useMemo(() => {
     const basePadding = 180;
     const desktopSidebarOffsetActive = sidebarOpen && isAuthenticated && isDesktop;
@@ -2491,9 +2682,12 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           brandSummary={brandSummary}
           hasBrand={hasBrand}
           brandKeyMessaging={brandKeyMessaging}
+          brandCards={brandCards}
           onRemoveKeyMessaging={handleRemoveKeyMessaging}
           onAddKeyMessaging={handleAddKeyMessaging}
           onClearBrand={handleClearBrand}
+          onUseBrand={handleUseBrand}
+          activeBrandId={activeBrandId}
           userName={user.name}
           topOffset={30}
           bottomOffset={hasOutputs ? 140 : 32}
@@ -2602,7 +2796,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         onBrandUpdate={handleBrandSummaryUpdate}
         initialBrandDefined={hasBrand}
       />
-      <Toast message={toast} />
+      <Toast message={toast} onClose={() => setToast(null)} />
     </div>
   );
 }
@@ -2874,18 +3068,26 @@ function FolderPickerDialog({ open, folders, onClose, onSelect, onCreateFolder }
   );
 }
 
-function Toast({ message }: { message: string | null }) {
+function Toast({ message, onClose }: { message: string | null; onClose: () => void }) {
+  if (!message) return null;
+  
   return (
     <div
       className={cn(
         "fixed top-1/2 left-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 transform rounded-2xl bg-brand-panel px-4 py-3 text-center text-sm text-brand-text shadow-[0_20px_60px_rgba(0,0,0,0.45)] transition-all duration-300 z-[9999] select-text",
-        {
-          "opacity-100 translate-y-[-50%] pointer-events-auto": Boolean(message),
-          "opacity-0 translate-y-[-40%] pointer-events-none": !message
-        }
+        "opacity-100 translate-y-[-50%] pointer-events-auto"
       )}
     >
-      {message}
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex-1 text-left">{message}</span>
+        <button
+          onClick={onClose}
+          className="flex-shrink-0 rounded-full p-1 hover:bg-brand-background/50 transition-colors"
+          aria-label="Close"
+        >
+          <span className="material-symbols-outlined text-base leading-none">close</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -2916,6 +3118,14 @@ function RegisterGate() {
   );
 }
 
+type BrandCard = {
+  id: string;
+  name: string;
+  summary: string | null;
+  hasSummary: boolean;
+  keyMessages: BrandKeyMessage[];
+};
+
 type WorkspaceSidebarProps = {
   open: boolean;
   activeTab: SidebarTab;
@@ -2928,9 +3138,12 @@ type WorkspaceSidebarProps = {
   brandSummary: string | null;
   hasBrand: boolean;
   brandKeyMessaging: BrandKeyMessage[];
+  brandCards: BrandCard[];
   onRemoveKeyMessaging: (id: string) => Promise<void>;
   onAddKeyMessaging?: (text: string) => Promise<{ success: boolean; error?: string }>;
   onClearBrand?: () => Promise<{ success: boolean; error?: string }>;
+  onUseBrand?: (brandId?: string) => void;
+  activeBrandId?: string | null;
   userName: string;
   topOffset: number;
   bottomOffset: number;
@@ -2961,9 +3174,12 @@ function WorkspaceSidebar({
   brandSummary,
   hasBrand,
   brandKeyMessaging,
+  brandCards,
   onRemoveKeyMessaging,
   onAddKeyMessaging,
   onClearBrand,
+  onUseBrand,
+  activeBrandId,
   userName,
   topOffset,
   bottomOffset,
@@ -3104,21 +3320,6 @@ function WorkspaceSidebar({
     return lastSpace > 0 ? truncated.substring(0, lastSpace) : truncated;
   }
 
-  const brandCards = useMemo(
-    () =>
-      hasBrand || brandKeyMessaging.length
-        ? [
-            {
-              id: "brand-primary",
-              name: brandName?.trim() || "Custom Brand",
-              summary: brandSummary,
-              hasSummary: Boolean(brandSummary?.trim()),
-              keyMessages: brandKeyMessaging
-            }
-          ]
-        : [],
-    [brandName, brandSummary, brandKeyMessaging, hasBrand]
-  );
 
   function renderDocList(items: SavedDoc[], emptyLabel: string) {
     if (!items.length) {
@@ -3152,7 +3353,7 @@ function WorkspaceSidebar({
                   "w-full h-[90px] rounded-[7px] border border-brand-stroke/40 bg-brand-background/60 p-5 text-left transition flex flex-col",
                   isActive
                     ? "border-white shadow-[0_20px_45px_rgba(0,0,0,0.45)]"
-                    : "hover:opacity-50"
+                    : "hover:border-white/50"
                 )}
                 tabIndex={-1}
               >
@@ -3291,7 +3492,7 @@ function WorkspaceSidebar({
                   }}
                   className={cn(
                     "aspect-square relative flex flex-col items-center justify-start rounded-2xl border transition p-[7px] group",
-                    isSelected ? "border-white bg-white/10 text-white" : "border-brand-stroke/50 bg-black/10 text-brand-muted hover:border-white hover:text-white hover:bg-black/15",
+                    isSelected ? "border-white bg-white/10 text-white" : "border-brand-stroke/50 bg-black/10 text-brand-muted hover:border-white/50 hover:text-white hover:bg-black/15",
                     isDragTarget ? "border-brand-blue text-brand-blue bg-black/15" : undefined
                   )}
                 >
@@ -3318,7 +3519,7 @@ function WorkspaceSidebar({
                   )}
                   <div className="flex-1 w-full min-h-0">
                     <AutoFitText 
-                      className="text-white"
+                      className="text-white/75"
                       maxFontSize={15}
                       minFontSize={8}
                       lineHeight={1.33}
@@ -3395,6 +3596,7 @@ function WorkspaceSidebar({
           {brandCards.map((brand) => (
             <BrandCard
               key={brand.id}
+              id={brand.id}
               name={brand.name}
               summary={brand.summary}
               hasSummary={brand.hasSummary}
@@ -3403,6 +3605,8 @@ function WorkspaceSidebar({
               onAddKeyMessage={onAddKeyMessaging}
               onRemoveKeyMessage={onRemoveKeyMessaging}
               onClearBrand={onClearBrand}
+              onUseBrand={() => onUseBrand?.(brand.id)}
+              isActive={activeBrandId === brand.id}
             />
           ))}
         </div>
@@ -3548,6 +3752,7 @@ function WorkspaceSidebar({
 }
 
 type BrandCardProps = {
+  id: string;
   name: string;
   summary: string | null;
   hasSummary: boolean;
@@ -3556,9 +3761,12 @@ type BrandCardProps = {
   onAddKeyMessage?: (text: string) => Promise<{ success: boolean; error?: string }>;
   onRemoveKeyMessage?: (id: string) => Promise<void>;
   onClearBrand?: () => Promise<{ success: boolean; error?: string }>;
+  onUseBrand?: (brandId?: string) => void;
+  isActive?: boolean;
 };
 
 function BrandCard({
+  id,
   name,
   summary,
   hasSummary,
@@ -3566,14 +3774,21 @@ function BrandCard({
   allowKeyMessageActions,
   onAddKeyMessage,
   onRemoveKeyMessage,
-  onClearBrand
+  onClearBrand,
+  onUseBrand,
+  isActive = false
 }: BrandCardProps) {
+  const [localActive, setLocalActive] = useState(isActive);
   const [editMode, setEditMode] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [adding, setAdding] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLocalActive(isActive);
+  }, [isActive]);
 
   const handleAddMessage = async () => {
     if (!allowKeyMessageActions || !onAddKeyMessage) return;
@@ -3632,21 +3847,40 @@ function BrandCard({
           <p className="text-[11px] uppercase tracking-wide text-brand-muted">Brand</p>
           <p className="text-xl font-semibold text-white">{name}</p>
         </div>
-        <button
-          type="button"
-          className={cn(
-            "rounded-full border px-4 py-1.5 text-xs font-semibold transition",
-            editMode
-              ? "border-brand-blue text-brand-blue"
-              : "border-brand-stroke/60 text-brand-muted hover:border-brand-blue hover:text-brand-blue"
+        <div className="flex items-center gap-2">
+          {onUseBrand && (
+            <button
+              type="button"
+              className={cn(
+                "rounded-full border px-4 py-1.5 text-xs font-semibold transition",
+                localActive
+                  ? "border-brand-blue bg-brand-blue/20 text-brand-blue"
+                  : "border-brand-stroke/60 text-brand-muted hover:border-brand-blue hover:text-brand-blue"
+              )}
+              onClick={() => {
+                setLocalActive(true); // optimistic immediate UI update
+                onUseBrand?.(id);
+              }}
+            >
+              {localActive ? "Active" : "Use this brand"}
+            </button>
           )}
-          onClick={() => {
-            setEditMode((prev) => !prev);
-            setFeedback(null);
-          }}
-        >
-          {editMode ? "Done" : "Edit brand"}
-        </button>
+          <button
+            type="button"
+            className={cn(
+              "rounded-full border px-4 py-1.5 text-xs font-semibold transition",
+              editMode
+                ? "border-brand-blue text-brand-blue"
+                : "border-brand-stroke/60 text-brand-muted hover:border-brand-blue hover:text-brand-blue"
+            )}
+            onClick={() => {
+              setEditMode((prev) => !prev);
+              setFeedback(null);
+            }}
+          >
+            {editMode ? "Done" : "Edit brand"}
+          </button>
+        </div>
       </div>
       <div className="mt-4 rounded-2xl border border-brand-stroke/40 bg-brand-background/80 p-4">
         <div className="flex items-center justify-between gap-3">

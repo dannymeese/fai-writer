@@ -17,11 +17,14 @@ model User {
   marketTier        MarketTier          @default(MASS)
   brandName         String?             @db.VarChar(100)
   brandInfo         String?             @db.VarChar(400)
+  activeBrandId     String?
+  activeBrand       Brand?              @relation("ActiveBrand", fields: [activeBrandId], references: [id], onDelete: SetNull)
   documents         Document[]
   accounts          Account[]
   sessions          Session[]
   tokenUsage        TokenUsage?
   brandKeyMessaging BrandKeyMessaging[]
+  brands            Brand[]             @relation("BrandOwner")
   folders           Folder[]
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
@@ -90,6 +93,19 @@ model TokenUsage {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Brand {
+  id        String   @id @default(cuid())
+  name      String?  @db.VarChar(100)
+  info      String   @db.VarChar(400)
+  owner     User     @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId   String
+  activeFor User[]   @relation("ActiveBrand")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
 }
 
 model BrandKeyMessaging {

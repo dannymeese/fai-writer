@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import MarkdownEditor from "./MarkdownEditor";
-import { cn, generateDownloadFilename, markdownToPlainText } from "@/lib/utils";
+import { cn, generateDownloadFilename } from "@/lib/utils";
 import MarkdownIt from "markdown-it";
 import { WriterOutput } from "@/types/writer";
 import type { Editor } from "@tiptap/react";
@@ -249,7 +249,7 @@ export default function DocumentEditor({
       const tokens = md.parse(preprocessedContent, {});
       
       // Helper to extract plain text from tokens
-      function getTextFromTokens(tokens: any[]): string {
+      const getTextFromTokens = (tokens: any[]): string => {
         let text = "";
         for (const token of tokens) {
           if (token.type === "text") {
@@ -259,7 +259,7 @@ export default function DocumentEditor({
           }
         }
         return text;
-      }
+      };
       
       // Add title only if not untitled (strip markdown from title)
       let yPosition = margin;

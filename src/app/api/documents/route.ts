@@ -99,6 +99,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  let createData: any = null;
   try {
     const autoTitle = parsed.data.styleTitle
       ? parsed.data.title
@@ -125,7 +126,7 @@ export async function POST(request: Request) {
     const finalTitle = trimmedTitle.length > 255 ? trimmedTitle.substring(0, 255) : trimmedTitle;
 
     // Build data object for Prisma
-    const createData: any = {
+    createData = {
       title: finalTitle,
       content: parsed.data.content || "",
       ownerId: session.user.id
