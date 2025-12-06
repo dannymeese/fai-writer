@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { documentSchema } from "@/lib/validators";
 import { deriveTitleFromContent, stripMarkdownFromTitle } from "@/lib/utils";
 import { generateStyleMetadata } from "@/lib/style-metadata";
+import { getOpenAIClient } from "@/lib/openai";
 import { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -102,27 +103,87 @@ export async function POST(request: Request) {
 
   let createData: any = null;
   try {
+    // Detect style payload: has style fields OR title ends with "Style"
+    const titleEndsWithStyle = parsed.data.title?.toLowerCase().endsWith(" style") || parsed.data.title?.endsWith("Style");
     const isStylePayload =
-      Boolean(parsed.data.writingStyle) || Boolean(parsed.data.styleTitle) || Boolean(parsed.data.styleSummary);
+      Boolean(parsed.data.writingStyle) || Boolean(parsed.data.styleTitle) || Boolean(parsed.data.styleSummary) || titleEndsWithStyle;
+    let generatedWritingStyle: string | null = parsed.data.writingStyle ?? null;
     let generatedStyleTitle: string | null = null;
     let generatedStyleSummary: string | null = null;
 
     if (isStylePayload) {
+      // Generate writingStyle if not provided (for style saves)
+      if (!generatedWritingStyle && parsed.data.content) {
+        try {
+          let openai;
+          try {
+            openai = getOpenAIClient();
+          } catch (error) {
+            console.warn("[documents][POST] OpenAI unavailable for writingStyle generation", error);
+          }
+
+          if (openai) {
+            const contentText = parsed.data.content.trim();
+            if (contentText) {
+              console.log("[documents][POST] Generating writingStyle from content", {
+                contentLength: contentText.length
+              });
+              const styleResponse = await openai.responses.create({
+                model: "gpt-5.1",
+                temperature: 0.4,
+                max_output_tokens: 200,
+                response_format: { type: "json_object" },
+                input: [
+                  {
+                    role: "system",
+                    content: `You are a writing analyst. Analyze the writing style of the given text and return a JSON object with exactly this field:
+- "description": A 2-3 sentence description of the writing style focusing on tone, voice, structure, vocabulary choices, and any distinctive characteristics.
+
+Return ONLY valid JSON with the "description" field, no other text.`
+                  },
+                  {
+                    role: "user",
+                    content: `Analyze the writing style of this text:\n\n${contentText}\n\nReturn JSON with "description" field.`
+                  }
+                ]
+              });
+              
+              try {
+                const jsonText = styleResponse.output_text?.trim() ?? null;
+                if (jsonText) {
+                  const parsed = JSON.parse(jsonText);
+                  generatedWritingStyle = parsed.description?.trim() ?? null;
+                }
+              } catch (parseError) {
+                console.error("[documents][POST] Failed to parse writingStyle JSON", parseError, styleResponse.output_text);
+                // Fallback to raw text if JSON parsing fails
+                generatedWritingStyle = styleResponse.output_text?.trim() ?? null;
+              }
+              console.log("[documents][POST] WritingStyle generated", {
+                hasWritingStyle: !!generatedWritingStyle,
+                writingStyleLength: generatedWritingStyle?.length
+              });
+            }
+          }
+        } catch (error) {
+          console.error("[documents][POST] WritingStyle generation failed", error);
+          // Continue without writingStyle - don't fail the save
+        }
+      }
+
       try {
         console.log("[documents][POST] Generating style metadata", {
-          hasWritingStyle: !!parsed.data.writingStyle,
-          writingStyleLength: parsed.data.writingStyle?.length,
+          hasWritingStyle: !!generatedWritingStyle,
+          writingStyleLength: generatedWritingStyle?.length,
           contentLength: parsed.data.content?.length,
           hasStyleTitle: !!parsed.data.styleTitle,
-          hasStyleSummary: !!parsed.data.styleSummary,
-          fallbackTitle: parsed.data.title
+          hasStyleSummary: !!parsed.data.styleSummary
         });
         const metadata = await generateStyleMetadata({
-          writingStyle: parsed.data.writingStyle ?? null,
+          writingStyle: generatedWritingStyle ?? null,
           content: parsed.data.content ?? "",
           styleTitle: parsed.data.styleTitle ?? null,
-          styleSummary: parsed.data.styleSummary ?? null,
-          fallbackTitle: parsed.data.title
+          styleSummary: parsed.data.styleSummary ?? null
         });
         generatedStyleTitle = metadata.styleTitle;
         generatedStyleSummary = metadata.styleSummary;
@@ -145,41 +206,45 @@ export async function POST(request: Request) {
         ? stripMarkdownFromTitle(resolvedStyleTitle).trim().slice(0, 100)
         : null;
     const styleTitleValue = rawStyleTitleValue && rawStyleTitleValue.trim().length > 0 ? rawStyleTitleValue : null;
-    // For styles, prefer the generated title, then the sent title, then derive from content
-    const autoTitle = styleTitleValue
-      ? styleTitleValue
-      : parsed.data.title && parsed.data.title.trim()
-      ? parsed.data.title.trim()
-      : deriveTitleFromContent(parsed.data.content, parsed.data.title);
-
-    // Ensure title is never empty (shouldn't happen, but safety check)
-    if (!autoTitle || autoTitle.trim().length === 0) {
-      console.error("[documents][POST] Generated empty title", {
-        content: parsed.data.content?.substring(0, 100),
-        contentLength: parsed.data.content?.length,
-        originalTitle: parsed.data.title,
-        styleTitle: parsed.data.styleTitle,
-        isStylePayload,
-        generatedStyleTitle,
-        styleTitleValue,
-        resolvedStyleTitle
-      });
-      return NextResponse.json(
-        { error: "Unable to generate document title." },
-        { status: 400 }
-      );
-    }
-
-    // Strip markdown formatting from AI-generated titles
-    const cleanedTitle = stripMarkdownFromTitle(autoTitle);
     
-    // Ensure title doesn't exceed database limit (255 chars)
-    const trimmedTitle = cleanedTitle.trim();
-    const finalTitle = trimmedTitle.length > 255 ? trimmedTitle.substring(0, 255) : trimmedTitle;
+    // For styles, ALWAYS use the generated styleTitle (in "[adjective] [adjective] [noun]" format) as the title
+    // The client sends a placeholder title ending with "Style" just to indicate it's a style save
+    // We ignore the client's placeholder title and use the generated one
+    let autoTitle: string | null = null;
+    if (isStylePayload && titleEndsWithStyle) {
+      // This is a style save - MUST use generated title, never the placeholder
+      if (styleTitleValue) {
+        autoTitle = styleTitleValue;
+      } else {
+        // Generation failed - use content-derived fallback (better than placeholder)
+        autoTitle = deriveTitleFromContent(parsed.data.content, "Writing Style");
+        console.warn("[documents][POST] Style title generation failed, using fallback", {
+          contentLength: parsed.data.content?.length,
+          hasWritingStyle: !!generatedWritingStyle
+        });
+      }
+    } else if (styleTitleValue) {
+      autoTitle = styleTitleValue;
+    } else if (parsed.data.title !== null && parsed.data.title !== undefined) {
+      // Use the provided title (even if empty string) - don't auto-generate
+      autoTitle = parsed.data.title.trim() || null;
+    }
+    // If title is null/undefined and not a style, leave it as null (don't auto-generate)
+
+    // Strip markdown formatting from titles (if present)
+    let finalTitle: string = "";
+    if (autoTitle && autoTitle.trim().length > 0) {
+      const cleanedTitle = stripMarkdownFromTitle(autoTitle);
+      // Ensure title doesn't exceed database limit (255 chars)
+      const trimmedTitle = cleanedTitle.trim();
+      finalTitle = trimmedTitle.length > 255 ? trimmedTitle.substring(0, 255) : trimmedTitle;
+    }
+    // If no title, finalTitle remains empty string (DB requires non-null, so use "")
 
     // Build data object for Prisma
+    // Note: title field is NOT nullable in DB schema, so use empty string instead of null
     createData = {
-      title: finalTitle,
+      title: finalTitle, // Empty string for blank titles (DB requires non-null)
       content: parsed.data.content || "",
       ownerId: session.user.id
     };
@@ -192,13 +257,19 @@ export async function POST(request: Request) {
     if (parsed.data.gradeLevel !== undefined && parsed.data.gradeLevel !== null) createData.gradeLevel = parsed.data.gradeLevel;
     if (parsed.data.benchmark !== undefined && parsed.data.benchmark !== null) createData.benchmark = parsed.data.benchmark;
     if (parsed.data.avoidWords !== undefined && parsed.data.avoidWords !== null) createData.avoidWords = parsed.data.avoidWords;
-    if (parsed.data.writingStyle !== undefined && parsed.data.writingStyle !== null) {
-      createData.writingStyle = parsed.data.writingStyle;
+    // Use generated writingStyle if available, otherwise use provided one
+    const resolvedWritingStyle = generatedWritingStyle ?? parsed.data.writingStyle ?? null;
+    if (resolvedWritingStyle !== null && resolvedWritingStyle !== undefined) {
+      createData.writingStyle = resolvedWritingStyle;
     }
     if (resolvedStyleSummary !== undefined && resolvedStyleSummary !== null && resolvedStyleSummary.trim().length > 0) {
       createData.styleSummary = resolvedStyleSummary;
     }
-    if (styleTitleValue !== null) {
+    // For styles, ensure styleTitle matches title exactly for isStyleDocument() to work
+    // Use the generated styleTitle (which is now the finalTitle for style saves)
+    if (isStylePayload) {
+      createData.styleTitle = finalTitle;
+    } else if (styleTitleValue !== null) {
       createData.styleTitle = styleTitleValue;
     }
     if (parsed.data.pinned !== undefined) createData.pinned = parsed.data.pinned;

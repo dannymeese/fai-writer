@@ -51,7 +51,10 @@ export async function PATCH(
 
     // Build update data object
     const updateData: any = {};
-    if (body.title !== undefined) updateData.title = body.title;
+    if (body.title !== undefined) {
+      // Allow empty strings - normalize null to empty string (DB requires non-null)
+      updateData.title = body.title === null ? "" : body.title;
+    }
     if (body.content !== undefined) updateData.content = body.content;
     if (body.tone !== undefined) updateData.tone = body.tone;
     if (body.prompt !== undefined) updateData.prompt = body.prompt;
@@ -74,12 +77,12 @@ export async function PATCH(
           writingStyle: body.writingStyle ?? existingDoc.writingStyle ?? null,
           content: body.content ?? existingDoc.content ?? null,
           styleTitle: body.styleTitle ?? existingDoc.styleTitle ?? null,
-          styleSummary: body.styleSummary ?? existingDoc.styleSummary ?? null,
-          fallbackTitle: body.title ?? existingDoc.title
+          styleSummary: body.styleSummary ?? existingDoc.styleSummary ?? null
         });
         if (metadata.styleTitle) {
           updateData.styleTitle = metadata.styleTitle;
-          if (updateData.title === undefined) {
+          // Only auto-set title if it wasn't explicitly provided (to allow blank titles)
+          if (updateData.title === undefined && body.title === undefined) {
             updateData.title = metadata.styleTitle;
           }
         }
@@ -152,6 +155,82 @@ export async function PATCH(
     });
     return NextResponse.json(
       { error: "Unable to update document.", details: errorMessage },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const db = prisma;
+  if (!db) {
+    return NextResponse.json(
+      { error: "Document storage is disabled until the database is configured." },
+      { status: 503 }
+    );
+  }
+
+  const { id } = await params;
+
+  try {
+    // Check if document exists and belongs to user
+    const existingDoc = await db.document.findFirst({
+      where: {
+        id,
+        ownerId: session.user.id
+      }
+    });
+
+    if (!existingDoc) {
+      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+    }
+
+    // Delete the document (cascade will handle documentFolders)
+    await db.document.delete({
+      where: { id }
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    // Handle Prisma-specific errors
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      // P2025 = Record not found
+      if (error.code === "P2025") {
+        return NextResponse.json({ error: "Document not found" }, { status: 404 });
+      }
+      // Other Prisma errors
+      console.error("[documents][DELETE] Prisma error", {
+        code: error.code,
+        meta: error.meta,
+        message: error.message
+      });
+      return NextResponse.json(
+        { error: "Database error occurred.", details: error.message },
+        { status: 500 }
+      );
+    }
+
+    // Handle Prisma connection errors
+    if (error instanceof Prisma.PrismaClientInitializationError) {
+      console.error("[documents][DELETE] Prisma initialization error", error.message);
+      return NextResponse.json(
+        { error: "Database connection failed. Please try again." },
+        { status: 503 }
+      );
+    }
+
+    // Handle other errors
+    console.error("[documents][DELETE] failed", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json(
+      { error: "Unable to delete document.", details: errorMessage },
       { status: 500 }
     );
   }

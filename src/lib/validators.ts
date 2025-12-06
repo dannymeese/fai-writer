@@ -49,7 +49,7 @@ export const composeRequestSchema = z.object({
 });
 
 export const documentSchema = z.object({
-  title: z.string().min(1),
+  title: z.string().min(0), // Allow empty titles
   content: z.string().min(0),
   tone: z.string().optional().nullable(),
   prompt: z.string().optional(),

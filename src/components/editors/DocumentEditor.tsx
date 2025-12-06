@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo, Fragment } from "react";
 import { createPortal } from "react-dom";
+import { Dialog, Transition } from "@headlessui/react";
 import MarkdownEditor from "./MarkdownEditor";
 import { cn, generateDownloadFilename } from "@/lib/utils";
 import MarkdownIt from "markdown-it";
@@ -35,6 +36,7 @@ type DocumentEditorProps = {
   documentPinned?: boolean;
   onSaveStyle?: () => void;
   onTyping?: () => void;
+  onDeleteDocument?: () => void;
 };
 
 function derivePlaceholderMeta(content: string): Array<{ id: string; label: string }> {
@@ -129,7 +131,8 @@ export default function DocumentEditor({
   canOrganizeDocuments = false,
   documentPinned = false,
   onSaveStyle,
-  onTyping
+  onTyping,
+  onDeleteDocument
 }: DocumentEditorProps) {
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -148,6 +151,7 @@ export default function DocumentEditor({
   const [documentMenuOpen, setDocumentMenuOpen] = useState(false);
   const [documentMenuPosition, setDocumentMenuPosition] = useState<{ left: number; top: number; height: number; variant: "default" | "sticky" } | null>(null);
   const documentMenuRef = useRef<HTMLDivElement>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const documentMenuOpenRef = useRef(documentMenuOpen);
   const documentMenuVariantRef = useRef<"default" | "sticky" | null>(null);
 
@@ -703,11 +707,15 @@ export default function DocumentEditor({
   const handleTitleBlur = useCallback(() => {
     setIsEditingTitle(false);
     const trimmedTitle = titleValue.trim();
-    if (trimmedTitle && onTitleChange && trimmedTitle !== document?.title) {
-      onTitleChange(trimmedTitle);
-    } else if (!trimmedTitle && document?.title) {
-      // Restore original title if empty
-      setTitleValue(document.title);
+    // Allow empty titles - save empty string if user cleared the title
+    if (onTitleChange) {
+      const currentTitle = document?.title || "";
+      if (trimmedTitle !== currentTitle) {
+        onTitleChange(trimmedTitle);
+      } else if (!trimmedTitle && currentTitle) {
+        // User cleared the title - save empty string
+        onTitleChange("");
+      }
     }
   }, [titleValue, document, onTitleChange]);
 
@@ -717,9 +725,8 @@ export default function DocumentEditor({
       titleInputRef.current?.blur();
     }
     if (e.key === "Escape") {
-      if (document?.title) {
-        setTitleValue(document.title);
-      }
+      // Restore original title (or empty string if no title)
+      setTitleValue(document?.title || "");
       setIsEditingTitle(false);
       titleInputRef.current?.blur();
     }
@@ -968,10 +975,7 @@ export default function DocumentEditor({
                 <span className="material-symbols-outlined text-base leading-none">
                   {documentPinned ? "push_pin" : "push_pin"}
                 </span>
-                <div>
-                  <p className="font-semibold">{documentPinned ? "Unpin Document" : "Pin Document"}</p>
-                  <p className="text-xs text-white/60">Keep this doc at the top</p>
-                </div>
+                <p className="font-semibold">{documentPinned ? "Unpin Document" : "Pin Document"}</p>
               </button>
             )}
             {onRequestAddToFolder && (
@@ -981,10 +985,21 @@ export default function DocumentEditor({
                 className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-white transition hover:bg-white/10"
               >
                 <span className="material-symbols-outlined text-base leading-none">drive_folder_upload</span>
-                <div>
-                  <p className="font-semibold">Add to Folder</p>
-                  <p className="text-xs text-white/60">Organize this doc</p>
-                </div>
+                <p className="font-semibold">Add to Folder</p>
+              </button>
+            )}
+            {onDeleteDocument && (
+              <button
+                type="button"
+                onClick={() => {
+                  handleDocumentMenuAction(() => {
+                    setShowDeleteConfirm(true);
+                  });
+                }}
+                className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-white transition hover:bg-red-500/20 hover:text-red-400"
+              >
+                <span className="material-symbols-outlined text-base leading-none">delete</span>
+                <p className="font-semibold">Delete Document</p>
               </button>
             )}
           </div>,
@@ -992,8 +1007,81 @@ export default function DocumentEditor({
         )
       : null;
 
+  const deleteConfirmationDialog = showDeleteConfirm ? (
+    createPortal(
+      <Transition show={showDeleteConfirm} as={Fragment}>
+        <Dialog onClose={() => setShowDeleteConfirm(false)} className="fixed inset-0 z-[1300]">
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-200"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-150"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black/60" aria-hidden="true" />
+          </Transition.Child>
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-200"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-150"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className="relative w-full max-w-md rounded-2xl border border-brand-stroke/60 bg-brand-panel p-6 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
+                <div className="flex items-center justify-between mb-4">
+                  <Dialog.Title className="text-lg font-semibold text-white">
+                    Delete Document
+                  </Dialog.Title>
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="rounded-full p-1 text-brand-muted transition hover:bg-brand-background/50 hover:text-white"
+                    aria-label="Close"
+                  >
+                    <span className="material-symbols-outlined text-xl leading-none">close</span>
+                  </button>
+                </div>
+                <p className="text-sm text-brand-text mb-6">
+                  Are you sure you want to delete &quot;{document?.title || "this document"}&quot;? This action cannot be undone.
+                </p>
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="rounded-full border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onDeleteDocument) {
+                        onDeleteDocument();
+                        setShowDeleteConfirm(false);
+                      }
+                    }}
+                    className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </Dialog>
+      </Transition>,
+      window.document.body
+    )
+  ) : null;
+
   return (
-    <div className={cn("relative flex h-full flex-col", className)}>
+    <Fragment>
+      {deleteConfirmationDialog}
+      <div className={cn("relative flex h-full flex-col", className)}>
       {/* Sticky Title Bar - appears when title scrolls out of view */}
       <div
         data-document-sticky-title
@@ -1014,8 +1102,11 @@ export default function DocumentEditor({
           <div className="flex w-full items-center justify-between gap-4">
             <div className="flex-1">
               <div className="max-w-[680px]">
-                <h1 className="font-semibold text-white/50" style={{ fontSize: '12px' }}>
-                  {titleValue || document?.title || "Untitled doc"}
+                <h1 className={cn(
+                  "font-semibold transition-colors",
+                  (titleValue || document?.title) ? "text-white/50" : "text-white/25"
+                )} style={{ fontSize: '12px' }}>
+                  {titleValue || document?.title || "Enter title"}
                 </h1>
               </div>
             </div>
@@ -1087,17 +1178,22 @@ export default function DocumentEditor({
               onChange={(e) => setTitleValue(e.target.value)}
               onBlur={handleTitleBlur}
               onKeyDown={handleTitleKeyDown}
-              className="w-full bg-transparent text-base leading-[32px] font-semibold text-white outline-none placeholder:text-white/50"
+              className="w-full bg-transparent text-base leading-[32px] font-semibold text-white outline-none placeholder:text-white/25"
               style={{ fontSize: '16px' }}
-              placeholder="Untitled doc"
+              placeholder="Enter title"
             />
         ) : (
           <h1
             onClick={handleTitleClick}
-            className="cursor-text font-semibold text-white/50 hover:text-white/70 transition-colors"
+            className={cn(
+              "cursor-text font-semibold transition-colors",
+              (titleValue || document?.title) 
+                ? "text-white/50 hover:text-white/70" 
+                : "text-white/25 hover:text-white/35"
+            )}
             style={{ fontSize: '16px', lineHeight: '32px' }}
           >
-            {titleValue || document?.title || "Untitled doc"}
+            {titleValue || document?.title || "Enter title"}
           </h1>
         )}
             </div>
@@ -1177,6 +1273,7 @@ export default function DocumentEditor({
       {downloadMenu}
       {documentMenu}
     </div>
+    </Fragment>
   );
 }
 

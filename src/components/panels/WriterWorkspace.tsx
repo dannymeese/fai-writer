@@ -100,7 +100,7 @@ function readLocalDocs(): SavedDoc[] {
         : [];
       docs.push({
         id: typeof safeEntry.id === "string" ? safeEntry.id : `local-${Date.now()}`,
-        title: typeof safeEntry.title === "string" ? safeEntry.title : "Untitled doc",
+        title: typeof safeEntry.title === "string" ? safeEntry.title : "",
         createdAt: typeof safeEntry.createdAt === "string" ? safeEntry.createdAt : new Date().toISOString(),
         lastEditedAt:
           typeof safeEntry.lastEditedAt === "string"
@@ -322,7 +322,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     initialBlankDocRef.current = ensurePlaceholderState({
       id: clientId,
       instanceKey: clientId,
-      title: "Untitled doc",
+      title: "", // Start with blank title
       content: "",
       createdAt: new Date().toISOString(),
       settings: normalizeSettings(defaultSettings),
@@ -334,6 +334,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [outputs, setOutputs] = useState<WriterOutput[]>(() => [initialBlankDocRef.current!]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetAnchor, setSheetAnchor] = useState<DOMRect | null>(null);
+  const [openBrandModal, setOpenBrandModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [guestLimitReached, setGuestLimitReached] = useState(false);
@@ -427,7 +428,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           : [];
         return {
           id: doc.id,
-          title: doc.title ?? "Untitled doc",
+          title: doc.title ?? "",
           createdAt: doc.createdAt ?? new Date().toISOString(),
           lastEditedAt: existing?.lastEditedAt ?? doc.updatedAt ?? doc.createdAt ?? new Date().toISOString(),
           prompt: doc.prompt ?? "",
@@ -1491,9 +1492,13 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     if (isStyleEntry) {
       return doc.title || doc.styleTitle || "Custom Style";
     }
-    const normalizedContent = contentValue || doc.content || "";
-    const fallback = doc.title?.trim() || doc.prompt || "Untitled doc";
-    return deriveTitleFromContent(normalizedContent, fallback);
+    // If doc has an explicit title (even if empty string), use it
+    // Only auto-generate if title is null/undefined
+    if (doc.title !== null && doc.title !== undefined) {
+      return doc.title.trim();
+    }
+    // For new documents without a title, return empty string (don't auto-generate)
+    return "";
   }, []);
 
   const collectEditorContext = useCallback(() => {
@@ -1651,7 +1656,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     const settingsPayload = doc.settings ?? defaultSettings;
     const resolvedTitle = resolveDocumentTitle(doc, contentValue);
     const payload: any = {
-      title: resolvedTitle,
+      title: resolvedTitle || "", // Use empty string instead of null (DB requires non-null)
       content: contentValue
     };
     
@@ -1802,11 +1807,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       try {
         const payload = buildDocumentPayload(doc, contentValue);
         
-        // Validate payload before sending
-        if (!payload.title || payload.title.trim().length === 0) {
-          console.error("Document creation failed: empty title", { payload, doc, contentValue });
-          return null;
-        }
+        // Allow empty titles - don't validate title anymore
         
         console.log("[persistDocumentToServer] Creating document with payload:", {
           title: payload.title,
@@ -2061,7 +2062,8 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
   const handlePinDocument = useCallback(
     async (doc: SavedDoc) => {
       const newPinnedState = !doc.pinned;
-      const title = doc.title?.trim() || "Untitled doc";
+      // Extract first line as title fallback if no title exists
+      const title = doc.title?.trim() || (doc.content ? doc.content.split('\n')[0]?.trim() : "") || "";
       
       // Update local state immediately for instant UI feedback
       setSavedDocs((prev) => {
@@ -2461,6 +2463,88 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     void handlePinDocument(savedDoc);
   }, [activeDocumentId, handlePinDocument, setToast]);
 
+  const handleDeleteDocument = useCallback(async () => {
+    if (!activeDocumentId) {
+      setToast("No document to delete.");
+      return;
+    }
+
+    const docToDelete = savedDocsRef.current.find((doc) => doc.id === activeDocumentId);
+    if (!docToDelete) {
+      setToast("Document not found.");
+      return;
+    }
+
+    // Don't allow deleting local/unsaved documents
+    if (docToDelete.id.startsWith("local-")) {
+      setToast("Save the document before deleting.");
+      return;
+    }
+
+    // Only authenticated users can delete saved documents
+    if (!isAuthenticated) {
+      setToast("Sign in to delete documents.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/documents/${docToDelete.id}`, {
+        method: "DELETE"
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to delete document" }));
+        setToast(errorData.error || "Failed to delete document.");
+        return;
+      }
+
+      // Remove from outputs
+      setOutputs((prev) => prev.filter((output) => output.id !== activeDocumentId));
+
+      // Remove from saved docs
+      setSavedDocs((prev) => prev.filter((doc) => doc.id !== activeDocumentId));
+      savedDocsRef.current = savedDocsRef.current.filter((doc) => doc.id !== activeDocumentId);
+
+      // Clear from local storage
+      lastSavedContentRef.current.delete(activeDocumentId);
+      if (typeof window !== "undefined") {
+        const localDocs = JSON.parse(localStorage.getItem("savedDocs") || "[]");
+        const filtered = localDocs.filter((doc: SavedDoc) => doc.id !== activeDocumentId);
+        localStorage.setItem("savedDocs", JSON.stringify(filtered));
+      }
+
+      // Switch to another document or create a new one
+      const remainingDocs = outputsRef.current.filter((output) => output.id !== activeDocumentId);
+      if (remainingDocs.length > 0) {
+        // Switch to the first remaining document
+        const nextDoc = remainingDocs[0];
+        setActiveDocumentId(nextDoc.id);
+      } else {
+        // Create a new blank document
+        const clientId = crypto.randomUUID();
+        const newDoc = ensurePlaceholderState({
+          id: clientId,
+          instanceKey: clientId,
+          title: "", // Start with blank title
+          content: "",
+          createdAt: new Date().toISOString(),
+          settings: normalizeSettings(defaultSettings),
+          prompt: "",
+          writingStyle: null,
+          styleTitle: null
+        });
+        setOutputs([newDoc]);
+        setActiveDocumentId(newDoc.id);
+      }
+
+      setToast("Document deleted.");
+      await fetchSavedDocs();
+    } catch (error) {
+      console.error("Failed to delete document:", error);
+      setToast("Failed to delete document. Please try again.");
+    }
+  }, [activeDocumentId, isAuthenticated, setToast, fetchSavedDocs]);
+
   const isLoadingDocRef = useRef(false);
   
   const handleLoadDoc = useCallback(
@@ -2519,7 +2603,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     // Create a fresh document entry (don't save until it has content)
     let baseDoc: WriterOutput = ensurePlaceholderState({
       id: crypto.randomUUID(),
-      title: "Untitled doc",
+      title: "", // Start with blank title
       content: "",
       createdAt: new Date().toISOString(),
       settings: normalizeSettings(defaultSettings),
@@ -2562,20 +2646,24 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     (title: string) => {
       if (!activeDocumentId) return;
       
+      // Normalize empty string to null for consistency
+      const normalizedTitle = title.trim() || null;
+      
       // Update local state immediately
       setOutputs((prev) =>
         prev.map((output) =>
-          output.id === activeDocumentId ? { ...output, title } : output
+          output.id === activeDocumentId ? { ...output, title: normalizedTitle || "" } : output
         )
       );
 
       // Check if title actually changed before updating lastEditedAt
       const savedDoc = savedDocsRef.current.find((d) => d.id === activeDocumentId);
-      const titleChanged = !savedDoc || savedDoc.title !== title;
+      const currentTitle = savedDoc?.title || "";
+      const titleChanged = currentTitle !== (normalizedTitle || "");
       
       bumpSavedDoc(activeDocumentId, (doc) => ({
         ...doc,
-        title
+        title: normalizedTitle || ""
       }), titleChanged);
 
       // Clear existing title autosave timeout
@@ -2592,7 +2680,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           const patchResponse = await fetch(`/api/documents/${activeDocumentId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title })
+            body: JSON.stringify({ title: normalizedTitle || "" })
           });
 
           if (patchResponse.ok) {
@@ -2623,7 +2711,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
         const newDoc: WriterOutput = ensurePlaceholderState({
           id: clientId,
           instanceKey: clientId,
-          title: "Untitled doc",
+          title: "", // Start with blank title - user can add one if they want
           content: content.trim(),
           createdAt: new Date().toISOString(),
           settings: normalizeSettings(defaultSettings),
@@ -2965,6 +3053,11 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           onCreateFolder={handleOpenCreateFolder}
           onDocumentDroppedOnFolder={handleDocDroppedOnFolder}
           settingsOpen={sheetOpen}
+          onOpenSettings={(anchorRect) => {
+            setSheetAnchor(anchorRect);
+            setSheetOpen(true);
+          }}
+          onOpenBrandModal={() => setOpenBrandModal(true)}
         />
       )}
       <div className={cn("flex min-h-screen flex-1 flex-col pb-[350px] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop ? "lg:ml-[320px]" : undefined)}>
@@ -2991,6 +3084,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
               documentPinned={activeDocPinned}
               onSaveStyle={handleSaveCurrentStyle}
               onTyping={handleTyping}
+              onDeleteDocument={isAuthenticated ? handleDeleteDocument : undefined}
             />
             {/* Forgetaboutit Icon - positioned below document canvas */}
             <div className="flex justify-center mt-20 pointer-events-none" style={{ opacity: 1 }}>
@@ -3059,7 +3153,10 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       />
       <SettingsSheet
         open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
+        onClose={() => {
+          setSheetOpen(false);
+          setOpenBrandModal(false);
+        }}
         settings={settings}
         onChange={setSettings}
         anchorRect={sheetAnchor}
@@ -3070,6 +3167,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
         activeStyleId={activeStyle?.id}
         onApplyStyle={handleApplyStyle}
         onClearStyle={handleClearStyle}
+        openBrandModal={openBrandModal}
       />
       <Toast message={toast} onClose={() => setToast(null)} />
       <StyleGenerationPopup
@@ -3640,6 +3738,8 @@ type WorkspaceSidebarProps = {
   onCreateFolder: () => void;
   onDocumentDroppedOnFolder?: (folderId: string, docId: string) => void;
   settingsOpen?: boolean;
+  onOpenSettings?: (anchorRect: DOMRect) => void;
+  onOpenBrandModal?: () => void;
 };
 
 function WorkspaceSidebar({
@@ -3676,7 +3776,9 @@ function WorkspaceSidebar({
   onPinFolder,
   onCreateFolder,
   onDocumentDroppedOnFolder,
-  settingsOpen = false
+  settingsOpen = false,
+  onOpenSettings,
+  onOpenBrandModal
 }: WorkspaceSidebarProps) {
   const [hoveredTimestampId, setHoveredTimestampId] = useState<string | null>(null);
   const timestampTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -3774,7 +3876,50 @@ function WorkspaceSidebar({
   }
 
   // Helper function to extract preview text from content
-  function getContentPreview(content: string, maxLength: number = 80): string {
+  function getContentPreview(content: string, maxLength: number = 80, skipFirstLine: boolean = false): string {
+    if (!content || !content.trim()) {
+      return "";
+    }
+    
+    // Split into lines first to preserve line structure
+    const lines = content.split('\n');
+    
+    // If skipFirstLine is true, start from second line
+    const contentToProcess = skipFirstLine && lines.length > 1 
+      ? lines.slice(1).join('\n')
+      : content;
+    
+    if (!contentToProcess || !contentToProcess.trim()) {
+      return "";
+    }
+    
+    // Strip markdown formatting
+    let text = contentToProcess
+      .replace(/```[\s\S]*?```/g, "") // code blocks
+      .replace(/`([^`]+)`/g, "$1") // inline code
+      .replace(/!\[[^\]]*]\([^)]+\)/g, "") // images
+      .replace(/\[([^\]]+)]\([^)]+\)/g, "$1") // links
+      .replace(/[*_~]{1,3}([^*_~]+)[*_~]{1,3}/g, "$1") // emphasis/strike
+      .replace(/^#{1,6}\s+/gm, "") // headings
+      .replace(/^\s{0,3}[-*+]\s+/gm, "") // unordered lists
+      .replace(/^\s{0,3}\d+\.\s+/gm, "") // ordered lists
+      .replace(/^>\s?/gm, "") // blockquotes
+      .trim();
+    
+    // Convert newlines to spaces for preview
+    text = text.replace(/\n+/g, " ").trim();
+    
+    if (text.length <= maxLength) {
+      return text;
+    }
+    // Truncate at word boundary
+    const truncated = text.substring(0, maxLength);
+    const lastSpace = truncated.lastIndexOf(" ");
+    return lastSpace > 0 ? truncated.substring(0, lastSpace) : truncated;
+  }
+  
+  // Helper function to extract first line from content as title
+  function getFirstLineAsTitle(content: string): string {
     if (!content || !content.trim()) {
       return "";
     }
@@ -3789,36 +3934,48 @@ function WorkspaceSidebar({
       .replace(/^\s{0,3}[-*+]\s+/gm, "") // unordered lists
       .replace(/^\s{0,3}\d+\.\s+/gm, "") // ordered lists
       .replace(/^>\s?/gm, "") // blockquotes
-      .replace(/\n+/g, " ") // newlines to spaces
       .trim();
     
-    if (text.length <= maxLength) {
-      return text;
+    // Get first line
+    const firstLine = text.split('\n')[0]?.trim() || "";
+    
+    // Truncate if too long (max 80 chars for title)
+    if (firstLine.length > 80) {
+      const truncated = firstLine.substring(0, 80);
+      const lastSpace = truncated.lastIndexOf(" ");
+      return lastSpace > 0 ? truncated.substring(0, lastSpace) + "..." : truncated + "...";
     }
-    // Truncate at word boundary
-    const truncated = text.substring(0, maxLength);
-    const lastSpace = truncated.lastIndexOf(" ");
-    return lastSpace > 0 ? truncated.substring(0, lastSpace) : truncated;
+    
+    return firstLine;
   }
 
 
   function renderDocList(items: SavedDoc[], emptyLabel: string) {
     if (!items.length) {
-      return <p className="text-sm text-brand-muted">{emptyLabel}</p>;
+      return (
+        <div className="flex h-full flex-col justify-center pt-[4px] px-3">
+          <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-brand-background/40 p-6 text-center text-sm text-brand-muted">
+            <p className="font-semibold text-white">{emptyLabel}</p>
+          </div>
+        </div>
+      );
     }
     return (
       <ul className="space-y-1.5">
         {items.map((doc) => {
           const isActive = activeDocumentId === doc.id;
-          const preview = getContentPreview(doc.content);
-          const fullTitle = doc.title || "Untitled doc";
+          const hasTitle = doc.title && doc.title.trim().length > 0;
+          const displayTitle = hasTitle ? doc.title : getFirstLineAsTitle(doc.content);
+          const preview = hasTitle 
+            ? getContentPreview(doc.content)
+            : getContentPreview(doc.content, 80, true); // Skip first line if no title
           const docFolders = doc.folders ?? [];
           const canDragDoc = canOrganizeFolders && !doc.id.startsWith("local-");
           return (
             <li
               key={doc.id}
               className={cn(
-                "relative group",
+                "relative group p-1.5",
                 canDragDoc ? "cursor-grab" : undefined,
                 draggingDocId === doc.id ? "opacity-70" : undefined
               )}
@@ -3839,7 +3996,7 @@ function WorkspaceSidebar({
                 tabIndex={-1}
               >
                 <TruncateTitle 
-                  text={fullTitle}
+                  text={displayTitle || getFirstLineAsTitle(doc.content) || ""}
                   className="text-lg font-semibold pr-[46px] mb-[2.5px] pb-0.5 overflow-hidden whitespace-nowrap"
                   style={{ lineHeight: '1.6rem', color: 'rgba(255, 255, 255, 0.75)' }}
                 />
@@ -3925,17 +4082,7 @@ function WorkspaceSidebar({
             <span className="material-symbols-outlined leading-none" style={{ fontSize: '16px' }}>add</span>
           </button>
         </div>
-        {folders.length === 0 ? (
-          <button
-            type="button"
-            onMouseDown={handleButtonMouseDown}
-            onClick={onCreateFolder}
-            className="inline-flex items-center gap-2 rounded-full border border-dashed border-brand-stroke/60 px-4 py-2 text-xs font-semibold text-brand-text transition hover:border-white hover:text-white"
-          >
-            <span className="material-symbols-outlined text-base leading-none">add_circle</span>
-            Create folder
-          </button>
-        ) : (
+        {folders.length > 0 && (
           <div className="max-h-[200px] overflow-y-auto px-3 pt-2">
             <div className="grid grid-cols-3 gap-2">
             {folders.map((folder: FolderSummary) => {
@@ -4021,7 +4168,16 @@ function WorkspaceSidebar({
 
   function renderStyleList(items: SavedDoc[]) {
     if (!items.length) {
-      return <p className="text-sm text-brand-muted">Save a style from any output and it&apos;ll appear here.</p>;
+      return (
+        <div className="flex h-full flex-col justify-center pt-[4px] px-3">
+          <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-brand-background/40 p-6 text-center text-sm text-brand-muted">
+            <p className="font-semibold text-white">No styles yet</p>
+            <p className="mt-2">
+              Select text in any document, then click &quot;Save Writing Style&quot; from the plus menu to capture its tone and voice.
+            </p>
+          </div>
+        </div>
+      );
     }
 
     const activeStyle = activeStyleId ? items.find((style) => style.id === activeStyleId) : null;
@@ -4078,8 +4234,28 @@ function WorkspaceSidebar({
           <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-brand-background/40 p-6 text-center text-sm text-brand-muted">
             <p className="font-semibold text-white">No brands yet</p>
             <p className="mt-2">
-              Define your brand inside Settings to generate a summary and start saving key messages.
+              Define a brand to write in the brand&apos;s voice and bookmark key messages.
             </p>
+            <button
+              type="button"
+              onMouseDown={handleButtonMouseDown}
+              onClick={(e) => {
+                if (onOpenSettings && onOpenBrandModal) {
+                  // Get a reference element for the anchor (use the button itself)
+                  const button = e.currentTarget;
+                  const rect = button.getBoundingClientRect();
+                  onOpenBrandModal();
+                  onOpenSettings(rect);
+                }
+              }}
+              className="mt-4 mx-auto rounded-full border border-brand-stroke/70 bg-brand-ink p-2 text-brand-text transition hover:border-brand-blue hover:text-brand-blue flex-shrink-0"
+              aria-label="Define brand"
+              title="Define brand"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
           </div>
         </div>
       );
@@ -4218,7 +4394,7 @@ function WorkspaceSidebar({
                       </div>
                     );
                   })()}
-                  <div className="flex-1 min-h-0 overflow-y-auto pt-[4px] px-3">
+                  <div className="flex-1 min-h-0 overflow-y-auto">
                     {renderDocList(
                       filteredDocs,
                       effectiveFolderFilterId ? "No docs in this folder yet." : "No docs yet. Generate something to see it here."
