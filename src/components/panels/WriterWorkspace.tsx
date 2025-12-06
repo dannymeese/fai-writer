@@ -1267,9 +1267,8 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           gradeLevel: output.settings.gradeLevel ?? undefined,
           benchmark: output.settings.benchmark ?? undefined,
           avoidWords: output.settings.avoidWords ?? undefined,
-          writingStyle: description,
-          styleSummary,
-          styleTitle: styleName
+          // Let the server generate title/summary from the writingStyle/content
+          writingStyle: description
         })
       });
     } catch (error) {
@@ -1297,6 +1296,10 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     const hydratedStyleDoc: SavedDoc = {
       ...localStyleDoc,
       id: remoteDoc?.id ?? localStyleDoc.id,
+      title: remoteDoc?.title ?? remoteDoc?.styleTitle ?? localStyleDoc.title,
+      writingStyle: remoteDoc?.writingStyle ?? localStyleDoc.writingStyle,
+      styleTitle: remoteDoc?.styleTitle ?? localStyleDoc.styleTitle,
+      styleSummary: remoteDoc?.styleSummary ?? localStyleDoc.styleSummary,
       createdAt: remoteDoc?.createdAt ?? localStyleDoc.createdAt,
       lastEditedAt: remoteDoc?.updatedAt ?? remoteDoc?.createdAt ?? localStyleDoc.lastEditedAt,
       pinned: localStyleDoc.pinned ?? false
