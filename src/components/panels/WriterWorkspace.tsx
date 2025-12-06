@@ -555,7 +555,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       // For authenticated users, deactivate via API
       if (isAuthenticated) {
         try {
-          const response = await fetch("/api/brand", {
+          const response = await fetch("/api/persona", {
             method: "DELETE"
           });
           
@@ -602,7 +602,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     // For authenticated users, activate via API
     if (isAuthenticated) {
       try {
-        const response = await fetch(`/api/brand?activate=${personaId}`, {
+        const response = await fetch(`/api/persona?activate=${personaId}`, {
           method: "POST"
         });
         
@@ -617,7 +617,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           );
           
           // Refresh personas list in background to sync with server
-          fetch("/api/brand?all=true")
+          fetch("/api/persona?all=true")
             .then(personasResponse => {
               if (personasResponse.ok) {
                 return personasResponse.json();
@@ -678,11 +678,11 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
   useEffect(() => {
     async function checkPersona() {
       try {
-        const response = await fetch("/api/brand");
+        const response = await fetch("/api/persona");
         if (response.ok) {
           const data = await response.json();
-          const summary = data.brandInfo ?? null;
-          const name = data.brandName ?? null;
+          const summary = data.personaInfo ?? null;
+          const name = data.personaName ?? null;
           setPersonaSummary(summary);
           setPersonaName(name);
           setHasPersona(Boolean(summary) || Boolean(name));
@@ -712,7 +712,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     }
 
     try {
-      const response = await fetch("/api/brand?all=true");
+      const response = await fetch("/api/persona?all=true");
       if (response.ok) {
         const data = await response.json();
         if (data.brands && Array.isArray(data.brands)) {
@@ -751,8 +751,8 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     if (!isAuthenticated) return;
     try {
       const url = personaId 
-        ? `/api/brand/key-messaging?brandId=${encodeURIComponent(personaId)}`
-        : "/api/brand/key-messaging";
+        ? `/api/persona/key-messaging?brandId=${encodeURIComponent(personaId)}`
+        : "/api/persona/key-messaging";
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
@@ -802,9 +802,9 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
         fetchPersonaKeyMessaging();
       }
     };
-    window.addEventListener("brand-key-messaging-added", handlePersonaKeyMessagingAdded);
+    window.addEventListener("persona-key-messaging-added", handlePersonaKeyMessagingAdded);
     return () => {
-      window.removeEventListener("brand-key-messaging-added", handlePersonaKeyMessagingAdded);
+      window.removeEventListener("persona-key-messaging-added", handlePersonaKeyMessagingAdded);
     };
   }, [fetchPersonaKeyMessaging, activePersonaId]);
 
@@ -819,7 +819,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
 
   const handleClearPersona = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
     try {
-      const response = await fetch("/api/brand", { method: "DELETE" });
+      const response = await fetch("/api/persona", { method: "DELETE" });
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         return { success: false, error: body?.error || "Unable to deselect persona." };
@@ -833,7 +833,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       // Refresh all personas list to update active status
       if (isAuthenticated) {
         try {
-          const personasResponse = await fetch("/api/brand?all=true");
+          const personasResponse = await fetch("/api/persona?all=true");
           if (personasResponse.ok) {
             const personasData = await personasResponse.json();
             if (personasData.brands && Array.isArray(personasData.brands)) {
@@ -862,7 +862,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
         return { success: false, error: "Key message cannot be empty." };
       }
       try {
-        const response = await fetch("/api/brand/key-messaging", {
+        const response = await fetch("/api/persona/key-messaging", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: payload, brandId: personaId })
@@ -926,7 +926,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           body: JSON.stringify({
             selectedText,
             instruction: currentPrompt,
-            brandSummary: personaSummary ?? undefined,
+            personaSummary: personaSummary ?? undefined,
             styleGuide: activeStyle
               ? {
                   name: activeStyle.name,
@@ -1012,7 +1012,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           body: JSON.stringify({
             prompt: currentPrompt,
             settings: settings,
-            brandSummary: personaSummary ?? undefined,
+            personaSummary: personaSummary ?? undefined,
             styleGuide: activeStyle
               ? {
                   name: activeStyle.name,
@@ -1089,7 +1089,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
         body: JSON.stringify({
           prompt: currentPrompt,
           settings: snapshotSettings,
-          brandSummary: personaSummary ?? undefined,
+          personaSummary: personaSummary ?? undefined,
           styleGuide: styleGuidePayload,
           editorContext: editorContext ?? undefined
         })
@@ -2888,7 +2888,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
         body: JSON.stringify({
           selectedText,
           instruction,
-          brandSummary: personaSummary ?? undefined,
+          personaSummary: personaSummary ?? undefined,
           styleGuide: activeStyle
             ? {
                 name: activeStyle.name,
@@ -4340,7 +4340,7 @@ function WorkspaceSidebar({
                   }}
                   className={({ selected }) =>
                     cn(
-                      "flex flex-1 flex-col items-center justify-center gap-0 py-3 rounded-t-none rounded-b-full transition focus:outline-none m-1.5",
+                      "group flex flex-1 flex-col items-center justify-center gap-0 py-3 rounded-t-none rounded-b-full transition focus:outline-none m-1.5",
                       selected
                         ? "bg-white/15 text-white shadow-[0_15px_35px_rgba(0,0,0,0.45)]"
                         : "text-brand-muted hover:text-white"
@@ -4351,13 +4351,19 @@ function WorkspaceSidebar({
                     <img 
                       src="/groucho-mask.svg" 
                       alt="" 
-                      className="h-5 w-auto brightness-0 invert"
+                      className={cn(
+                        "h-5 w-auto brightness-0 invert transition",
+                        activeTab === tab.id ? "opacity-100" : "opacity-60 group-hover:opacity-100"
+                      )}
                     />
                   ) : (
-                    <span className={cn(
-                      "text-xl",
-                      tab.id === "docs" || tab.id === "styles" ? "material-symbols-rounded" : "material-symbols-outlined"
-                    )}>{tab.icon}</span>
+                    <span 
+                      className={cn(
+                        "text-xl",
+                        tab.id === "docs" || tab.id === "styles" ? "material-symbols-rounded" : "material-symbols-outlined"
+                      )}
+                      style={tab.id === "styles" ? { transform: "rotate(-90deg)" } : undefined}
+                    >{tab.icon}</span>
                   )}
                   <span className="pt-[2px] text-[10px]">{tab.label}</span>
                 </Tab>
@@ -4517,11 +4523,11 @@ function PersonaCard({
 
     try {
       const requestBody = {
-        brandName: personaName?.trim() || undefined,
-        brandInfo: personaInfo.trim()
+        personaName: personaName?.trim() || undefined,
+        personaInfo: personaInfo.trim()
       };
 
-      const response = await fetch("/api/brand", {
+      const response = await fetch("/api/persona", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody)
@@ -4557,7 +4563,7 @@ function PersonaCard({
     setErrorMessage(null);
 
     try {
-      const response = await fetch(`/api/brand/key-messaging?id=${messageId}`, {
+      const response = await fetch(`/api/persona/key-messaging?id=${messageId}`, {
         method: "DELETE"
       });
 

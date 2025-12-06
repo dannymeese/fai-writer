@@ -6,17 +6,17 @@ import type OpenAI from "openai";
 import { getOpenAIClient } from "@/lib/openai";
 import { z } from "zod";
 
-const brandProcessSchema = z.object({
-  brandName: z.string().max(100, "Brand name must be 100 characters or less").optional(),
-  brandInfo: z.string().min(10, "Brand info must be at least 10 characters")
+const personaProcessSchema = z.object({
+  personaName: z.string().max(100, "Persona name must be 100 characters or less").optional(),
+  personaInfo: z.string().min(10, "Persona info must be at least 10 characters")
 });
 
 export async function POST(request: Request) {
   const url = new URL(request.url);
-  const activateBrandId = url.searchParams.get("activate");
+  const activatePersonaId = url.searchParams.get("activate");
   
-  // Handle brand activation
-  if (activateBrandId) {
+  // Handle persona activation
+  if (activatePersonaId) {
     const session = await auth();
     const isAuthenticated = Boolean(session?.user?.id);
     
@@ -28,42 +28,42 @@ export async function POST(request: Request) {
     }
     
     try {
-      // Verify the brand belongs to the user
-      const brand = await prisma.brand.findFirst({
+      // Verify the persona belongs to the user
+      const persona = await prisma.persona.findFirst({
         where: {
-          id: activateBrandId,
+          id: activatePersonaId,
           ownerId: session.user.id
         }
       });
       
-      if (!brand) {
+      if (!persona) {
         return NextResponse.json(
-          { error: "Brand not found" },
+          { error: "Persona not found" },
           { status: 404 }
         );
       }
       
-      // Activate the brand
+      // Activate the persona
       await prisma.user.update({
         where: { id: session.user.id },
-        data: { activeBrandId: activateBrandId }
+        data: { activePersonaId: activatePersonaId }
       });
       
-      return NextResponse.json({ success: true, activeBrandId: activateBrandId });
+      return NextResponse.json({ success: true, activePersonaId: activatePersonaId });
     } catch (error) {
-      console.error("Failed to activate brand", error);
+      console.error("Failed to activate persona", error);
       return NextResponse.json(
-        { error: "Failed to activate brand" },
+        { error: "Failed to activate persona" },
         { status: 500 }
       );
     }
   }
   
-  // Original POST logic for creating/updating brands
-  console.log("[brand][POST] Starting brand save request");
+  // Original POST logic for creating/updating personas
+  console.log("[persona][POST] Starting persona save request");
   const session = await auth();
   const isAuthenticated = Boolean(session?.user?.id);
-  console.log("[brand][POST] Authentication check:", { 
+  console.log("[persona][POST] Authentication check:", { 
     isAuthenticated, 
     userId: session?.user?.id,
     hasPrisma: !!prisma 
@@ -72,17 +72,17 @@ export async function POST(request: Request) {
   let json: any = null;
   try {
     json = await request.json();
-    console.log("[brand][POST] Request body parsed:", { 
-      hasBrandName: !!json.brandName,
-      hasBrandInfo: !!json.brandInfo,
-      brandInfoLength: json.brandInfo?.length 
+    console.log("[persona][POST] Request body parsed:", { 
+      hasPersonaName: !!json.personaName,
+      hasPersonaInfo: !!json.personaInfo,
+      personaInfoLength: json.personaInfo?.length 
     });
   } catch (error) {
-    console.error("[brand][POST] Failed to parse JSON", error);
+    console.error("[persona][POST] Failed to parse JSON", error);
     return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
   }
 
-  const parsed = brandProcessSchema.safeParse(json);
+  const parsed = personaProcessSchema.safeParse(json);
 
   if (!parsed.success) {
     const flattened = parsed.error.flatten();
@@ -104,22 +104,22 @@ export async function POST(request: Request) {
     }, { status: 400 });
   }
 
-  const { brandName, brandInfo } = parsed.data;
-  const trimmedBrandName = brandName?.trim() || null;
-  const fallbackBrandInfo = brandInfo.trim().substring(0, 400);
+  const { personaName, personaInfo } = parsed.data;
+  const trimmedPersonaName = personaName?.trim() || null;
+  const fallbackPersonaInfo = personaInfo.trim().substring(0, 400);
   let openai: OpenAI | null = null;
 
   try {
     openai = getOpenAIClient();
   } catch (error) {
-    console.warn("OPENAI_API_KEY missing for brand processing. Using fallback summary.", error);
+    console.warn("OPENAI_API_KEY missing for persona processing. Using fallback summary.", error);
   }
 
-  let processedBrandInfo = fallbackBrandInfo;
+  let processedPersonaInfo = fallbackPersonaInfo;
 
   if (openai) {
     try {
-      // Process and compact the brand information
+      // Process and compact the persona information
       const response = await openai.responses.create({
         model: "gpt-5.1",
         temperature: 0.3,
@@ -127,36 +127,36 @@ export async function POST(request: Request) {
         input: [
           {
             role: "system",
-            content: `You are a brand strategist. Your task is to digest and compact brand information into a comprehensive brand guide that includes:
-1. Brand identity and values
-2. Brand voice and tone
+            content: `You are a persona strategist. Your task is to digest and compact persona information into a comprehensive persona guide that includes:
+1. Persona identity and values
+2. Persona voice and tone
 3. Key vocabulary and preferred terminology
 4. Style preferences
 5. Target audience characteristics
-6. Any other relevant brand details
+6. Any other relevant persona details
 
-Create a concise but complete brand guide that captures all essential information. Focus on actionable details that can guide future writing. IMPORTANT: Keep your response to 400 characters or less. Be extremely concise while maintaining all critical information.`
+Create a concise but complete persona guide that captures all essential information. Focus on actionable details that can guide future writing. IMPORTANT: Keep your response to 400 characters or less. Be extremely concise while maintaining all critical information.`
           },
           {
             role: "user",
-            content: `Process and compact the following brand information:\n\n${brandInfo}`
+            content: `Process and compact the following persona information:\n\n${personaInfo}`
           }
         ]
       });
 
       const aiSummary = response.output_text?.trim();
       if (aiSummary) {
-        processedBrandInfo = aiSummary.substring(0, 400);
+        processedPersonaInfo = aiSummary.substring(0, 400);
       } else {
-        console.warn("Brand processing returned empty response. Falling back to raw input.");
+        console.warn("Persona processing returned empty response. Falling back to raw input.");
       }
     } catch (error) {
-      console.error("Brand processing error", error);
+      console.error("Persona processing error", error);
       // Fall back to the raw/truncated user input so the workflow still succeeds offline.
-      processedBrandInfo = fallbackBrandInfo;
+      processedPersonaInfo = fallbackPersonaInfo;
     }
   } else {
-    console.warn("OPENAI_API_KEY missing. Using raw brand info without AI processing.");
+    console.warn("OPENAI_API_KEY missing. Using raw persona info without AI processing.");
   }
 
   // Save to database for authenticated users FIRST, before creating response
@@ -170,54 +170,53 @@ Create a concise but complete brand guide that captures all essential informatio
     }
     
     try {
-      console.log("[brand][POST] Checking for existing active brand for user:", session.user.id);
-      // Check if user already has an active brand
+      console.log("[persona][POST] Checking for existing active persona for user:", session.user.id);
+      // Check if user already has an active persona
       const user = await prisma.user.findUnique({
         where: { id: session.user.id },
-        select: { activeBrandId: true }
+        select: { activePersonaId: true }
       });
-      console.log("[brand][POST] User lookup result:", { 
+      console.log("[persona][POST] User lookup result:", { 
         userId: session.user.id,
-        activeBrandId: user?.activeBrandId 
+        activePersonaId: user?.activePersonaId 
       });
 
-      if (user?.activeBrandId) {
-        console.log("[brand][POST] Updating existing brand:", user.activeBrandId);
-        // Update existing brand
-        await prisma.brand.update({
-          where: { id: user.activeBrandId },
+      if (user?.activePersonaId) {
+        console.log("[persona][POST] Updating existing persona:", user.activePersonaId);
+        // Update existing persona
+        await prisma.persona.update({
+          where: { id: user.activePersonaId },
           data: {
-            name: trimmedBrandName,
-            info: processedBrandInfo
+            name: trimmedPersonaName,
+            info: processedPersonaInfo
           }
         });
-        console.log("[brand][POST] Brand updated successfully");
+        console.log("[persona][POST] Persona updated successfully");
       } else {
-        console.log("[brand][POST] Creating new brand for user:", session.user.id);
-        // Create new brand and set it as active
-        const brand = await prisma.brand.create({
+        console.log("[persona][POST] Creating new persona for user:", session.user.id);
+        // Create new persona and set it as active
+        const persona = await prisma.persona.create({
           data: {
-            name: trimmedBrandName,
-            info: processedBrandInfo,
+            name: trimmedPersonaName,
+            info: processedPersonaInfo,
             ownerId: session.user.id
           }
         });
-        console.log("[brand][POST] Brand created:", brand.id);
+        console.log("[persona][POST] Persona created:", persona.id);
         
-        console.log("[brand][POST] Updating user with activeBrandId:", brand.id);
+        console.log("[persona][POST] Updating user with activePersonaId:", persona.id);
         await prisma.user.update({
           where: { id: session.user.id },
           data: {
-            activeBrandId: brand.id,
-            // Keep legacy fields updated for backward compatibility
-            brandName: trimmedBrandName,
-            brandInfo: processedBrandInfo
+            activePersonaId: persona.id,
+            personaName: trimmedPersonaName,
+            personaInfo: processedPersonaInfo
           }
         });
-        console.log("[brand][POST] User updated successfully");
+        console.log("[persona][POST] User updated successfully");
       }
     } catch (error) {
-      console.error("Failed to save brand to database", error);
+      console.error("Failed to save persona to database", error);
       
       // Provide more detailed error information
       let errorMessage = "Database error";
@@ -236,7 +235,7 @@ Create a concise but complete brand guide that captures all essential informatio
           errorMessage = "Database migration required. Please run: npx prisma migrate dev";
           errorDetails = {
             ...baseDetails,
-            hint: "The Brand table may not exist. Run database migrations to create it."
+            hint: "The Persona table may not exist. Run database migrations to create it."
           };
         } else if (error.message.includes("Foreign key constraint")) {
           errorMessage = "Invalid user reference";
@@ -245,10 +244,10 @@ Create a concise but complete brand guide that captures all essential informatio
             hint: "The user account may not exist or may have been deleted."
           };
         } else if (error.message.includes("Unique constraint")) {
-          errorMessage = "Brand already exists";
+          errorMessage = "Persona already exists";
           errorDetails = {
             ...baseDetails,
-            hint: "A brand with this information already exists."
+            hint: "A persona with this information already exists."
           };
         } else {
           errorDetails = baseDetails;
@@ -267,26 +266,26 @@ Create a concise but complete brand guide that captures all essential informatio
   // Create response after successful database save (or if guest user)
   const jsonResponse = NextResponse.json({ 
     success: true, 
-    brandName: trimmedBrandName,
-    brandInfo: processedBrandInfo 
+    personaName: trimmedPersonaName,
+    personaInfo: processedPersonaInfo 
   });
 
   // Store in cookie for guests
   if (!isAuthenticated) {
     // Store in cookie for guests (combine name and info)
     try {
-      const guestBrandData = JSON.stringify({
-        brandName: trimmedBrandName,
-        brandInfo: processedBrandInfo
+      const guestPersonaData = JSON.stringify({
+        personaName: trimmedPersonaName,
+        personaInfo: processedPersonaInfo
       });
-      jsonResponse.cookies.set("guest_brand_info", guestBrandData, {
+      jsonResponse.cookies.set("guest_persona_info", guestPersonaData, {
         maxAge: 60 * 60 * 24 * 365, // 1 year
         path: "/"
       });
     } catch (cookieError) {
-      console.error("Failed to store brand info in cookie", cookieError);
+      console.error("Failed to store persona info in cookie", cookieError);
       return NextResponse.json(
-        { error: "Unable to store brand info for guest users." },
+        { error: "Unable to store persona info for guest users." },
         { status: 500 }
       );
     }
@@ -300,14 +299,14 @@ export async function GET(request: Request) {
   const isAuthenticated = Boolean(session?.user?.id);
   const cookieStore = await cookies();
   
-  // Check if requesting all brands (for brands list)
+  // Check if requesting all personas (for personas list)
   const url = new URL(request.url);
-  const allBrands = url.searchParams.get("all") === "true";
+  const allPersonas = url.searchParams.get("all") === "true";
 
-  // If requesting all brands, return list of all user brands
-  if (allBrands && isAuthenticated && session?.user?.id && prisma) {
+  // If requesting all personas, return list of all user personas
+  if (allPersonas && isAuthenticated && session?.user?.id && prisma) {
     try {
-      const brands = await prisma.brand.findMany({
+      const personas = await prisma.persona.findMany({
         where: { ownerId: session.user.id },
         select: {
           id: true,
@@ -319,82 +318,81 @@ export async function GET(request: Request) {
         orderBy: { createdAt: "desc" }
       });
       
-      // Also get active brand ID
+      // Also get active persona ID
       const user = await prisma.user.findUnique({
         where: { id: session.user.id },
-        select: { activeBrandId: true }
+        select: { activePersonaId: true }
       });
       
       return NextResponse.json({ 
-        brands: brands.map(b => ({
-          id: b.id,
-          name: b.name,
-          info: b.info,
-          isActive: b.id === user?.activeBrandId,
-          createdAt: b.createdAt,
-          updatedAt: b.updatedAt
+        brands: personas.map(p => ({
+          id: p.id,
+          name: p.name,
+          info: p.info,
+          isActive: p.id === user?.activePersonaId,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt
         })),
-        activeBrandId: user?.activeBrandId ?? null
+        activeBrandId: user?.activePersonaId ?? null
       });
     } catch (error) {
-      console.error("Failed to fetch all brands from database", error);
+      console.error("Failed to fetch all personas from database", error);
       return NextResponse.json({ brands: [], activeBrandId: null });
     }
   }
 
-  // Try to get active brand from database for authenticated users
+  // Try to get active persona from database for authenticated users
   if (isAuthenticated && session?.user?.id && prisma) {
     try {
       const user = await prisma.user.findUnique({
         where: { id: session.user.id },
         select: { 
-          activeBrandId: true,
-          activeBrand: {
+          activePersonaId: true,
+          activePersona: {
             select: {
               name: true,
               info: true
             }
           },
-          // Legacy fields for backward compatibility
-          brandName: true,
-          brandInfo: true
+          personaName: true,
+          personaInfo: true
         }
       });
 
-      // Prefer active brand from Brand table, fall back to legacy fields
-      if (user?.activeBrandId && user?.activeBrand) {
-        return NextResponse.json({ 
-          brandName: user.activeBrand.name ?? null, 
-          brandInfo: user.activeBrand.info ?? null 
-        });
-      } else if ((user as any)?.brandInfo || (user as any)?.brandName) {
+      // Prefer active persona from Persona table, fall back to legacy fields
+      if (user?.activePersonaId && user?.activePersona) {
+      return NextResponse.json({ 
+        personaName: user.activePersona.name ?? null, 
+        personaInfo: user.activePersona.info ?? null 
+      });
+      } else if (user?.personaInfo || user?.personaName) {
         // Fall back to legacy fields
         return NextResponse.json({ 
-          brandName: (user as any)?.brandName ?? null, 
-          brandInfo: (user as any)?.brandInfo ?? null 
+          personaName: user.personaName ?? null, 
+          personaInfo: user.personaInfo ?? null 
         });
       }
     } catch (error) {
-      console.error("Failed to fetch brand info from database", error);
+      console.error("Failed to fetch persona info from database", error);
       // Don't return error here, fall through to cookie/guest handling
     }
   }
 
   // Fall back to cookie for guests or if DB lookup failed
-  const guestBrandData = cookieStore.get("guest_brand_info")?.value;
-  if (guestBrandData) {
+  const guestPersonaData = cookieStore.get("guest_persona_info")?.value;
+  if (guestPersonaData) {
     try {
-      const parsed = JSON.parse(guestBrandData);
+      const parsed = JSON.parse(guestPersonaData);
       return NextResponse.json({ 
-        brandName: parsed.brandName || null, 
-        brandInfo: parsed.brandInfo || null 
+        personaName: parsed.personaName || null, 
+        personaInfo: parsed.personaInfo || null 
       });
     } catch {
-      // Legacy format - just brandInfo string
-      return NextResponse.json({ brandName: null, brandInfo: guestBrandData });
+      // Legacy format - just personaInfo string
+      return NextResponse.json({ personaName: null, personaInfo: guestPersonaData });
     }
   }
-  return NextResponse.json({ brandName: null, brandInfo: null });
+  return NextResponse.json({ personaName: null, personaInfo: null });
 }
 
 export async function DELETE() {
@@ -404,20 +402,19 @@ export async function DELETE() {
 
   if (isAuthenticated && session?.user?.id && prisma) {
     try {
-      // Deselect the active brand instead of deleting it
+      // Deselect the active persona instead of deleting it
       await prisma.user.update({
         where: { id: session.user.id },
         data: { 
-          activeBrandId: null,
-          // Keep legacy fields cleared for backward compatibility
-          brandName: null, 
-          brandInfo: null 
-        } as any
+          activePersonaId: null,
+          personaName: null, 
+          personaInfo: null 
+        }
       });
     } catch (error) {
-      console.error("Failed to deselect brand from database", error);
+      console.error("Failed to deselect persona from database", error);
       
-      let errorMessage = "Unable to deselect brand";
+      let errorMessage = "Unable to deselect persona";
       let errorDetails: string | unknown = null;
       
       if (error instanceof Error) {
@@ -438,7 +435,7 @@ export async function DELETE() {
     }
   }
 
-  response.cookies.set("guest_brand_info", "", {
+  response.cookies.set("guest_persona_info", "", {
     maxAge: 0,
     path: "/"
   });

@@ -8,7 +8,7 @@ const addKeyMessagingSchema = z.object({
   brandId: z.string().optional()
 });
 
-// GET - Fetch key messaging items for the user, optionally filtered by brandId
+// GET - Fetch key messaging items for the user, optionally filtered by personaId
 export async function GET(request: Request) {
   const session = await auth();
   const isAuthenticated = Boolean(session?.user?.id);
@@ -23,21 +23,21 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const brandId = searchParams.get("brandId");
+    const personaId = searchParams.get("brandId"); // Keep query param as brandId for backward compatibility
 
     const where: any = { ownerId: session.user.id };
-    if (brandId) {
-      where.brandId = brandId;
+    if (personaId) {
+      where.personaId = personaId;
     }
 
-    const items = await prisma.brandKeyMessaging.findMany({
+    const items = await prisma.personaKeyMessaging.findMany({
       where,
       orderBy: { createdAt: "desc" }
     });
 
     return NextResponse.json({ items });
   } catch (error) {
-    console.error("Failed to fetch brand key messaging items", error);
+    console.error("Failed to fetch persona key messaging items", error);
     return NextResponse.json({ error: "Failed to fetch items" }, { status: 500 });
   }
 }
@@ -62,42 +62,42 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { text, brandId } = parsed.data;
+  const { text, brandId } = parsed.data; // Keep request param as brandId for backward compatibility
 
   try {
-    // If brandId is provided, verify it belongs to the user
+    // If personaId is provided, verify it belongs to the user
     if (brandId && brandId.trim()) {
-      const brand = await prisma.brand.findUnique({
+      const persona = await prisma.persona.findUnique({
         where: { id: brandId }
       });
-      if (!brand || brand.ownerId !== session.user.id) {
-        return NextResponse.json({ error: "Brand not found or unauthorized" }, { status: 403 });
+      if (!persona || persona.ownerId !== session.user.id) {
+        return NextResponse.json({ error: "Persona not found or unauthorized" }, { status: 403 });
       }
     }
 
     const createData: {
       text: string;
       ownerId: string;
-      brandId?: string | null;
+      personaId?: string | null;
     } = {
       text: text.trim(),
       ownerId: session.user.id
     };
 
-    // Only include brandId if it's provided, otherwise set to null explicitly
+    // Only include personaId if it's provided, otherwise set to null explicitly
     if (brandId && brandId.trim()) {
-      createData.brandId = brandId;
+      createData.personaId = brandId;
     } else {
-      createData.brandId = null;
+      createData.personaId = null;
     }
 
-    const item = await prisma.brandKeyMessaging.create({
+    const item = await prisma.personaKeyMessaging.create({
       data: createData
     });
 
     return NextResponse.json({ success: true, item });
   } catch (error: any) {
-    console.error("Failed to add brand key messaging item", error);
+    console.error("Failed to add persona key messaging item", error);
     // Return more detailed error information for debugging
     const errorMessage = error?.message || "Failed to add item";
     const errorCode = error?.code || "UNKNOWN_ERROR";
@@ -131,7 +131,7 @@ export async function DELETE(request: Request) {
 
   try {
     // Verify the item belongs to the user before deleting
-    const item = await prisma.brandKeyMessaging.findUnique({
+    const item = await prisma.personaKeyMessaging.findUnique({
       where: { id }
     });
 
@@ -143,13 +143,13 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    await prisma.brandKeyMessaging.delete({
+    await prisma.personaKeyMessaging.delete({
       where: { id }
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Failed to delete brand key messaging item", error);
+    console.error("Failed to delete persona key messaging item", error);
     return NextResponse.json({ error: "Failed to delete item" }, { status: 500 });
   }
 }

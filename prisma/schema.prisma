@@ -7,53 +7,8 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id                String              @id @default(cuid())
-  name              String?
-  email             String?             @unique
-  emailVerified     DateTime?
-  image             String?
-  password          String?
-  marketTier        MarketTier          @default(MASS)
-  brandName         String?             @db.VarChar(100)
-  brandInfo         String?             @db.VarChar(400)
-  activeBrandId     String?             @db.VarChar(191)
-  activeBrand       Brand?              @relation("UserActiveBrand", fields: [activeBrandId], references: [id], onDelete: SetNull)
-  brands            Brand[]             @relation("BrandOwner")
-  documents         Document[]
-  accounts          Account[]
-  sessions          Session[]
-  tokenUsage        TokenUsage?
-  brandKeyMessaging BrandKeyMessaging[]
-  folders           Folder[]
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-}
-
-model Document {
-  id              String           @id @default(cuid())
-  title           String           @db.VarChar(255)
-  content         String           @db.LongText
-  tone            String?
-  prompt          String?          @db.Text
-  characterLength Int?
-  wordLength      Int?
-  gradeLevel      String?
-  benchmark       String?
-  avoidWords      String?
-  writingStyle    String?          @db.Text
-  styleTitle      String?          @db.VarChar(100)
-  styleSummary    String?          @db.VarChar(200)
-  pinned          Boolean          @default(false)
-  owner           User             @relation(fields: [ownerId], references: [id])
-  ownerId         String
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  documentFolders DocumentFolder[]
-}
-
 model Account {
-  id                String  @id @default(cuid())
+  id                String  @id
   userId            String
   type              String
   provider          String
@@ -65,17 +20,133 @@ model Account {
   scope             String?
   id_token          String? @db.Text
   session_state     String?
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  User              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId], map: "Account_userId_fkey")
+}
+
+model Document {
+  id              String           @id
+  title           String           @db.VarChar(255)
+  content         String           @db.LongText
+  tone            String?
+  prompt          String?          @db.Text
+  characterLength Int?
+  wordLength      Int?
+  gradeLevel      String?
+  benchmark       String?
+  avoidWords      String?
+  writingStyle    String?          @db.Text
+  styleTitle      String?          @db.VarChar(100)
+  ownerId         String
+  createdAt       DateTime         @default(now())
+  pinned          Boolean          @default(false)
+  updatedAt       DateTime
+  styleSummary    String?          @db.VarChar(200)
+  User            User             @relation(fields: [ownerId], references: [id])
+  DocumentFolder  DocumentFolder[]
+
+  @@index([ownerId], map: "Document_ownerId_fkey")
+}
+
+model DocumentFolder {
+  documentId String
+  folderId   String
+  assignedAt DateTime @default(now())
+  Document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  Folder     Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, folderId])
+  @@index([documentId])
+  @@index([folderId])
+}
+
+model Folder {
+  id             String           @id
+  name           String           @db.VarChar(120)
+  ownerId        String
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime
+  pinned         Boolean          @default(false)
+  DocumentFolder DocumentFolder[]
+  User           User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, name])
+  @@index([ownerId])
+}
+
+model Persona {
+  id                                 String                @id
+  name                               String?               @db.VarChar(100)
+  info                               String                @db.VarChar(400)
+  ownerId                            String
+  createdAt                          DateTime              @default(now())
+  updatedAt                          DateTime
+  User_Persona_ownerIdToUser         User                  @relation("Persona_ownerIdToUser", fields: [ownerId], references: [id], onDelete: Cascade)
+  PersonaKeyMessaging                PersonaKeyMessaging[]
+  User_User_activePersonaIdToPersona User[]                @relation("User_activePersonaIdToPersona")
+
+  @@index([ownerId], map: "Brand_ownerId_idx")
+}
+
+model PersonaKeyMessaging {
+  id        String   @id
+  text      String   @db.VarChar(500)
+  ownerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  personaId String?
+  User      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade, map: "BrandKeyMessaging_ownerId_fkey")
+  Persona   Persona? @relation(fields: [personaId], references: [id], onDelete: Cascade)
+
+  @@index([personaId], map: "BrandKeyMessaging_brandId_idx")
+  @@index([ownerId], map: "BrandKeyMessaging_ownerId_idx")
 }
 
 model Session {
-  id           String   @id @default(cuid())
+  id           String   @id
   sessionToken String   @unique
   userId       String
   expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  User         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "Session_userId_fkey")
+}
+
+model TokenUsage {
+  id        String   @id
+  userId    String?  @unique
+  guestId   String?  @unique
+  tokens    Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  User      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id                                    String                @id
+  name                                  String?
+  email                                 String?               @unique
+  emailVerified                         DateTime?
+  image                                 String?
+  password                              String?
+  marketTier                            User_marketTier       @default(MASS)
+  personaInfo                           String?               @db.VarChar(400)
+  createdAt                             DateTime              @default(now())
+  updatedAt                             DateTime
+  personaName                           String?               @db.VarChar(100)
+  activePersonaId                       String?
+  Account                               Account[]
+  Document                              Document[]
+  Folder                                Folder[]
+  Persona_Persona_ownerIdToUser         Persona[]             @relation("Persona_ownerIdToUser")
+  PersonaKeyMessaging                   PersonaKeyMessaging[]
+  Session                               Session[]
+  TokenUsage                            TokenUsage?
+  Persona_User_activePersonaIdToPersona Persona?              @relation("User_activePersonaIdToPersona", fields: [activePersonaId], references: [id])
+
+  @@index([activePersonaId], map: "User_activePersonaId_fkey")
 }
 
 model VerificationToken {
@@ -86,72 +157,9 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-model TokenUsage {
-  id        String   @id @default(cuid())
-  userId    String?  @unique
-  guestId   String?  @unique
-  tokens    Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model BrandKeyMessaging {
-  id        String   @id @default(cuid())
-  text      String   @db.VarChar(500)
-  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  ownerId   String
-  brand     Brand?   @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  brandId   String?  @db.VarChar(191)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([ownerId])
-  @@index([brandId])
-}
-
-enum MarketTier {
+enum User_marketTier {
   MASS
   PREMIUM
   LUXURY
   UHNW
-}
-
-model Folder {
-  id              String           @id @default(cuid())
-  name            String           @db.VarChar(120)
-  pinned          Boolean          @default(false)
-  owner           User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  ownerId         String
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  documentFolders DocumentFolder[]
-
-  @@unique([ownerId, name])
-  @@index([ownerId])
-}
-
-model DocumentFolder {
-  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  documentId String
-  folder     Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
-  folderId   String
-  assignedAt DateTime @default(now())
-
-  @@id([documentId, folderId])
-  @@index([folderId])
-}
-
-model Brand {
-  id          String              @id @default(cuid())
-  name        String?             @db.VarChar(100)
-  info        String              @db.VarChar(400)
-  owner       User                @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  ownerId     String
-  activeUsers User[]              @relation("UserActiveBrand")
-  keyMessages BrandKeyMessaging[]
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-
-  @@index([ownerId])
 }

@@ -21,18 +21,18 @@ const EXTENDED_RULES = `VITAL RULES FOR ALL OUTPUT:
 3. DO NOT REPEAT SOMETHING THAT MEANS ESSENTIALLY THE SAME THING BUT IN DIFFERENT WORDS. 
 4. MAKE SURE THAT EVERY WORD SERVES A PURPOSE AND BRINGS ADDITIONAL MEANING OR DON'T USE IT AT ALL.
 5. ONLY PROVIDE TEXT THAT FEELS BESPOKE AND HUMAN.
-6. All missing info should be formatted in [] like [brand name], etc. Don't guess product name, service name, business name etc.
+6. All missing info should be formatted in [] like [persona name], etc. Don't guess product name, service name, business name etc.
 7. DO NOT use emojis unless the user EXPLICITLY asks you to.
 8. NEVER ask the user for more information—provide the best possible answer immediately.
 9. Keep tone sharply specific; inject real-world detail and asymmetric sentence lengths.
 10. Avoid recap paragraphs, tidy triads, or BuzzFeed-style bullets. Vary list lengths—never default to exactly 3 bullet points. Use 2, 4, 5, or other counts naturally based on content needs.`;
 
-function buildSystemPrompt(brandInfo: string | null, useExtendedRules: boolean): string {
+function buildSystemPrompt(personaInfo: string | null, useExtendedRules: boolean): string {
   const base = useExtendedRules ? EXTENDED_RULES : SHORT_RULES;
-  if (!brandInfo) {
+  if (!personaInfo) {
     return base;
   }
-  return `${base}\n\nBRAND GUIDELINES:\n${brandInfo}\n\nAlways follow the brand guidance above.`;
+  return `${base}\n\nPERSONA GUIDELINES:\n${personaInfo}\n\nAlways follow the persona guidance above.`;
 }
 
 export async function POST(request: Request) {
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { prompt, settings, brandSummary, styleGuide, editorContext } = parsed.data;
+  const { prompt, settings, personaSummary, styleGuide, editorContext } = parsed.data;
   const effectiveMarketTier = settings.marketTier ?? null;
 
   let openai;
@@ -88,28 +88,28 @@ export async function POST(request: Request) {
     }
   }
 
-  // Fetch brand info from database or cookie
-  let brandInfo: string | null = brandSummary?.trim() || null;
-  if (!brandInfo && isAuthenticated && session?.user?.id && prisma) {
+  // Fetch persona info from database or cookie
+  let personaInfo: string | null = personaSummary?.trim() || null;
+  if (!personaInfo && isAuthenticated && session?.user?.id && prisma) {
     try {
       const user = await prisma.user.findUnique({
         where: { id: session.user.id }
       }) as any;
-      brandInfo = user?.brandInfo ?? null;
+      personaInfo = user?.personaInfo ?? null;
     } catch (error) {
-      console.error("Failed to fetch brand info from database", error);
+      console.error("Failed to fetch persona info from database", error);
     }
   }
   
   // Fall back to cookie for guests or if DB lookup failed
-  if (!brandInfo) {
-    const guestBrandValue = cookieStore.get("guest_brand_info")?.value ?? null;
-    if (guestBrandValue) {
+  if (!personaInfo) {
+    const guestPersonaValue = cookieStore.get("guest_persona_info")?.value ?? null;
+    if (guestPersonaValue) {
       try {
-        const parsed = JSON.parse(guestBrandValue);
-        brandInfo = typeof parsed === "string" ? parsed : parsed?.brandInfo ?? null;
+        const parsed = JSON.parse(guestPersonaValue);
+        personaInfo = typeof parsed === "string" ? parsed : parsed?.personaInfo ?? null;
       } catch {
-        brandInfo = guestBrandValue;
+        personaInfo = guestPersonaValue;
       }
     }
   }
@@ -141,8 +141,8 @@ export async function POST(request: Request) {
   ].filter(Boolean);
 
   const briefSection = directiveLines.length ? `\n\nBrief:\n- ${directiveLines.join("\n- ")}` : "";
-  const brandSection = brandInfo
-    ? `\n\nBrand Summary (follow this precisely):\n${brandInfo}\n\nUse the brand summary above to fill in any missing context, voice, or positioning.`
+  const personaSection = personaInfo
+    ? `\n\nPersona Summary (follow this precisely):\n${personaInfo}\n\nUse the persona summary above to fill in any missing context, voice, or positioning.`
     : "";
   const styleSection = styleGuide
     ? `\n\nWriting Style (${styleGuide.name}):\n${styleGuide.description}\n\nMirror the cadence, vocabulary, and structure of the style described above in every sentence.`
@@ -161,12 +161,12 @@ export async function POST(request: Request) {
     ? `\n\nEditor Cursor Context:\n${editorContextLines.join("\n\n")}\n\nUse this context to understand what surrounds the cursor so that instructions like "fill in the blank" or "finish the sentence" align with the existing copy. Continue directly after the "before" text without repeating or paraphrasing it, and flow cleanly into the "after" text if it exists. Only produce the missing connective copy.`
     : "";
 
-  const instructionSection = `\n\nExecution Requirements:\n- Do not ask the user for more details.\n- Produce the final copy immediately.\n- If specific details are missing, infer them from the brand summary and the prompt.\n- When editor context is provided, start precisely after the "before" text and transition into the "after" text without repeating either.\n- Never return placeholder instructions to the user.\n- Output ONLY in markdown format. Use markdown syntax for headings (# for H1, ## for H2, ### for H3), bold (**text**), italic (*text*), lists (- or 1.), etc.\n`;
-  const userPrompt = `${prompt}${editorContextSection}${brandSection}${styleSection}${instructionSection}${briefSection}`;
+  const instructionSection = `\n\nExecution Requirements:\n- Do not ask the user for more details.\n- Produce the final copy immediately.\n- If specific details are missing, infer them from the persona summary and the prompt.\n- When editor context is provided, start precisely after the "before" text and transition into the "after" text without repeating either.\n- Never return placeholder instructions to the user.\n- Output ONLY in markdown format. Use markdown syntax for headings (# for H1, ## for H2, ### for H3), bold (**text**), italic (*text*), lists (- or 1.), etc.\n`;
+  const userPrompt = `${prompt}${editorContextSection}${personaSection}${styleSection}${instructionSection}${briefSection}`;
   const wantsExtendedRules = /(?:long|full|detailed|extended)\s+rules?/i.test(prompt);
 
   try {
-    const systemPrompt = buildSystemPrompt(brandInfo, wantsExtendedRules);
+    const systemPrompt = buildSystemPrompt(personaInfo, wantsExtendedRules);
 
     let contentText: string | null = null;
     let contentTokens = 0;

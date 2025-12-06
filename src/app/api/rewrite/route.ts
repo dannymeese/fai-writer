@@ -7,7 +7,7 @@ const rewriteRequestSchema = z.object({
   selectedText: z.string().min(1),
   instruction: z.string().min(1),
   context: z.string().optional(), // Optional: surrounding context for better rewriting
-  brandSummary: z.string().optional(),
+  personaSummary: z.string().optional(),
   styleGuide: z
     .object({
       name: z.string(),
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { selectedText, instruction, context, brandSummary, styleGuide } = parsed.data;
+  const { selectedText, instruction, context, personaSummary, styleGuide } = parsed.data;
 
   let openai;
   try {
@@ -42,8 +42,8 @@ export async function POST(request: Request) {
 
   // Build the rewrite prompt
   const contextSection = context ? `\n\nContext (surrounding text):\n${context}` : "";
-  const brandSection = brandSummary
-    ? `\n\nBrand Guidelines:\n${brandSummary}\n\nFollow the brand guidance above.`
+  const personaSection = personaSummary
+    ? `\n\nPersona Guidelines:\n${personaSummary}\n\nFollow the persona guidance above.`
     : "";
   const styleSection = styleGuide
     ? `\n\nWriting Style (${styleGuide.name}):\n${styleGuide.description}\n\nMirror this style in the rewritten text.`
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
 
   const systemPrompt = `${SHORT_RULES}\n\nYou are rewriting a selected portion of text based on user instructions. Return ONLY the rewritten text in markdown format. Preserve any markdown formatting (headings, bold, italic, lists) that exists in the original text.`;
 
-  const userPrompt = `Rewrite the following selected text according to this instruction: "${instruction}"\n\nSelected text to rewrite:\n${selectedText}${contextSection}${brandSection}${styleSection}\n\nReturn ONLY the rewritten text in markdown format that replaces the selected portion. Preserve markdown syntax for headings (# ## ###), bold (**text**), italic (*text*), and lists.`;
+  const userPrompt = `Rewrite the following selected text according to this instruction: "${instruction}"\n\nSelected text to rewrite:\n${selectedText}${contextSection}${personaSection}${styleSection}\n\nReturn ONLY the rewritten text in markdown format that replaces the selected portion. Preserve markdown syntax for headings (# ## ###), bold (**text**), italic (*text*), and lists.`;
 
   try {
     const response = await openai.responses.create({

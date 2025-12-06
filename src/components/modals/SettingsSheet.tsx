@@ -122,7 +122,7 @@ export default function SettingsSheet({
         }
       } else {
         // Persona not in current options, fetch fresh list
-        fetch("/api/brand?all=true")
+        fetch("/api/persona?all=true")
           .then((res) => res.json())
           .then((data) => {
             if (data.brands && Array.isArray(data.brands)) {
@@ -162,7 +162,7 @@ export default function SettingsSheet({
     async function checkPersona() {
       try {
         // Prefer full personas list (includes activePersonaId and stored personas even if deselected)
-        const listResponse = await fetch("/api/brand?all=true");
+        const listResponse = await fetch("/api/persona?all=true");
         if (listResponse.ok) {
           const data = await listResponse.json();
           if (Array.isArray(data.brands) && data.brands.length > 0) {
@@ -205,11 +205,11 @@ export default function SettingsSheet({
         }
 
         // Fallback to legacy single-persona endpoint (guests or no personas)
-        const response = await fetch("/api/brand");
+        const response = await fetch("/api/persona");
         if (response.ok) {
           const data = await response.json();
-          const summary = data.brandInfo ?? null;
-          const name = data.brandName ?? null;
+          const summary = data.personaInfo ?? null;
+          const name = data.personaName ?? null;
           setHasPersona(Boolean(summary) || Boolean(name));
           setCurrentPersonaName(name || "");
           setCurrentPersonaInfo(summary || "");
@@ -244,17 +244,17 @@ export default function SettingsSheet({
     setPersonaProcessing(true);
     try {
       const requestBody = { 
-        brandName: personaName?.trim() || undefined,
-        brandInfo: personaInput.trim() 
+        personaName: personaName?.trim() || undefined,
+        personaInfo: personaInput.trim() 
       };
       
       console.log("Sending persona save request:", { 
-        hasPersonaName: !!requestBody.brandName,
-        hasPersonaInfo: !!requestBody.brandInfo,
-        personaInfoLength: requestBody.brandInfo?.length
+        hasPersonaName: !!requestBody.personaName,
+        hasPersonaInfo: !!requestBody.personaInfo,
+        personaInfoLength: requestBody.personaInfo?.length
       });
       
-      const response = await fetch("/api/brand", {
+      const response = await fetch("/api/persona", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody)
@@ -296,13 +296,13 @@ export default function SettingsSheet({
       }
       
       // Check if response is successful and has the expected data
-      if (response.ok && !data?.error && (data?.brandInfo || data?.brandName || data?.success)) {
+      if (response.ok && !data?.error && (data?.personaInfo || data?.personaName || data?.success)) {
         console.log("Persona save successful:", { 
-          brandName: data.brandName, 
-          hasPersonaInfo: !!data.brandInfo 
+          personaName: data.personaName, 
+          hasPersonaInfo: !!data.personaInfo 
         });
-        const summary = data.brandInfo ?? null;
-        const name = data.brandName ?? null;
+        const summary = data.personaInfo ?? null;
+        const name = data.personaName ?? null;
         setPersonaInput("");
         setPersonaName("");
         setPersonaModalOpen(false);
@@ -438,12 +438,12 @@ export default function SettingsSheet({
       const originalName = personaName || "";
       if (currentPersonaName.trim() !== originalName.trim()) {
         try {
-          const response = await fetch("/api/brand", {
+          const response = await fetch("/api/persona", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
-              brandName: currentPersonaName.trim() || null,
-              brandInfo: currentPersonaInfo 
+              personaName: currentPersonaName.trim() || null,
+              personaInfo: currentPersonaInfo 
             })
           });
           
@@ -465,8 +465,8 @@ export default function SettingsSheet({
           }
           
           if (response.ok && !data?.error) {
-            setCurrentPersonaName(data.brandName || "");
-            setPersonaName(data.brandName || "");
+            setCurrentPersonaName(data.personaName || "");
+            setPersonaName(data.personaName || "");
           } else {
             // Revert on error
             setCurrentPersonaName(originalName);
@@ -514,7 +514,7 @@ export default function SettingsSheet({
   async function handleClearPersona() {
     setClearingPersona(true);
     try {
-      const response = await fetch("/api/brand", { method: "DELETE" });
+      const response = await fetch("/api/persona", { method: "DELETE" });
       
       let data: any = null;
       let responseText = "";

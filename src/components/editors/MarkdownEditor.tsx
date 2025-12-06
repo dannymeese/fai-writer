@@ -2000,7 +2000,7 @@ export default function MarkdownEditor({
         requestBody.brandId = activePersonaId;
       }
 
-      const response = await fetch("/api/brand/key-messaging", {
+      const response = await fetch("/api/persona/key-messaging", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody)
@@ -2020,7 +2020,7 @@ export default function MarkdownEditor({
 
       // Success - could show a toast notification here
       // Dispatch a custom event to notify parent components with personaId
-      window.dispatchEvent(new CustomEvent("brand-key-messaging-added", { 
+      window.dispatchEvent(new CustomEvent("persona-key-messaging-added", { 
         detail: { brandId: activePersonaId } 
       }));
     } catch (error) {

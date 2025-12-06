@@ -38,7 +38,7 @@ const editorContextSchema = z.object({
 export const composeRequestSchema = z.object({
   prompt: z.string().min(10, "Share more detail"),
   settings: composerSettingsSchema,
-  brandSummary: z.string().max(8000).optional(),
+  personaSummary: z.string().max(8000).optional(),
   styleGuide: z
     .object({
       name: z.string().min(1).max(80),
