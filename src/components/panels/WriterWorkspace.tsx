@@ -358,6 +358,15 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [autosaveTimeout, setAutosaveTimeout] = useState<NodeJS.Timeout | null>(null);
   const [titleAutosaveTimeout, setTitleAutosaveTimeout] = useState<NodeJS.Timeout | null>(null);
   const [showGuestTypingNotice, setShowGuestTypingNotice] = useState(false);
+  const [styleGenPopup, setStyleGenPopup] = useState<{
+    open: boolean;
+    title: string | null;
+    summary: string | null;
+    generating: boolean;
+    logs: Array<{ step: string; details?: Record<string, any>; timestamp: string }>;
+    progress: number;
+    status: string;
+  }>({ open: false, title: null, summary: null, generating: false, logs: [], progress: 0, status: "" });
   const editorRef = useRef<any>(null); // Reference to the TipTap editor instance
   const outputsRef = useRef<WriterOutput[]>(outputs);
   const savedDocsRef = useRef<SavedDoc[]>([]);
@@ -1217,146 +1226,156 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     }
 
     const resolvedContent = resolveOutputContent(output);
-    const styleSummary = output.styleSummary ?? null;
-    // Use the full AI-generated writingStyle description (the analyzed style), not a fallback
-    const description = output.writingStyle?.trim() ?? fallbackStyleDescription(null, resolvedContent, styleSummary);
+    const writingStyle = output.writingStyle?.trim() || null;
     
-    if (!description || !description.trim()) {
-      setToast("Unable to save style: no writing style description available.");
+    if (!resolvedContent || !resolvedContent.trim()) {
+      setToast("Unable to save style: no content available.");
       return;
     }
 
-    // Generate a temporary title - server will generate the final one via LLM
-    // But we need a valid title for the request
-    const tempTitle = output.styleTitle ?? generateStyleName(output.writingStyle ?? null, output.title) ?? "Custom Style";
-    const styleName = tempTitle.toLowerCase().endsWith(" style") 
-      ? tempTitle 
-      : tempTitle.endsWith("Style") 
-        ? tempTitle 
-        : `${tempTitle} Style`;
+    // Server will generate the title in "[adjective] [adjective] [noun]" format
+    const placeholderTitle = "Style";
+    
+    // Show popup immediately with empty logs
+    setStyleGenPopup({ 
+      open: true, 
+      title: null, 
+      summary: null, 
+      generating: true, 
+      logs: [], 
+      progress: 0, 
+      status: "Starting..." 
+    });
     
     console.log("[handleSaveStyle] Saving style:", {
-      styleName,
-      descriptionLength: description.length,
+      contentLength: resolvedContent.length,
       hasStyleTitle: !!output.styleTitle,
-      hasWritingStyle: !!output.writingStyle
+      hasWritingStyle: !!writingStyle,
+      writingStyleLength: writingStyle?.length
     });
 
     const localStyleDoc: SavedDoc = {
       id: `${output.id}-style-${Date.now()}`,
-      title: styleName,
+      title: placeholderTitle,
       createdAt: new Date().toISOString(),
       lastEditedAt: new Date().toISOString(),
       prompt: output.prompt ?? "",
       content: resolvedContent,
       settings: normalizeSettings(output.settings),
-      writingStyle: description,
-      styleSummary,
-      styleTitle: styleName,
+      writingStyle: writingStyle ?? null,
+      styleSummary: null,
+      styleTitle: null,
       pinned: false,
       folders: []
     };
+    
     const requestBody = {
-      title: styleName,
+      title: placeholderTitle,
       content: resolvedContent,
       tone: output.settings.marketTier ?? undefined,
       prompt: output.prompt,
-      // Only save non-length related settings
       gradeLevel: output.settings.gradeLevel ?? undefined,
       benchmark: output.settings.benchmark ?? undefined,
-      avoidWords: output.settings.avoidWords ?? undefined,
-      // Let the server generate title/summary from the writingStyle/content
-      writingStyle: description
+      avoidWords: output.settings.avoidWords ?? undefined
     };
 
-    console.log("[handleSaveStyle] Sending request", {
-      url: "/api/documents",
-      method: "POST",
-      bodySize: JSON.stringify(requestBody).length,
-      hasWritingStyle: !!requestBody.writingStyle,
-      writingStyleLength: requestBody.writingStyle?.length
-    });
-
-    let response: Response;
     try {
-      response = await fetch("/api/documents", {
+      const response = await fetch("/api/documents/save-style", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody)
       });
-      console.log("[handleSaveStyle] Response received", {
-        ok: response.ok,
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries())
-      });
-    } catch (error) {
-      console.error("save style network failure", error);
-      setToast("Unable to save style. Check your connection and try again.");
-      return;
-    }
 
-    let payload: any = null;
-    let responseText = "";
-    try {
-      responseText = await response.text();
-      if (responseText) {
-        try {
-          payload = JSON.parse(responseText);
-        } catch (parseError) {
-          console.warn("Failed to parse response as JSON", parseError);
-        }
-      }
-    } catch (textError) {
-      console.error("Failed to read response text", textError);
-    }
-
-    if (!response.ok) {
-      const errorDetails = {
-        status: response.status,
-        statusText: response.statusText,
-        payload,
-        responseText: responseText.substring(0, 500),
-        responseTextLength: responseText.length,
-        requestBody: {
-          title: styleName,
-          contentLength: resolvedContent.length,
-          hasWritingStyle: !!description,
-          writingStyleLength: description.length
-        }
-      };
-      console.error("save style failed", errorDetails);
-      console.error("Full error details:", JSON.stringify(errorDetails, null, 2));
-      const errorMsg = formatErrorMessage(payload?.error || responseText || `HTTP ${response.status}: ${response.statusText}`, "Unable to save writing style.");
-      setToast(errorMsg);
-      return;
-    }
-
-    // Parse response for success case
-    if (!payload && responseText) {
-      try {
-        payload = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error("Failed to parse success response", parseError, responseText);
-        setToast("Style saved but failed to parse response.");
+      if (!response.ok || !response.body) {
+        setStyleGenPopup({ open: false, title: null, summary: null, generating: false, logs: [], progress: 0, status: "" });
+        setToast("Unable to save style. Check your connection and try again.");
         return;
       }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let remoteDoc: any = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.type === "log") {
+                setStyleGenPopup(prev => ({
+                  ...prev,
+                  logs: [...prev.logs, { 
+                    step: data.step, 
+                    details: data.details, 
+                    timestamp: data.timestamp 
+                  }]
+                }));
+              } else if (data.type === "progress") {
+                setStyleGenPopup(prev => ({
+                  ...prev,
+                  progress: data.progress,
+                  status: data.status
+                }));
+              } else if (data.type === "result") {
+                if (data.success && data.data) {
+                  remoteDoc = data.data;
+                  const generatedTitle = remoteDoc?.styleTitle ?? remoteDoc?.title ?? null;
+                  const generatedSummary = remoteDoc?.styleSummary ?? null;
+                  
+                  setStyleGenPopup(prev => ({
+                    ...prev,
+                    title: generatedTitle,
+                    summary: generatedSummary,
+                    generating: false,
+                    progress: 100,
+                    status: "Complete"
+                  }));
+                  
+                  const hydratedStyleDoc: SavedDoc = {
+                    ...localStyleDoc,
+                    id: remoteDoc?.id ?? localStyleDoc.id,
+                    title: remoteDoc?.title ?? remoteDoc?.styleTitle ?? localStyleDoc.title,
+                    writingStyle: remoteDoc?.writingStyle ?? null,
+                    styleTitle: remoteDoc?.styleTitle ?? remoteDoc?.title ?? localStyleDoc.styleTitle ?? localStyleDoc.title,
+                    styleSummary: remoteDoc?.styleSummary ?? null,
+                    createdAt: remoteDoc?.createdAt ?? localStyleDoc.createdAt,
+                    lastEditedAt: remoteDoc?.updatedAt ?? remoteDoc?.createdAt ?? localStyleDoc.lastEditedAt,
+                    pinned: localStyleDoc.pinned ?? false
+                  };
+                  applyLocalDoc(hydratedStyleDoc);
+                  fetchSavedDocs();
+                } else if (!data.success) {
+                  setStyleGenPopup(prev => ({
+                    ...prev,
+                    generating: false,
+                    logs: [...prev.logs, { 
+                      step: `Error: ${data.error}`, 
+                      timestamp: new Date().toISOString() 
+                    }]
+                  }));
+                  setToast(formatErrorMessage(data.error, "Unable to save writing style."));
+                }
+              }
+            } catch (parseError) {
+              console.warn("Failed to parse SSE message", parseError);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("save style network failure", error);
+      setStyleGenPopup({ open: false, title: null, summary: null, generating: false, logs: [], progress: 0, status: "" });
+      setToast("Unable to save style. Check your connection and try again.");
     }
-    const remoteDoc = payload ?? null;
-    const hydratedStyleDoc: SavedDoc = {
-      ...localStyleDoc,
-      id: remoteDoc?.id ?? localStyleDoc.id,
-      title: remoteDoc?.title ?? remoteDoc?.styleTitle ?? localStyleDoc.title,
-      writingStyle: remoteDoc?.writingStyle ?? localStyleDoc.writingStyle,
-      styleTitle: remoteDoc?.styleTitle ?? localStyleDoc.styleTitle,
-      styleSummary: remoteDoc?.styleSummary ?? localStyleDoc.styleSummary,
-      createdAt: remoteDoc?.createdAt ?? localStyleDoc.createdAt,
-      lastEditedAt: remoteDoc?.updatedAt ?? remoteDoc?.createdAt ?? localStyleDoc.lastEditedAt,
-      pinned: localStyleDoc.pinned ?? false
-    };
-    applyLocalDoc(hydratedStyleDoc);
-    fetchSavedDocs();
-    setToast(`Saved "${styleName}".`);
   }
 
   function handleSaveCurrentStyle() {
@@ -1364,7 +1383,19 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       setToast("No document to save as style.");
       return;
     }
-    handleSaveStyle(activeDocument);
+    
+    if (!selectedText || !selectedText.trim()) {
+      setToast("Please select text to save as a style.");
+      return;
+    }
+    
+    // Save Writing Style only works with selected text
+    // Create a modified document with only the selected text
+    const styleDocument: WriterOutput = {
+      ...activeDocument,
+      content: selectedText.trim()
+    };
+    handleSaveStyle(styleDocument);
   }
 
   const hasOutputs = outputs.length > 0;
@@ -3041,6 +3072,16 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
         onClearStyle={handleClearStyle}
       />
       <Toast message={toast} onClose={() => setToast(null)} />
+      <StyleGenerationPopup
+        open={styleGenPopup.open}
+        title={styleGenPopup.title}
+        summary={styleGenPopup.summary}
+        generating={styleGenPopup.generating}
+        logs={styleGenPopup.logs}
+        progress={styleGenPopup.progress}
+        status={styleGenPopup.status}
+        onClose={() => setStyleGenPopup({ open: false, title: null, summary: null, generating: false, logs: [], progress: 0, status: "" })}
+      />
     </div>
   );
 }
@@ -3333,6 +3374,171 @@ function Toast({ message, onClose }: { message: string | null; onClose: () => vo
         </button>
       </div>
     </div>
+  );
+}
+
+function StyleGenerationPopup({ 
+  open, 
+  title, 
+  summary, 
+  generating,
+  logs,
+  progress,
+  status,
+  onClose 
+}: { 
+  open: boolean; 
+  title: string | null; 
+  summary: string | null; 
+  generating: boolean;
+  logs: Array<{ step: string; details?: Record<string, any>; timestamp: string }>;
+  progress: number;
+  status: string;
+  onClose: () => void;
+}) {
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  
+  // Auto-scroll to bottom when new logs arrive
+  useEffect(() => {
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [logs]);
+  
+  if (!open) return null;
+  
+  return (
+    <Transition show={open} as={Fragment}>
+      <Dialog onClose={onClose} className="fixed inset-0 z-[1300]">
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-200"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-150"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black/60" aria-hidden="true" />
+        </Transition.Child>
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-200"
+            enterFrom="opacity-0 scale-95"
+            enterTo="opacity-100 scale-100"
+            leave="ease-in duration-150"
+            leaveFrom="opacity-100 scale-100"
+            leaveTo="opacity-0 scale-95"
+          >
+            <Dialog.Panel className="relative w-full max-w-2xl rounded-2xl border border-brand-stroke/60 bg-brand-panel p-6 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-lg font-semibold text-white">
+                    {generating ? "Generating Style..." : "Style Generated"}
+                  </h3>
+                  {generating && (
+                    <span className="text-xs text-brand-muted bg-brand-background/50 px-2 py-1 rounded-full">
+                      {status || "Processing"}
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={onClose}
+                  className="rounded-full p-1 text-brand-muted transition hover:bg-brand-background/50 hover:text-white"
+                  aria-label="Close"
+                >
+                  <span className="material-symbols-outlined text-xl leading-none">close</span>
+                </button>
+              </div>
+              
+              {/* Progress bar */}
+              <div className="mb-4">
+                <div className="h-1.5 bg-brand-background/40 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-brand-blue transition-all duration-300 ease-out"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <div className="flex justify-between mt-1">
+                  <span className="text-xs text-brand-muted">{progress}%</span>
+                  <span className="text-xs text-brand-muted">{status}</span>
+                </div>
+              </div>
+              
+              {/* Live logs feed */}
+              <div className="mb-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-brand-muted mb-2">Live Activity Log</p>
+                <div className="bg-brand-background/30 rounded-lg border border-brand-stroke/30 h-48 overflow-y-auto font-mono text-xs">
+                  <div className="p-3 space-y-1.5">
+                    {logs.length === 0 ? (
+                      <div className="flex items-center gap-2 text-brand-muted">
+                        <div className="h-1.5 w-1.5 rounded-full bg-brand-blue animate-pulse" />
+                        <span>Initializing...</span>
+                      </div>
+                    ) : (
+                      logs.map((log, index) => {
+                        const time = new Date(log.timestamp).toLocaleTimeString('en-US', { 
+                          hour12: false, 
+                          hour: '2-digit', 
+                          minute: '2-digit', 
+                          second: '2-digit',
+                          fractionalSecondDigits: 3
+                        });
+                        const isError = log.step.toLowerCase().includes('error') || log.step.toLowerCase().includes('failed');
+                        const isSuccess = log.step.toLowerCase().includes('success') || log.step.toLowerCase().includes('complete');
+                        
+                        return (
+                          <div key={index} className="flex items-start gap-2 group">
+                            <span className="text-brand-muted/60 flex-shrink-0 tabular-nums">{time}</span>
+                            <span className={`flex-shrink-0 ${isError ? 'text-red-400' : isSuccess ? 'text-green-400' : 'text-brand-blue'}`}>
+                              {isError ? '✗' : isSuccess ? '✓' : '→'}
+                            </span>
+                            <span className={`${isError ? 'text-red-300' : isSuccess ? 'text-green-300' : 'text-brand-text'}`}>
+                              {log.step}
+                            </span>
+                            {log.details && Object.keys(log.details).length > 0 && (
+                              <span className="text-brand-muted/50 hidden group-hover:inline">
+                                {JSON.stringify(log.details)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                    <div ref={logsEndRef} />
+                  </div>
+                </div>
+              </div>
+              
+              {/* Result section - shown when complete */}
+              {!generating && (title || summary) && (
+                <div className="space-y-4 border-t border-brand-stroke/30 pt-4">
+                  {title && (
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-brand-muted mb-2">Style Title</p>
+                      <p className="text-lg font-semibold text-white">{title}</p>
+                    </div>
+                  )}
+                  {summary && (
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-brand-muted mb-2">Style Summary</p>
+                      <p className="text-sm text-brand-text leading-relaxed">{summary}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {!generating && !title && !summary && (
+                <p className="text-sm text-brand-muted border-t border-brand-stroke/30 pt-4">
+                  Style generation completed.
+                </p>
+              )}
+            </Dialog.Panel>
+          </Transition.Child>
+        </div>
+      </Dialog>
+    </Transition>
   );
 }
 
@@ -3850,12 +4056,12 @@ function WorkspaceSidebar({
                   tabIndex={-1}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-white">{style.title || "Saved Style"}</p>
+                    <p className="text-sm font-semibold text-white">{style.styleTitle || style.title || "Saved Style"}</p>
                     {activeStyleId === style.id && <span className="text-[10px] font-semibold uppercase text-brand-muted">Applied</span>}
               </div>
-                  {style.writingStyle && (
-                    <p className="mt-2 line-clamp-3 text-xs text-brand-muted/90">{style.writingStyle}</p>
-                  )}
+                  <p className="mt-2 line-clamp-3 text-xs text-brand-muted/90">
+                    {style.styleSummary || "Style summary will appear here after generation."}
+                  </p>
                 </button>
               </li>
             ))}
@@ -4380,24 +4586,26 @@ function BrandCard({
 }
 
 function isStyleDocument(doc: SavedDoc): boolean {
-  // A document is a style ONLY if:
-  // 1. The title ends with " Style" (capital S)
-  // 2. AND the styleTitle matches the title (meaning it was explicitly saved as a style)
-  // Regular docs have styleTitle (AI-generated) but their title is from the prompt, so they won't match
-  const title = doc.title ?? "";
-  const styleTitle = doc.styleTitle ?? "";
+  const title = (doc.title ?? "").trim();
+  const styleTitle = (doc.styleTitle ?? "").trim();
   const titleLower = title.toLowerCase();
-  
-  // Check if title ends with " Style" and matches the styleTitle
-  if (titleLower.endsWith(" style") && styleTitle && title === styleTitle) {
+  const hasStyleMetadata = Boolean(styleTitle || doc.styleSummary || doc.writingStyle);
+
+  // Primary: style saves set the generated styleTitle as the document title
+  if (styleTitle && title && title === styleTitle) {
     return true;
   }
-  
-  // Also check for the bullet point style format
-  if (titleLower.includes("• style")) {
+
+  // Legacy placeholder/suffix formats
+  if (titleLower === "style" || titleLower.endsWith(" style") || titleLower.includes("• style")) {
     return true;
   }
-  
+
+  // Fallback: entries carrying style metadata should still be classified as styles
+  if (styleTitle && hasStyleMetadata) {
+    return true;
+  }
+
   return false;
 }
 
