@@ -27,9 +27,9 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
       take: 25,
       include: {
-        documentFolders: {
+        DocumentFolder: {
           include: {
-            folder: {
+            Folder: {
               select: {
                 id: true,
                 name: true
@@ -41,21 +41,85 @@ export async function GET() {
     });
 
     // Transform documents to include folders array
-    const docsWithFolders = docs.map((doc) => ({
-      ...doc,
-      folders: doc.documentFolders.map((df) => ({
-        id: df.folder.id,
-        name: df.folder.name
-      }))
-    }));
+    const docsWithFolders = docs.map((doc) => {
+      try {
+        const folders = (doc.DocumentFolder || [])
+          .filter((df) => df && df.Folder) // Filter out any null/undefined entries
+          .map((df) => ({
+            id: df.Folder.id,
+            name: df.Folder.name
+          }));
+        
+        return {
+          ...doc,
+          folders
+        };
+      } catch (mapError) {
+        console.error("[documents][GET] Error mapping document folders", {
+          documentId: doc.id,
+          error: mapError instanceof Error ? mapError.message : String(mapError),
+          DocumentFolder: doc.DocumentFolder
+        });
+        // Return document without folders if mapping fails
+        return {
+          ...doc,
+          folders: []
+        };
+      }
+    });
 
     console.log("[documents][GET] Found", docs.length, "documents for user", session.user.id);
     return NextResponse.json(docsWithFolders);
   } catch (error) {
+    // Handle Prisma-specific errors
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      console.error("[documents][GET] Prisma error", {
+        code: error.code,
+        meta: error.meta,
+        message: error.message,
+        userId: session.user.id
+      });
+      return NextResponse.json(
+        { error: "Database error occurred.", details: error.message },
+        { status: 500 }
+      );
+    }
+
+    // Handle Prisma connection errors
+    if (error instanceof Prisma.PrismaClientInitializationError) {
+      console.error("[documents][GET] Prisma initialization error", error.message);
+      return NextResponse.json(
+        { error: "Database connection failed. Please try again." },
+        { status: 503 }
+      );
+    }
+
+    // Handle other errors
     console.error("[documents][GET] failed", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error("[documents][GET] error details:", errorMessage);
-    return NextResponse.json({ error: "Unable to load saved documents." }, { status: 500 });
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
+    // Check if it's a database migration issue
+    const isMigrationError = errorMessage.includes("Unknown column") || 
+                             (errorMessage.includes("Table") && errorMessage.includes("doesn't exist")) ||
+                             (errorMessage.includes("relation") && errorMessage.includes("does not exist"));
+    
+    console.error("[documents][GET] error details:", {
+      message: errorMessage,
+      stack: errorStack,
+      isMigrationError,
+      userId: session.user.id
+    });
+    
+    return NextResponse.json(
+      { 
+        error: isMigrationError 
+          ? "Database schema is out of date. Please run database migrations." 
+          : "Unable to load saved documents.",
+        details: errorMessage 
+      },
+      { status: 500 }
+    );
   }
 }
 

@@ -137,6 +137,12 @@ model User {
   updatedAt                             DateTime
   personaName                           String?               @db.VarChar(100)
   activePersonaId                       String?
+  stripeCustomerId                      String?               @unique
+  stripeSubscriptionId                   String?               @unique
+  subscriptionStatus                    SubscriptionStatus     @default(INACTIVE)
+  subscriptionPlan                      String?               @db.VarChar(20)
+  subscriptionStartAt                   DateTime?
+  subscriptionEndAt                     DateTime?
   Account                               Account[]
   Document                              Document[]
   Folder                                Folder[]
@@ -147,6 +153,8 @@ model User {
   Persona_User_activePersonaIdToPersona Persona?              @relation("User_activePersonaIdToPersona", fields: [activePersonaId], references: [id])
 
   @@index([activePersonaId], map: "User_activePersonaId_fkey")
+  @@index([stripeCustomerId])
+  @@index([stripeSubscriptionId])
 }
 
 model VerificationToken {
@@ -162,4 +170,13 @@ enum User_marketTier {
   PREMIUM
   LUXURY
   UHNW
+}
+
+enum SubscriptionStatus {
+  INACTIVE
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+  UNPAID
 }

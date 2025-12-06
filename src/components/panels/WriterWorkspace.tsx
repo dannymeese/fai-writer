@@ -393,15 +393,71 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     try {
       console.log("[fetchSavedDocs] Fetching docs...");
       const response = await fetch("/api/documents", { cache: "no-store" });
+      
+      // Log response details for debugging
+      const status = response.status;
+      const statusText = response.statusText;
+      const contentType = response.headers.get("content-type");
+      
+      console.log("[fetchSavedDocs] Response received:", {
+        status,
+        statusText,
+        contentType,
+        ok: response.ok
+      });
+      
       if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        console.error("[fetchSavedDocs] Failed to load docs from database:", {
-          status: response.status,
-          error: payload?.error || "Unknown error"
-        });
+        let payload: any = null;
+        let errorText: string | null = null;
+        let parseError: any = null;
+        
+        try {
+          if (contentType?.includes("application/json")) {
+            const text = await response.text();
+            console.log("[fetchSavedDocs] Response body (text):", text);
+            if (text) {
+              try {
+                payload = JSON.parse(text);
+              } catch (jsonError) {
+                console.warn("[fetchSavedDocs] Failed to parse JSON", jsonError);
+                errorText = text;
+              }
+            } else {
+              errorText = "Empty response body";
+            }
+          } else {
+            errorText = await response.text();
+            console.log("[fetchSavedDocs] Non-JSON response:", errorText);
+          }
+        } catch (err) {
+          parseError = err;
+          console.warn("[fetchSavedDocs] Failed to read response body", err);
+          errorText = `Failed to read response (status: ${status})`;
+        }
+        
+        // Ensure we always have meaningful error information
+        const errorMessage = payload?.error || errorText || "Unknown error";
+        const errorDetails: Record<string, any> = {
+          status: status || "unknown",
+          statusText: statusText || "unknown",
+          contentType: contentType || "unknown",
+          error: errorMessage,
+        };
+        
+        // Only add these if they have values
+        if (payload !== null) {
+          errorDetails.payload = payload;
+        }
+        if (parseError) {
+          errorDetails.parseError = String(parseError);
+        }
+        
+        console.error("[fetchSavedDocs] Failed to load docs from database:", JSON.stringify(errorDetails, null, 2));
+        console.error("[fetchSavedDocs] Error details (object):", errorDetails);
         setSavedDocs([]);
         return;
       }
+      
       const docs = await response.json();
       console.log("[fetchSavedDocs] fetched", docs.length, "documents from API");
       const mapped: SavedDoc[] = (docs as any[]).map((doc) => {
@@ -464,7 +520,15 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       setSavedDocs(sortSavedDocs(mapped));
       console.log("[fetchSavedDocs] Updated savedDocs state with", mapped.length, "documents");
     } catch (error) {
-      console.error("[fetchSavedDocs] Failed to fetch docs:", error);
+      // Handle network errors or other exceptions
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      console.error("[fetchSavedDocs] Failed to fetch docs:", {
+        error: errorMessage,
+        stack: errorStack,
+        errorType: error?.constructor?.name || typeof error,
+        errorObject: error
+      });
       setSavedDocs([]);
     }
   }, [isAuthenticated]);
@@ -3975,7 +4039,7 @@ function WorkspaceSidebar({
             <li
               key={doc.id}
               className={cn(
-                "relative group p-1.5",
+                "relative group px-1.5 pb-1.5 pt-[3px]",
                 canDragDoc ? "cursor-grab" : undefined,
                 draggingDocId === doc.id ? "opacity-70" : undefined
               )}
@@ -4030,11 +4094,11 @@ function WorkspaceSidebar({
                   "absolute transition-opacity",
                   isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                 )}
-                style={{ bottom: '8px', right: '8px' }}
+                style={{ bottom: '13px', right: '14px' }}
                 onMouseEnter={() => handleTimestampMouseEnter(doc.id)}
                 onMouseLeave={handleTimestampMouseLeave}
               >
-                <p className="text-[8px] font-semibold text-brand-muted/25 cursor-default">
+                <p className="text-[9px] font-semibold text-brand-muted/25 cursor-default">
                   {formatTimestamp(doc.lastEditedAt ?? doc.createdAt)}
                 </p>
                 {hoveredTimestampId === doc.id && (
@@ -4171,8 +4235,12 @@ function WorkspaceSidebar({
       return (
         <div className="flex h-full flex-col justify-center pt-[4px] px-3 bg-[#131313]">
           <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-[#0A0A0A] p-6 text-center text-sm text-brand-muted">
-            <p className="font-semibold text-white">No styles yet</p>
-            <p className="mt-2">
+            <div className="flex items-center justify-center gap-3 mb-4">
+              <span className="material-symbols-outlined text-brand-blue text-xl">text_select_end</span>
+              <span className="material-symbols-outlined text-brand-blue text-xl">east</span>
+              <span className="material-symbols-outlined text-brand-blue text-xl">format_align_left</span>
+            </div>
+            <p className="font-semibold text-white">
               Select text in any document, then click &quot;Save Writing Style&quot; from the plus menu to capture its tone and voice.
             </p>
           </div>
