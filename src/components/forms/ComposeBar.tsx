@@ -74,11 +74,11 @@ type ComposeBarProps = {
     name: string;
   } | null;
   onClearStyle?: () => void;
-  activeBrand?: {
+  activePersona?: {
     id: string;
     name: string;
   } | null;
-  onClearBrand?: () => void;
+  onClearPersona?: () => void;
   hasSelection?: boolean;
   selectedText?: string | null;
   isGuest?: boolean;
@@ -96,8 +96,8 @@ export default function ComposeBar({
   hasCustomOptions = false,
   activeStyle = null,
   onClearStyle,
-  activeBrand = null,
-  onClearBrand,
+  activePersona = null,
+  onClearPersona,
   hasSelection = false,
   selectedText = null,
   isGuest = false
@@ -432,17 +432,17 @@ export default function ComposeBar({
 
   const content = (
     <div className="flex w-full flex-col gap-2 mt-[3px]">
-      {(activeStyle || activeBrand) && (
+      {(activeStyle || activePersona) && (
         <div className="flex items-center gap-2 justify-center flex-wrap">
-          {activeBrand && (
+          {activePersona && (
             <div className="inline-flex items-center gap-1.5 h-[18px] rounded-full border border-white/40 bg-white/5 px-2.5 text-xs font-semibold uppercase text-white">
-              <span className="text-[8px] font-bold text-white/50 cursor-default">BRAND</span>
-              <span>{activeBrand.name}</span>
-              {onClearBrand && (
+              <span className="text-[8px] font-bold text-white/50 cursor-default">PERSONA</span>
+              <span>{activePersona.name}</span>
+              {onClearPersona && (
                 <button 
                   type="button" 
-                  onClick={onClearBrand} 
-                  aria-label="Remove selected brand" 
+                  onClick={onClearPersona} 
+                  aria-label="Remove selected persona" 
                   className="text-white/80 hover:text-white transition-colors -mx-1 px-0.5"
                 >
                   <XMarkIcon className="h-3 w-3" />

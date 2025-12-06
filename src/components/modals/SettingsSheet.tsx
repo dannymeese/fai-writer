@@ -22,13 +22,14 @@ type SettingsSheetProps = {
   settings: ComposerSettingsInput;
   onChange: (next: ComposerSettingsInput) => void;
   anchorRect: DOMRect | null;
-  onBrandUpdate?: (summary: string | null, name?: string | null) => void;
-  initialBrandDefined?: boolean;
-  activeBrandId?: string | null;
+  onPersonaUpdate?: (summary: string | null, name?: string | null) => void;
+  initialPersonaDefined?: boolean;
+  activePersonaId?: string | null;
   styles?: StyleDoc[];
   activeStyleId?: string;
   onApplyStyle?: (style: StyleDoc) => void;
   onClearStyle?: () => void;
+  openPersonaModal?: boolean;
 };
  
 const marketLabels = {
@@ -58,23 +59,24 @@ export default function SettingsSheet({
   settings,
   onChange,
   anchorRect,
-  onBrandUpdate,
-  initialBrandDefined = false,
-  activeBrandId,
+  onPersonaUpdate,
+  initialPersonaDefined = false,
+  activePersonaId,
   styles = [],
   activeStyleId,
   onApplyStyle,
-  onClearStyle
+  onClearStyle,
+  openPersonaModal = false
 }: SettingsSheetProps) {
-  const [brandModalOpen, setBrandModalOpen] = useState(false);
-  const [brandInput, setBrandInput] = useState("");
-  const [brandName, setBrandName] = useState("");
-  const [brandProcessing, setBrandProcessing] = useState(false);
-  const [hasBrand, setHasBrand] = useState(initialBrandDefined);
-  const [clearingBrand, setClearingBrand] = useState(false);
-  const [editingBrandName, setEditingBrandName] = useState(false);
-  const [currentBrandName, setCurrentBrandName] = useState("");
-  const [currentBrandInfo, setCurrentBrandInfo] = useState("");
+  const [personaModalOpen, setPersonaModalOpen] = useState(false);
+  const [personaInput, setPersonaInput] = useState("");
+  const [personaName, setPersonaName] = useState("");
+  const [personaProcessing, setPersonaProcessing] = useState(false);
+  const [hasPersona, setHasPersona] = useState(initialPersonaDefined);
+  const [clearingPersona, setClearingPersona] = useState(false);
+  const [editingPersonaName, setEditingPersonaName] = useState(false);
+  const [currentPersonaName, setCurrentPersonaName] = useState("");
+  const [currentPersonaInfo, setCurrentPersonaInfo] = useState("");
   const [showESLTooltip, setShowESLTooltip] = useState(false);
   const [eslTooltipTimeout, setEslTooltipTimeout] = useState<NodeJS.Timeout | null>(null);
   const [hoveredGradeLevel, setHoveredGradeLevel] = useState<string | null>(null);
@@ -82,165 +84,174 @@ export default function SettingsSheet({
   const [hoveredMarketTier, setHoveredMarketTier] = useState<string | null>(null);
   const [marketTierTooltipTimeout, setMarketTierTooltipTimeout] = useState<NodeJS.Timeout | null>(null);
   const [errorPopup, setErrorPopup] = useState<ErrorDetails | null>(null);
-  const [brandOptions, setBrandOptions] = useState<Array<{ id: string; name: string | null; info: string }>>([]);
-  const [selectedBrandId, setSelectedBrandId] = useState<string>("");
+  const [personaOptions, setPersonaOptions] = useState<Array<{ id: string; name: string | null; info: string }>>([]);
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string>("");
 
   useEffect(() => {
-    setHasBrand(initialBrandDefined);
-  }, [initialBrandDefined]);
+    setHasPersona(initialPersonaDefined);
+  }, [initialPersonaDefined]);
 
-  // Sync selectedBrandId when activeBrandId changes from parent (e.g., when brand is selected in sidebar)
+  // Open persona modal when openPersonaModal prop is true
   useEffect(() => {
-    // Only sync if activeBrandId prop is provided and different from current selection
-    if (activeBrandId === undefined) return; // Don't sync if prop not provided
+    if (open && openPersonaModal) {
+      setPersonaInput("");
+      setPersonaName("");
+      setPersonaModalOpen(true);
+    }
+  }, [open, openPersonaModal]);
+
+  // Sync selectedPersonaId when activePersonaId changes from parent (e.g., when persona is selected in sidebar)
+  useEffect(() => {
+    // Only sync if activePersonaId prop is provided and different from current selection
+    if (activePersonaId === undefined) return; // Don't sync if prop not provided
     
-    if (activeBrandId !== null && activeBrandId !== selectedBrandId) {
-      // Find the brand in current options
-      const brand = brandOptions.find((b) => b.id === activeBrandId);
-      if (brand) {
+    if (activePersonaId !== null && activePersonaId !== selectedPersonaId) {
+      // Find the persona in current options
+      const persona = personaOptions.find((p) => p.id === activePersonaId);
+      if (persona) {
         // Only update if actually different to avoid unnecessary re-renders
-        setSelectedBrandId(activeBrandId);
-        const summary = brand.info ?? null;
-        const name = brand.name ?? null;
-        const newHasBrand = Boolean(summary) || Boolean(name);
-        if (newHasBrand !== hasBrand || currentBrandName !== name || currentBrandInfo !== summary) {
-          setHasBrand(newHasBrand);
-          setCurrentBrandName(name || "");
-          setCurrentBrandInfo(summary || "");
-          onBrandUpdate?.(summary, name);
+        setSelectedPersonaId(activePersonaId);
+        const summary = persona.info ?? null;
+        const name = persona.name ?? null;
+        const newHasPersona = Boolean(summary) || Boolean(name);
+        if (newHasPersona !== hasPersona || currentPersonaName !== name || currentPersonaInfo !== summary) {
+          setHasPersona(newHasPersona);
+          setCurrentPersonaName(name || "");
+          setCurrentPersonaInfo(summary || "");
+          onPersonaUpdate?.(summary, name);
         }
       } else {
-        // Brand not in current options, fetch fresh list
+        // Persona not in current options, fetch fresh list
         fetch("/api/brand?all=true")
           .then((res) => res.json())
           .then((data) => {
             if (data.brands && Array.isArray(data.brands)) {
-              setBrandOptions(data.brands);
-              const brand = data.brands.find((b: any) => b.id === activeBrandId);
-              if (brand) {
-                setSelectedBrandId(activeBrandId);
-                const summary = brand.info ?? null;
-                const name = brand.name ?? null;
-                setHasBrand(Boolean(summary) || Boolean(name));
-                setCurrentBrandName(name || "");
-                setCurrentBrandInfo(summary || "");
-                onBrandUpdate?.(summary, name);
+              setPersonaOptions(data.brands);
+              const persona = data.brands.find((p: any) => p.id === activePersonaId);
+              if (persona) {
+                setSelectedPersonaId(activePersonaId);
+                const summary = persona.info ?? null;
+                const name = persona.name ?? null;
+                setHasPersona(Boolean(summary) || Boolean(name));
+                setCurrentPersonaName(name || "");
+                setCurrentPersonaInfo(summary || "");
+                onPersonaUpdate?.(summary, name);
               }
             }
           })
-          .catch((err) => console.error("Failed to sync brand", err));
+          .catch((err) => console.error("Failed to sync persona", err));
       }
-    } else if (activeBrandId === null && selectedBrandId) {
-      // Brand was deselected in parent
-      setSelectedBrandId("");
-      setHasBrand(false);
-      setCurrentBrandName("");
-      setCurrentBrandInfo("");
-      onBrandUpdate?.(null, null);
+    } else if (activePersonaId === null && selectedPersonaId) {
+      // Persona was deselected in parent
+      setSelectedPersonaId("");
+      setHasPersona(false);
+      setCurrentPersonaName("");
+      setCurrentPersonaInfo("");
+      onPersonaUpdate?.(null, null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeBrandId]); // Only depend on activeBrandId to avoid unnecessary runs
+  }, [activePersonaId]); // Only depend on activePersonaId to avoid unnecessary runs
 
-  // Check if brand is defined on mount and when modal opens
+  // Check if persona is defined on mount and when modal opens
   useEffect(() => {
     if (!open) {
-      // Don't reset selectedBrandId when modal closes - preserve user's selection
+      // Don't reset selectedPersonaId when modal closes - preserve user's selection
       return;
     }
     
-    async function checkBrand() {
+    async function checkPersona() {
       try {
-        // Prefer full brands list (includes activeBrandId and stored brands even if deselected)
+        // Prefer full personas list (includes activePersonaId and stored personas even if deselected)
         const listResponse = await fetch("/api/brand?all=true");
         if (listResponse.ok) {
           const data = await listResponse.json();
           if (Array.isArray(data.brands) && data.brands.length > 0) {
-            setBrandOptions(data.brands);
-            // Use activeBrandId prop if provided, otherwise use data.activeBrandId
-            const activeId = activeBrandId ?? data.activeBrandId ?? "";
-            // Only set on initial load (when selectedBrandId is empty) or if activeBrandId changed
+            setPersonaOptions(data.brands);
+            // Use activePersonaId prop if provided, otherwise use data.activeBrandId
+            const activeId = activePersonaId ?? data.activeBrandId ?? "";
+            // Only set on initial load (when selectedPersonaId is empty) or if activePersonaId changed
             const finalSelectedId = (() => {
-              // If user hasn't selected anything yet, use activeBrandId
-              if (!selectedBrandId) return activeId;
-              // If user selected a brand, keep their selection unless it's no longer valid
-              const isValidSelection = data.brands.some((b: any) => b.id === selectedBrandId);
-              if (isValidSelection) return selectedBrandId;
-              // If selection is invalid, fall back to activeBrandId
+              // If user hasn't selected anything yet, use activePersonaId
+              if (!selectedPersonaId) return activeId;
+              // If user selected a persona, keep their selection unless it's no longer valid
+              const isValidSelection = data.brands.some((p: any) => p.id === selectedPersonaId);
+              if (isValidSelection) return selectedPersonaId;
+              // If selection is invalid, fall back to activePersonaId
               return activeId;
             })();
             
-            setSelectedBrandId(finalSelectedId);
+            setSelectedPersonaId(finalSelectedId);
             
-            // Use the selected brand (either user's selection or active brand) to set state
-            const selectedBrand = data.brands.find((b: any) => b.id === finalSelectedId);
-            if (selectedBrand) {
-              const summary = selectedBrand.info ?? null;
-              const name = selectedBrand.name ?? null;
-              setHasBrand(Boolean(summary) || Boolean(name));
-              setCurrentBrandName(name || "");
-              setCurrentBrandInfo(summary || "");
-              onBrandUpdate?.(summary, name);
+            // Use the selected persona (either user's selection or active persona) to set state
+            const selectedPersona = data.brands.find((p: any) => p.id === finalSelectedId);
+            if (selectedPersona) {
+              const summary = selectedPersona.info ?? null;
+              const name = selectedPersona.name ?? null;
+              setHasPersona(Boolean(summary) || Boolean(name));
+              setCurrentPersonaName(name || "");
+              setCurrentPersonaInfo(summary || "");
+              onPersonaUpdate?.(summary, name);
             } else {
               // No selection; keep defaults but allow dropdown to show options
-              setHasBrand(false);
-              setCurrentBrandName("");
-              setCurrentBrandInfo("");
+              setHasPersona(false);
+              setCurrentPersonaName("");
+              setCurrentPersonaInfo("");
             }
             return;
           } else {
-            setBrandOptions([]);
-            setSelectedBrandId("");
+            setPersonaOptions([]);
+            setSelectedPersonaId("");
           }
         }
 
-        // Fallback to legacy single-brand endpoint (guests or no brands)
+        // Fallback to legacy single-persona endpoint (guests or no personas)
         const response = await fetch("/api/brand");
         if (response.ok) {
           const data = await response.json();
           const summary = data.brandInfo ?? null;
           const name = data.brandName ?? null;
-          setHasBrand(Boolean(summary) || Boolean(name));
-          setCurrentBrandName(name || "");
-          setCurrentBrandInfo(summary || "");
-          onBrandUpdate?.(summary, name);
+          setHasPersona(Boolean(summary) || Boolean(name));
+          setCurrentPersonaName(name || "");
+          setCurrentPersonaInfo(summary || "");
+          onPersonaUpdate?.(summary, name);
         }
       } catch (error) {
-        console.error("Failed to check brand info", error);
+        console.error("Failed to check persona info", error);
       }
     }
     if (open) {
-      checkBrand();
+      checkPersona();
     } else {
-      // Reset selectedBrandId when modal closes so it can reload fresh next time
-      setSelectedBrandId("");
+      // Reset selectedPersonaId when modal closes so it can reload fresh next time
+      setSelectedPersonaId("");
     }
-  }, [open, activeBrandId]);
+  }, [open, activePersonaId]);
 
-  async function handleDefineBrand() {
-    console.log("handleDefineBrand called", { 
-      brandInput: brandInput, 
-      brandInputLength: brandInput?.length,
-      brandInputTrimmed: brandInput?.trim(),
-      hasContent: !!brandInput?.trim()
+  async function handleDefinePersona() {
+    console.log("handleDefinePersona called", { 
+      personaInput: personaInput, 
+      personaInputLength: personaInput?.length,
+      personaInputTrimmed: personaInput?.trim(),
+      hasContent: !!personaInput?.trim()
     });
     
-    if (!brandInput.trim()) {
-      console.warn("Brand input is empty, returning early");
+    if (!personaInput.trim()) {
+      console.warn("Persona input is empty, returning early");
       return;
     }
     
-    console.log("Starting brand save process...");
-    setBrandProcessing(true);
+    console.log("Starting persona save process...");
+    setPersonaProcessing(true);
     try {
       const requestBody = { 
-        brandName: brandName?.trim() || undefined,
-        brandInfo: brandInput.trim() 
+        brandName: personaName?.trim() || undefined,
+        brandInfo: personaInput.trim() 
       };
       
-      console.log("Sending brand save request:", { 
-        hasBrandName: !!requestBody.brandName,
-        hasBrandInfo: !!requestBody.brandInfo,
-        brandInfoLength: requestBody.brandInfo?.length
+      console.log("Sending persona save request:", { 
+        hasPersonaName: !!requestBody.brandName,
+        hasPersonaInfo: !!requestBody.brandInfo,
+        personaInfoLength: requestBody.brandInfo?.length
       });
       
       const response = await fetch("/api/brand", {
@@ -286,26 +297,26 @@ export default function SettingsSheet({
       
       // Check if response is successful and has the expected data
       if (response.ok && !data?.error && (data?.brandInfo || data?.brandName || data?.success)) {
-        console.log("Brand save successful:", { 
+        console.log("Persona save successful:", { 
           brandName: data.brandName, 
-          hasBrandInfo: !!data.brandInfo 
+          hasPersonaInfo: !!data.brandInfo 
         });
         const summary = data.brandInfo ?? null;
         const name = data.brandName ?? null;
-        setBrandInput("");
-        setBrandName("");
-        setBrandModalOpen(false);
-        setHasBrand(!!summary);
-        setCurrentBrandName(name || "");
-        setCurrentBrandInfo(summary || "");
-        onBrandUpdate?.(summary, name);
+        setPersonaInput("");
+        setPersonaName("");
+        setPersonaModalOpen(false);
+        setHasPersona(!!summary);
+        setCurrentPersonaName(name || "");
+        setCurrentPersonaInfo(summary || "");
+        onPersonaUpdate?.(summary, name);
       } else {
         // Handle Zod validation errors or other errors
-        let errorMessage = "Failed to save brand";
+        let errorMessage = "Failed to save persona";
         let errorDetails: string | unknown = null;
         
         // Log full response for debugging - log each piece separately to avoid serialization issues
-        console.error("=== BRAND SAVE ERROR DEBUG ===");
+        console.error("=== PERSONA SAVE ERROR DEBUG ===");
         console.error("Response Status:", response.status);
         console.error("Response StatusText:", response.statusText);
         console.error("Response OK:", response.ok);
@@ -359,7 +370,7 @@ export default function SettingsSheet({
             errorDetails = data.error.details;
           } else {
             // Error is an object but doesn't match expected structure
-            errorMessage = "An error occurred while saving the brand";
+            errorMessage = "An error occurred while saving the persona";
             errorDetails = data.error;
           }
         } else if (!response.ok) {
@@ -403,7 +414,7 @@ export default function SettingsSheet({
         });
       }
     } catch (error) {
-      console.error("Failed to save brand info - Exception:", error);
+      console.error("Failed to save persona info - Exception:", error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
       
@@ -418,21 +429,21 @@ export default function SettingsSheet({
         }
       });
     } finally {
-      setBrandProcessing(false);
+      setPersonaProcessing(false);
     }
   }
   
-  async function handleUpdateBrandName() {
-    if (editingBrandName) {
-      const originalName = brandName || "";
-      if (currentBrandName.trim() !== originalName.trim()) {
+  async function handleUpdatePersonaName() {
+    if (editingPersonaName) {
+      const originalName = personaName || "";
+      if (currentPersonaName.trim() !== originalName.trim()) {
         try {
           const response = await fetch("/api/brand", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
-              brandName: currentBrandName.trim() || null,
-              brandInfo: currentBrandInfo 
+              brandName: currentPersonaName.trim() || null,
+              brandInfo: currentPersonaInfo 
             })
           });
           
@@ -454,13 +465,13 @@ export default function SettingsSheet({
           }
           
           if (response.ok && !data?.error) {
-            setCurrentBrandName(data.brandName || "");
-            setBrandName(data.brandName || "");
+            setCurrentPersonaName(data.brandName || "");
+            setPersonaName(data.brandName || "");
           } else {
             // Revert on error
-            setCurrentBrandName(originalName);
+            setCurrentPersonaName(originalName);
             
-            let errorMessage = "Failed to update brand name";
+            let errorMessage = "Failed to update persona name";
             let errorDetails: string | unknown = null;
             
             if (data?.error) {
@@ -486,22 +497,22 @@ export default function SettingsSheet({
             });
           }
         } catch (error) {
-          console.error("Failed to update brand name", error);
+          console.error("Failed to update persona name", error);
           // Revert on error
-          setCurrentBrandName(originalName);
+          setCurrentPersonaName(originalName);
           setErrorPopup({
-            message: "Failed to update brand name",
+            message: "Failed to update persona name",
             details: error instanceof Error ? error.message : String(error),
             fullError: error
           });
         }
       }
     }
-    setEditingBrandName(false);
+    setEditingPersonaName(false);
   }
 
-  async function handleClearBrand() {
-    setClearingBrand(true);
+  async function handleClearPersona() {
+    setClearingPersona(true);
     try {
       const response = await fetch("/api/brand", { method: "DELETE" });
       
@@ -523,7 +534,7 @@ export default function SettingsSheet({
       }
       
       if (!response.ok) {
-        let errorMessage = "Failed to deselect brand";
+        let errorMessage = "Failed to deselect persona";
         let errorDetails: string | unknown = null;
         
         if (data?.error) {
@@ -550,22 +561,22 @@ export default function SettingsSheet({
         return;
       }
       
-      setBrandInput("");
-      setBrandName("");
-      setCurrentBrandName("");
-      setCurrentBrandInfo("");
-      setHasBrand(false);
-      setSelectedBrandId(""); // Reset dropdown to "Select Brand"
-      onBrandUpdate?.(null, null);
+      setPersonaInput("");
+      setPersonaName("");
+      setCurrentPersonaName("");
+      setCurrentPersonaInfo("");
+      setHasPersona(false);
+      setSelectedPersonaId(""); // Reset dropdown to "Select Persona"
+      onPersonaUpdate?.(null, null);
     } catch (error) {
-      console.error("Failed to clear brand info", error);
+      console.error("Failed to clear persona info", error);
       setErrorPopup({
-        message: "Failed to deselect brand",
+        message: "Failed to deselect persona",
         details: error instanceof Error ? error.message : String(error),
         fullError: error
       });
     } finally {
-      setClearingBrand(false);
+      setClearingPersona(false);
     }
   }
 
@@ -595,9 +606,9 @@ export default function SettingsSheet({
       avoidWords: null
     });
     
-    // Also deselect brand if one is selected
-    if (hasBrand) {
-      await handleClearBrand();
+    // Also deselect persona if one is selected
+    if (hasPersona) {
+      await handleClearPersona();
     }
   }
 
@@ -608,7 +619,7 @@ export default function SettingsSheet({
     settings.gradeLevel ||
     settings.benchmark ||
     settings.avoidWords ||
-    hasBrand
+    hasPersona
   );
  
    return (
@@ -893,55 +904,55 @@ export default function SettingsSheet({
                       </div>
                     </div>
                   )}
-                  {brandOptions.length > 0 ? (
+                  {personaOptions.length > 0 ? (
                     <div className="flex items-center gap-3">
-                      <label className="text-sm text-brand-muted whitespace-nowrap w-24">Brand</label>
+                      <label className="text-sm text-brand-muted whitespace-nowrap w-24">Persona</label>
                       <select
-                        value={selectedBrandId}
+                        value={selectedPersonaId}
                         onChange={(e) => {
                           const nextId = e.target.value;
-                          setSelectedBrandId(nextId);
+                          setSelectedPersonaId(nextId);
                           if (!nextId) {
-                            setHasBrand(false);
-                            setCurrentBrandName("");
-                            setCurrentBrandInfo("");
-                            onBrandUpdate?.(null, null);
+                            setHasPersona(false);
+                            setCurrentPersonaName("");
+                            setCurrentPersonaInfo("");
+                            onPersonaUpdate?.(null, null);
                             return;
                           }
-                          const match = brandOptions.find((b) => b.id === nextId);
+                          const match = personaOptions.find((p) => p.id === nextId);
                           if (match) {
                             const summary = match.info ?? null;
                             const name = match.name ?? null;
-                            setHasBrand(Boolean(summary) || Boolean(name));
-                            setCurrentBrandName(name || "");
-                            setCurrentBrandInfo(summary || "");
-                            onBrandUpdate?.(summary, name);
+                            setHasPersona(Boolean(summary) || Boolean(name));
+                            setCurrentPersonaName(name || "");
+                            setCurrentPersonaInfo(summary || "");
+                            onPersonaUpdate?.(summary, name);
                           }
                         }}
                         className="flex-1 rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text focus:border-brand-blue focus:outline-none"
                       >
-                        <option value="">Select Brand</option>
-                        {brandOptions.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name || "Untitled Brand"}
+                        <option value="">Select Persona</option>
+                        {personaOptions.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name || "Untitled Persona"}
                           </option>
                         ))}
                       </select>
                       <button
                         type="button"
                         onClick={() => {
-                          if (hasBrand) {
-                            setBrandInput(currentBrandInfo);
-                            setBrandName(currentBrandName);
+                          if (hasPersona) {
+                            setPersonaInput(currentPersonaInfo);
+                            setPersonaName(currentPersonaName);
                           } else {
-                            setBrandInput("");
-                            setBrandName("");
+                            setPersonaInput("");
+                            setPersonaName("");
                           }
-                          setBrandModalOpen(true);
+                          setPersonaModalOpen(true);
                         }}
                         className="rounded-full border border-brand-stroke/70 bg-brand-ink p-2 text-brand-text transition hover:border-brand-blue hover:text-brand-blue flex-shrink-0"
-                        aria-label="Define brand"
-                        title="Define brand"
+                        aria-label="Define persona"
+                        title="Define persona"
                       >
                         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -950,17 +961,17 @@ export default function SettingsSheet({
                     </div>
                   ) : (
                     <div className="flex items-center gap-3">
-                      <label className="text-sm text-brand-muted whitespace-nowrap w-24">Brand</label>
+                      <label className="text-sm text-brand-muted whitespace-nowrap w-24">Persona</label>
                       <button
                         type="button"
                         onClick={() => {
-                          setBrandInput("");
-                          setBrandName("");
-                          setBrandModalOpen(true);
+                          setPersonaInput("");
+                          setPersonaName("");
+                          setPersonaModalOpen(true);
                         }}
                         className="rounded-full border border-brand-stroke/70 bg-brand-ink p-2 text-brand-text transition hover:border-brand-blue hover:text-brand-blue flex-shrink-0"
-                        aria-label="Define brand"
-                        title="Define brand"
+                        aria-label="Define persona"
+                        title="Define persona"
                       >
                         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -974,8 +985,8 @@ export default function SettingsSheet({
            </Transition.Child>
          </div>
        </Dialog>
-       <Transition show={brandModalOpen} as={Fragment}>
-         <Dialog onClose={() => setBrandModalOpen(false)} className="relative z-[1200]">
+       <Transition show={personaModalOpen} as={Fragment}>
+         <Dialog onClose={() => setPersonaModalOpen(false)} className="relative z-[1200]">
            <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
            <div className="fixed inset-0 flex items-center justify-center p-4">
              <Transition.Child
@@ -989,9 +1000,9 @@ export default function SettingsSheet({
              >
                <Dialog.Panel className="w-full max-w-2xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/95 p-6 text-brand-text shadow-[0_30px_80px_rgba(0,0,0,0.55)]">
                  <header className="mb-4 flex items-center justify-between">
-                   <Dialog.Title className="font-display text-2xl text-brand-text">Define Brand</Dialog.Title>
+                   <Dialog.Title className="font-display text-2xl text-brand-text">Define Persona</Dialog.Title>
                    <button
-                     onClick={() => setBrandModalOpen(false)}
+                     onClick={() => setPersonaModalOpen(false)}
                      className="rounded-full border border-brand-stroke/70 p-2 text-brand-text hover:text-brand-blue"
                      aria-label="Close"
                    >
@@ -1000,24 +1011,24 @@ export default function SettingsSheet({
                  </header>
                  <div className="space-y-4">
                    <div>
-                     <label className="text-sm text-brand-muted">Brand Name</label>
+                     <label className="text-sm text-brand-muted">Persona Name</label>
                      <input
                        type="text"
-                       value={brandName}
-                       onChange={(e) => setBrandName(e.target.value.substring(0, 100))}
-                       placeholder="Enter brand name (optional)"
+                       value={personaName}
+                       onChange={(e) => setPersonaName(e.target.value.substring(0, 100))}
+                       placeholder="Enter persona name (optional)"
                        maxLength={100}
                        className="mt-2 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
                      />
                    </div>
                    <div>
                      <label className="text-sm text-brand-muted">
-                       Paste your brand information, style guides, vocabulary, tone, and any other details about your brand. The AI will create a concise 400-character summary.
+                       Paste your persona information, style guides, vocabulary, tone, and any other details about your persona. The AI will create a concise 400-character summary.
                      </label>
                      <textarea
-                       value={brandInput}
-                       onChange={(e) => setBrandInput(e.target.value)}
-                       placeholder="Paste brand information here..."
+                       value={personaInput}
+                       onChange={(e) => setPersonaInput(e.target.value)}
+                       placeholder="Paste persona information here..."
                        className="mt-2 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
                        rows={12}
                      />
@@ -1025,18 +1036,18 @@ export default function SettingsSheet({
                    <div className="flex justify-end gap-3">
                      <button
                        type="button"
-                       onClick={() => setBrandModalOpen(false)}
+                       onClick={() => setPersonaModalOpen(false)}
                        className="rounded-full border border-brand-stroke/70 px-4 py-2 text-sm font-semibold text-brand-text transition hover:border-brand-blue hover:text-brand-blue"
                      >
                        Cancel
                      </button>
                      <button
                        type="button"
-                       onClick={handleDefineBrand}
-                       disabled={!brandInput.trim() || brandProcessing}
+                       onClick={handleDefinePersona}
+                       disabled={!personaInput.trim() || personaProcessing}
                        className="rounded-full bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-blue/80 disabled:opacity-60 disabled:cursor-not-allowed"
                      >
-                       {brandProcessing ? "Processing..." : "Save Brand"}
+                       {personaProcessing ? "Processing..." : "Save Persona"}
                      </button>
                    </div>
                  </div>

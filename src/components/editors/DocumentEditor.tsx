@@ -19,8 +19,8 @@ type DocumentEditorProps = {
   onEditorReady?: (editor: Editor) => void;
   loading?: boolean;
   className?: string;
-  brandSummary?: string | null;
-  activeBrandId?: string | null;
+  personaSummary?: string | null;
+  activePersonaId?: string | null;
   styleGuide?: {
     name: string;
     description: string;
@@ -121,8 +121,8 @@ export default function DocumentEditor({
   onEditorReady,
   loading = false,
   className,
-  brandSummary,
-  activeBrandId,
+  personaSummary,
+  activePersonaId,
   styleGuide,
   onDownload,
   horizontalPadding,
@@ -1260,8 +1260,8 @@ export default function DocumentEditor({
                 editable={true}
                 placeholder="Start writing or select text to rewrite..."
                 className="min-h-[500px]"
-                hasBrand={!!brandSummary}
-                activeBrandId={activeBrandId}
+                hasPersona={!!personaSummary}
+                activePersonaId={activePersonaId}
                 horizontalPadding={horizontalPadding}
                 onSaveStyle={onSaveStyle}
                 onTyping={onTyping}

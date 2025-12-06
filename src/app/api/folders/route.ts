@@ -20,6 +20,28 @@ export async function GET() {
   }
 
   try {
+    // Ensure user has an "Archive" folder (create if missing)
+    const existingArchive = await prisma.folder.findFirst({
+      where: {
+        ownerId: session.user.id,
+        name: "Archive"
+      }
+    });
+
+    if (!existingArchive) {
+      try {
+        await prisma.folder.create({
+          data: {
+            name: "Archive",
+            ownerId: session.user.id
+          }
+        });
+      } catch (createError) {
+        // Log but continue if creation fails (might be a race condition)
+        console.warn("[folders][GET] Failed to create Archive folder:", createError);
+      }
+    }
+
     const folders = await prisma.folder.findMany({
       where: { ownerId: session.user.id },
       include: {

@@ -120,6 +120,7 @@ enum MarketTier {
 model Folder {
   id              String           @id @default(cuid())
   name            String           @db.VarChar(120)
+  pinned          Boolean          @default(false)
   owner           User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   ownerId         String
   createdAt       DateTime         @default(now())
@@ -142,15 +143,15 @@ model DocumentFolder {
 }
 
 model Brand {
-  id           String             @id @default(cuid())
-  name         String?            @db.VarChar(100)
-  info         String             @db.VarChar(400)
-  owner        User               @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  ownerId      String
-  activeUsers  User[]             @relation("UserActiveBrand")
-  keyMessages  BrandKeyMessaging[]
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  id          String              @id @default(cuid())
+  name        String?             @db.VarChar(100)
+  info        String              @db.VarChar(400)
+  owner       User                @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId     String
+  activeUsers User[]              @relation("UserActiveBrand")
+  keyMessages BrandKeyMessaging[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
 
   @@index([ownerId])
 }

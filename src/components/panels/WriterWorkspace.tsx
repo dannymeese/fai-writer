@@ -45,7 +45,7 @@ type StyleDocInput = {
   [key: string]: unknown;
 };
 
-type SidebarTab = "docs" | "styles" | "brands";
+type SidebarTab = "docs" | "styles" | "personas";
 
 type ActiveStyle = {
   id: string;
@@ -53,7 +53,7 @@ type ActiveStyle = {
   description: string;
 };
 
-type BrandKeyMessage = {
+type PersonaKeyMessage = {
   id: string;
   text: string;
   createdAt: string;
@@ -334,15 +334,15 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [outputs, setOutputs] = useState<WriterOutput[]>(() => [initialBlankDocRef.current!]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetAnchor, setSheetAnchor] = useState<DOMRect | null>(null);
-  const [openBrandModal, setOpenBrandModal] = useState(false);
+  const [openPersonaModal, setOpenPersonaModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [guestLimitReached, setGuestLimitReached] = useState(false);
-  const [hasBrand, setHasBrand] = useState(false);
-  const [brandName, setBrandName] = useState<string | null>(null);
-  const [brandSummary, setBrandSummary] = useState<string | null>(null);
-  const [brandKeyMessaging, setBrandKeyMessaging] = useState<BrandKeyMessage[]>([]);
-  const [allBrands, setAllBrands] = useState<Array<{ id: string; name: string | null; info: string; isActive: boolean }>>([]);
+  const [hasPersona, setHasPersona] = useState(false);
+  const [personaName, setPersonaName] = useState<string | null>(null);
+  const [personaSummary, setPersonaSummary] = useState<string | null>(null);
+  const [personaKeyMessaging, setPersonaKeyMessaging] = useState<PersonaKeyMessage[]>([]);
+  const [allPersonas, setAllPersonas] = useState<Array<{ id: string; name: string | null; info: string; isActive: boolean }>>([]);
   const [savedDocs, setSavedDocs] = useState<SavedDoc[]>([]);
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [folderDialogState, setFolderDialogState] = useState<{ assignActiveDocument?: boolean; documentId?: string | null } | null>(null);
@@ -352,7 +352,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("docs");
   const [activeStyle, setActiveStyle] = useState<ActiveStyle | null>(null);
-  const [activeBrandId, setActiveBrandId] = useState<string | null>(null);
+  const [activePersonaId, setActivePersonaId] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(true);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(() => initialBlankDocRef.current?.id ?? null);
   const [selectedText, setSelectedText] = useState<string | null>(null);
@@ -532,25 +532,25 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     mediaQuery.addEventListener("change", update);
     return () => mediaQuery.removeEventListener("change", update);
   }, []);
-  function handleBrandSummaryUpdate(summary: string | null, name?: string | null) {
-    setBrandSummary(summary);
-    setBrandName(name ?? null);
-    setHasBrand(Boolean(summary?.trim()) || Boolean(name?.trim()));
+  function handlePersonaSummaryUpdate(summary: string | null, name?: string | null) {
+    setPersonaSummary(summary);
+    setPersonaName(name ?? null);
+    setHasPersona(Boolean(summary?.trim()) || Boolean(name?.trim()));
     
-    // Refresh all brands list for authenticated users
+    // Refresh all personas list for authenticated users
     if (isAuthenticated) {
-      fetchAllBrands();
+      fetchAllPersonas();
     }
   }
 
-  async function handleUseBrand(brandId?: string) {
-    // Handle clearing/deactivating brand
-    if (!brandId) {
-      const previousActiveBrandId = activeBrandId;
-      setActiveBrandId(null);
-      setBrandName(null);
-      setBrandSummary(null);
-      setHasBrand(false);
+  async function handleUsePersona(personaId?: string) {
+    // Handle clearing/deactivating persona
+    if (!personaId) {
+      const previousActivePersonaId = activePersonaId;
+      setActivePersonaId(null);
+      setPersonaName(null);
+      setPersonaSummary(null);
+      setHasPersona(false);
       
       // For authenticated users, deactivate via API
       if (isAuthenticated) {
@@ -560,77 +560,77 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           });
           
           if (response.ok) {
-            setToast("Brand deactivated. Writing will no longer use brand context.");
+            setToast("Persona deactivated. Writing will no longer use persona context.");
             // Update local list to remove active state
-            setAllBrands((prev) =>
+            setAllPersonas((prev) =>
               prev.length
-                ? prev.map((b) => ({ ...b, isActive: false }))
+                ? prev.map((p) => ({ ...p, isActive: false }))
                 : prev
             );
           } else {
             // Revert on error
-            setActiveBrandId(previousActiveBrandId);
-            setToast("Failed to deactivate brand. Please try again.");
+            setActivePersonaId(previousActivePersonaId);
+            setToast("Failed to deactivate persona. Please try again.");
           }
         } catch (error) {
-          console.error("Failed to deactivate brand", error);
+          console.error("Failed to deactivate persona", error);
           // Revert on error
-          setActiveBrandId(previousActiveBrandId);
-          setToast("Failed to deactivate brand. Please try again.");
+          setActivePersonaId(previousActivePersonaId);
+          setToast("Failed to deactivate persona. Please try again.");
         }
       } else {
         // For guests, just clear local state
-        setToast("Brand cleared.");
+        setToast("Persona cleared.");
       }
       return;
     }
     
     // Optimistically update UI immediately
-    const previousActiveBrandId = activeBrandId;
-    setActiveBrandId(brandId);
+    const previousActivePersonaId = activePersonaId;
+    setActivePersonaId(personaId);
     
-    // Find brand immediately from current list for UI/labels
-    const brand = allBrands.find((b) => b.id === brandId);
-    const brandDisplayName = brand?.name || brandName || "Custom Brand";
-    if (brand) {
-      // Update brand info state so button/dot reflect immediately
-      setBrandName(brand.name ?? null);
-      setBrandSummary(brand.info ?? null);
-      setHasBrand(Boolean(brand.info) || Boolean(brand.name));
+    // Find persona immediately from current list for UI/labels
+    const persona = allPersonas.find((p) => p.id === personaId);
+    const personaDisplayName = persona?.name || personaName || "Custom Persona";
+    if (persona) {
+      // Update persona info state so button/dot reflect immediately
+      setPersonaName(persona.name ?? null);
+      setPersonaSummary(persona.info ?? null);
+      setHasPersona(Boolean(persona.info) || Boolean(persona.name));
     }
     
     // For authenticated users, activate via API
     if (isAuthenticated) {
       try {
-        const response = await fetch(`/api/brand?activate=${brandId}`, {
+        const response = await fetch(`/api/brand?activate=${personaId}`, {
           method: "POST"
         });
         
         if (response.ok) {
           // Show toast immediately
-          setToast(`Brand "${brandDisplayName}" is now active and will be used for all compositions.`);
+          setToast(`Persona "${personaDisplayName}" is now active and will be used for all compositions.`);
           // Immediately update local list so UI reflects active state (button + blue dot) without waiting for refetch
-          setAllBrands((prev) =>
+          setAllPersonas((prev) =>
             prev.length
-              ? prev.map((b) => ({ ...b, isActive: b.id === brandId }))
+              ? prev.map((p) => ({ ...p, isActive: p.id === personaId }))
               : prev
           );
           
-          // Refresh brands list in background to sync with server
+          // Refresh personas list in background to sync with server
           fetch("/api/brand?all=true")
-            .then(brandsResponse => {
-              if (brandsResponse.ok) {
-                return brandsResponse.json();
+            .then(personasResponse => {
+              if (personasResponse.ok) {
+                return personasResponse.json();
               }
               return null;
             })
-            .then(brandsData => {
-              if (brandsData?.brands && Array.isArray(brandsData.brands)) {
-                setAllBrands(brandsData.brands);
+            .then(personasData => {
+              if (personasData?.brands && Array.isArray(personasData.brands)) {
+                setAllPersonas(personasData.brands);
               }
             })
             .catch(err => {
-              console.error("Failed to refresh brands list", err);
+              console.error("Failed to refresh personas list", err);
               // Don't show error to user, UI is already updated optimistically
             });
           
@@ -640,73 +640,73 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           }
         } else {
           // Revert on error
-          setActiveBrandId(previousActiveBrandId);
-          setToast("Failed to activate brand. Please try again.");
+          setActivePersonaId(previousActivePersonaId);
+          setToast("Failed to activate persona. Please try again.");
         }
       } catch (error) {
-        console.error("Failed to activate brand", error);
+        console.error("Failed to activate persona", error);
         // Revert on error
-        setActiveBrandId(previousActiveBrandId);
-        setToast("Failed to activate brand. Please try again.");
+        setActivePersonaId(previousActivePersonaId);
+        setToast("Failed to activate persona. Please try again.");
       }
     } else {
       // For guests, just set local state
-      if (hasBrand) {
-        // Ensure brand info state is set so indicators update
-        if (brand) {
-          setBrandName(brand.name ?? null);
-          setBrandSummary(brand.info ?? null);
-          setHasBrand(Boolean(brand.info) || Boolean(brand.name));
+      if (hasPersona) {
+        // Ensure persona info state is set so indicators update
+        if (persona) {
+          setPersonaName(persona.name ?? null);
+          setPersonaSummary(persona.info ?? null);
+          setHasPersona(Boolean(persona.info) || Boolean(persona.name));
         } else {
-          setHasBrand(true);
+          setHasPersona(true);
         }
-        setToast(`Brand "${brandDisplayName}" is now active and will be used for all compositions.`);
+        setToast(`Persona "${personaDisplayName}" is now active and will be used for all compositions.`);
         // Close sidebar on mobile after selection for better UX
         if (!isDesktop) {
           setTimeout(() => setSidebarOpen(false), 500);
         }
       } else {
-        setActiveBrandId(previousActiveBrandId); // Revert
-        setToast("No brand defined. Define a brand in Settings first.");
+        setActivePersonaId(previousActivePersonaId); // Revert
+        setToast("No persona defined. Define a persona in Settings first.");
       }
     }
   }
 
   // Removed auto-dismiss - toasts now stay open until manually closed
 
-  // Check if brand is defined (works for both authenticated users and guests)
+  // Check if persona is defined (works for both authenticated users and guests)
   useEffect(() => {
-    async function checkBrand() {
+    async function checkPersona() {
       try {
         const response = await fetch("/api/brand");
         if (response.ok) {
           const data = await response.json();
           const summary = data.brandInfo ?? null;
           const name = data.brandName ?? null;
-          setBrandSummary(summary);
-          setBrandName(name);
-          setHasBrand(Boolean(summary) || Boolean(name));
+          setPersonaSummary(summary);
+          setPersonaName(name);
+          setHasPersona(Boolean(summary) || Boolean(name));
         }
       } catch (error) {
-        console.error("Failed to check brand info", error);
+        console.error("Failed to check persona info", error);
       }
     }
-    checkBrand();
+    checkPersona();
   }, []);
 
-  // Fetch all brands for authenticated users
-  const fetchAllBrands = useCallback(async () => {
+  // Fetch all personas for authenticated users
+  const fetchAllPersonas = useCallback(async () => {
     if (!isAuthenticated) {
-      // For guests, use the single brand from state
-      if (hasBrand) {
-        setAllBrands([{
-          id: "brand-primary",
-          name: brandName,
-          info: brandSummary || "",
+      // For guests, use the single persona from state
+      if (hasPersona) {
+        setAllPersonas([{
+          id: "persona-primary",
+          name: personaName,
+          info: personaSummary || "",
           isActive: true
         }]);
       } else {
-        setAllBrands([]);
+        setAllPersonas([]);
       }
       return;
     }
@@ -716,47 +716,47 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       if (response.ok) {
         const data = await response.json();
         if (data.brands && Array.isArray(data.brands)) {
-          setAllBrands(data.brands);
-          // Update activeBrandId if we have one
+          setAllPersonas(data.brands);
+          // Update activePersonaId if we have one
           if (data.activeBrandId) {
-            setActiveBrandId(data.activeBrandId);
+            setActivePersonaId(data.activeBrandId);
           } else {
-            setActiveBrandId(null);
+            setActivePersonaId(null);
           }
         }
       }
     } catch (error) {
-      console.error("Failed to fetch all brands", error);
+      console.error("Failed to fetch all personas", error);
     }
-  }, [isAuthenticated, hasBrand, brandName, brandSummary]);
+  }, [isAuthenticated, hasPersona, personaName, personaSummary]);
 
   useEffect(() => {
-    fetchAllBrands();
-  }, [fetchAllBrands]);
+    fetchAllPersonas();
+  }, [fetchAllPersonas]);
 
-  // Set active brand on mount if brand exists
+  // Set active persona on mount if persona exists
   useEffect(() => {
-    if (hasBrand && !activeBrandId) {
-      setActiveBrandId("brand-primary");
-    } else if (!hasBrand) {
-      setActiveBrandId(null);
+    if (hasPersona && !activePersonaId) {
+      setActivePersonaId("persona-primary");
+    } else if (!hasPersona) {
+      setActivePersonaId(null);
     }
-  }, [hasBrand, activeBrandId]);
+  }, [hasPersona, activePersonaId]);
 
-  // Store key messages per brand
-  const [brandKeyMessagingMap, setBrandKeyMessagingMap] = useState<Map<string, BrandKeyMessage[]>>(new Map());
+  // Store key messages per persona
+  const [personaKeyMessagingMap, setPersonaKeyMessagingMap] = useState<Map<string, PersonaKeyMessage[]>>(new Map());
 
-  // Fetch brand key messaging items for a specific brand
-  const fetchBrandKeyMessaging = useCallback(async (brandId?: string) => {
+  // Fetch persona key messaging items for a specific persona
+  const fetchPersonaKeyMessaging = useCallback(async (personaId?: string) => {
     if (!isAuthenticated) return;
     try {
-      const url = brandId 
-        ? `/api/brand/key-messaging?brandId=${encodeURIComponent(brandId)}`
+      const url = personaId 
+        ? `/api/brand/key-messaging?brandId=${encodeURIComponent(personaId)}`
         : "/api/brand/key-messaging";
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
-        const normalized: BrandKeyMessage[] = Array.isArray(data.items)
+        const normalized: PersonaKeyMessage[] = Array.isArray(data.items)
           ? data.items.map((item: any) => ({
               id: item.id,
               text: item.text,
@@ -764,96 +764,96 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
             }))
           : [];
         
-        if (brandId) {
-          // Store per brand
-          setBrandKeyMessagingMap(prev => {
+        if (personaId) {
+          // Store per persona
+          setPersonaKeyMessagingMap(prev => {
             const newMap = new Map(prev);
-            newMap.set(brandId, normalized);
+            newMap.set(personaId, normalized);
             return newMap;
           });
         } else {
           // Legacy: store all messages (for backward compatibility)
-          setBrandKeyMessaging(normalized);
+          setPersonaKeyMessaging(normalized);
         }
       }
     } catch (error) {
-      console.error("Failed to fetch brand key messaging items", error);
+      console.error("Failed to fetch persona key messaging items", error);
     }
   }, [isAuthenticated]);
 
-  // Fetch key messaging items for all brands when brands tab is opened
+  // Fetch key messaging items for all personas when personas tab is opened
   useEffect(() => {
-    if (isAuthenticated && sidebarTab === "brands" && allBrands.length > 0) {
-      // Fetch key messages for each brand
-      allBrands.forEach(brand => {
-        fetchBrandKeyMessaging(brand.id);
+    if (isAuthenticated && sidebarTab === "personas" && allPersonas.length > 0) {
+      // Fetch key messages for each persona
+      allPersonas.forEach(persona => {
+        fetchPersonaKeyMessaging(persona.id);
       });
     }
-  }, [isAuthenticated, sidebarTab, allBrands, fetchBrandKeyMessaging]);
+  }, [isAuthenticated, sidebarTab, allPersonas, fetchPersonaKeyMessaging]);
 
   // Listen for new items being added
   useEffect(() => {
-    const handleBrandKeyMessagingAdded = (event: Event) => {
+    const handlePersonaKeyMessagingAdded = (event: Event) => {
       const customEvent = event as CustomEvent<{ brandId?: string }>;
-      const brandId = customEvent.detail?.brandId || activeBrandId;
-      if (brandId) {
-        fetchBrandKeyMessaging(brandId);
+      const personaId = customEvent.detail?.brandId || activePersonaId;
+      if (personaId) {
+        fetchPersonaKeyMessaging(personaId);
       } else {
-        fetchBrandKeyMessaging();
+        fetchPersonaKeyMessaging();
       }
     };
-    window.addEventListener("brand-key-messaging-added", handleBrandKeyMessagingAdded);
+    window.addEventListener("brand-key-messaging-added", handlePersonaKeyMessagingAdded);
     return () => {
-      window.removeEventListener("brand-key-messaging-added", handleBrandKeyMessagingAdded);
+      window.removeEventListener("brand-key-messaging-added", handlePersonaKeyMessagingAdded);
     };
-  }, [fetchBrandKeyMessaging, activeBrandId]);
+  }, [fetchPersonaKeyMessaging, activePersonaId]);
 
   // Handle removing a key messaging item
-  // Note: The actual deletion is handled in BrandCard.handleRemoveMessage
+  // Note: The actual deletion is handled in PersonaCard.handleRemoveMessage
   // This function just refreshes the list after deletion
   const handleRemoveKeyMessaging = useCallback(async (id: string) => {
     if (!isAuthenticated) return;
-    // Just refresh the list - deletion is already handled by BrandCard
-    await fetchBrandKeyMessaging();
-  }, [isAuthenticated, fetchBrandKeyMessaging]);
+    // Just refresh the list - deletion is already handled by PersonaCard
+    await fetchPersonaKeyMessaging();
+  }, [isAuthenticated, fetchPersonaKeyMessaging]);
 
-  const handleClearBrand = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+  const handleClearPersona = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
     try {
       const response = await fetch("/api/brand", { method: "DELETE" });
       if (!response.ok) {
         const body = await response.json().catch(() => null);
-        return { success: false, error: body?.error || "Unable to deselect brand." };
+        return { success: false, error: body?.error || "Unable to deselect persona." };
       }
-      // Only clear active brand state, don't clear the brands list
-      setBrandSummary(null);
-      setBrandName(null);
-      setHasBrand(false);
-      setActiveBrandId(null);
+      // Only clear active persona state, don't clear the personas list
+      setPersonaSummary(null);
+      setPersonaName(null);
+      setHasPersona(false);
+      setActivePersonaId(null);
       
-      // Refresh all brands list to update active status
+      // Refresh all personas list to update active status
       if (isAuthenticated) {
         try {
-          const brandsResponse = await fetch("/api/brand?all=true");
-          if (brandsResponse.ok) {
-            const brandsData = await brandsResponse.json();
-            if (brandsData.brands && Array.isArray(brandsData.brands)) {
-              setAllBrands(brandsData.brands);
+          const personasResponse = await fetch("/api/brand?all=true");
+          if (personasResponse.ok) {
+            const personasData = await personasResponse.json();
+            if (personasData.brands && Array.isArray(personasData.brands)) {
+              setAllPersonas(personasData.brands);
             }
           }
         } catch (error) {
-          console.error("Failed to refresh brands list", error);
+          console.error("Failed to refresh personas list", error);
         }
       }
       
       return { success: true };
     } catch (error) {
-      console.error("Failed to deselect brand", error);
-      return { success: false, error: "Unable to deselect brand." };
+      console.error("Failed to deselect persona", error);
+      return { success: false, error: "Unable to deselect persona." };
     }
   }, [isAuthenticated]);
 
   const handleAddKeyMessaging = useCallback(
-    async (text: string, brandId?: string): Promise<{ success: boolean; error?: string }> => {
+    async (text: string, personaId?: string): Promise<{ success: boolean; error?: string }> => {
       if (!isAuthenticated) {
         return { success: false, error: "Sign in to add key messages." };
       }
@@ -865,14 +865,14 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
         const response = await fetch("/api/brand/key-messaging", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: payload, brandId })
+          body: JSON.stringify({ text: payload, brandId: personaId })
         });
         if (response.ok) {
-          // Refresh key messages for the specific brand
-          if (brandId) {
-            await fetchBrandKeyMessaging(brandId);
+          // Refresh key messages for the specific persona
+          if (personaId) {
+            await fetchPersonaKeyMessaging(personaId);
           } else {
-            await fetchBrandKeyMessaging();
+            await fetchPersonaKeyMessaging();
           }
           return { success: true };
         }
@@ -889,7 +889,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
         return { success: false, error: "Unable to add key message right now." };
       }
     },
-    [isAuthenticated, fetchBrandKeyMessaging]
+    [isAuthenticated, fetchPersonaKeyMessaging]
   );
 
   useEffect(() => {
@@ -926,7 +926,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           body: JSON.stringify({
             selectedText,
             instruction: currentPrompt,
-            brandSummary: brandSummary ?? undefined,
+            brandSummary: personaSummary ?? undefined,
             styleGuide: activeStyle
               ? {
                   name: activeStyle.name,
@@ -1012,7 +1012,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           body: JSON.stringify({
             prompt: currentPrompt,
             settings: settings,
-            brandSummary: brandSummary ?? undefined,
+            brandSummary: personaSummary ?? undefined,
             styleGuide: activeStyle
               ? {
                   name: activeStyle.name,
@@ -1089,7 +1089,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
         body: JSON.stringify({
           prompt: currentPrompt,
           settings: snapshotSettings,
-          brandSummary: brandSummary ?? undefined,
+          brandSummary: personaSummary ?? undefined,
           styleGuide: styleGuidePayload,
           editorContext: editorContext ?? undefined
         })
@@ -1477,9 +1477,9 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     setActiveStyle(null);
   }
 
-  const handleClearBrandForComposeBar = () => {
-    handleClearBrand().catch((error) => {
-      console.error("Failed to clear brand:", error);
+  const handleClearPersonaForComposeBar = () => {
+    handleClearPersona().catch((error) => {
+      console.error("Failed to clear persona:", error);
     });
   };
 
@@ -2888,7 +2888,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
         body: JSON.stringify({
           selectedText,
           instruction,
-          brandSummary: brandSummary ?? undefined,
+          brandSummary: personaSummary ?? undefined,
           styleGuide: activeStyle
             ? {
                 name: activeStyle.name,
@@ -2934,40 +2934,40 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       console.error("Rewrite failed:", error);
       setToast("Failed to rewrite selection. Please try again.");
     }
-  }, [activeDocumentId, brandSummary, activeStyle, outputs, handleDocumentChange]);
+  }, [activeDocumentId, personaSummary, activeStyle, outputs, handleDocumentChange]);
 
   // Get the active document
   const activeDocument = useMemo(() => {
     return activeDocumentId ? outputs.find((o) => o.id === activeDocumentId) ?? null : null;
   }, [activeDocumentId, outputs]);
 
-  // Calculate brand cards for display
-  const brandCards = useMemo(() => {
-    if (isAuthenticated && allBrands.length > 0) {
-      // For authenticated users, use all brands from database
-      // Use activeBrandId state directly for immediate UI updates
-      return allBrands.map((brand) => ({
-        id: brand.id,
-        name: brand.name?.trim() || "Custom Brand",
-        summary: brand.info,
-        hasSummary: Boolean(brand.info?.trim()),
-        // Get key messages for this specific brand
-        keyMessages: brandKeyMessagingMap.get(brand.id) || []
+  // Calculate persona cards for display
+  const personaCards = useMemo(() => {
+    if (isAuthenticated && allPersonas.length > 0) {
+      // For authenticated users, use all personas from database
+      // Use activePersonaId state directly for immediate UI updates
+      return allPersonas.map((persona) => ({
+        id: persona.id,
+        name: persona.name?.trim() || "Custom Persona",
+        summary: persona.info,
+        hasSummary: Boolean(persona.info?.trim()),
+        // Get key messages for this specific persona
+        keyMessages: personaKeyMessagingMap.get(persona.id) || []
       }));
-    } else if (hasBrand || brandKeyMessaging.length) {
-      // For guests or legacy, use single brand from state
+    } else if (hasPersona || personaKeyMessaging.length) {
+      // For guests or legacy, use single persona from state
       return [
         {
-          id: "brand-primary",
-          name: brandName?.trim() || "Custom Brand",
-          summary: brandSummary,
-          hasSummary: Boolean(brandSummary?.trim()),
-          keyMessages: brandKeyMessaging
+          id: "persona-primary",
+          name: personaName?.trim() || "Custom Persona",
+          summary: personaSummary,
+          hasSummary: Boolean(personaSummary?.trim()),
+          keyMessages: personaKeyMessaging
         }
       ];
     }
     return [];
-  }, [isAuthenticated, allBrands, brandName, brandSummary, brandKeyMessaging, brandKeyMessagingMap, hasBrand]);
+  }, [isAuthenticated, allPersonas, personaName, personaSummary, personaKeyMessaging, personaKeyMessagingMap, hasPersona]);
 
   const documentHorizontalPadding = useMemo(() => {
     const basePadding = 180;
@@ -3026,16 +3026,16 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           styles={styleDocuments}
           folders={folders}
           canOrganizeFolders={isAuthenticated}
-          brandName={brandName}
-          brandSummary={brandSummary}
-          hasBrand={hasBrand}
-          brandKeyMessaging={brandKeyMessaging}
-          brandCards={brandCards}
+          personaName={personaName}
+          personaSummary={personaSummary}
+          hasPersona={hasPersona}
+          personaKeyMessaging={personaKeyMessaging}
+          personaCards={personaCards}
           onRemoveKeyMessaging={handleRemoveKeyMessaging}
           onAddKeyMessaging={handleAddKeyMessaging}
-          onClearBrand={handleClearBrand}
-          onUseBrand={handleUseBrand}
-          activeBrandId={activeBrandId}
+          onClearPersona={handleClearPersona}
+          onUsePersona={handleUsePersona}
+          activePersonaId={activePersonaId}
           userName={user.name}
           topOffset={30}
           bottomOffset={hasOutputs ? 140 : 32}
@@ -3057,7 +3057,7 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
             setSheetAnchor(anchorRect);
             setSheetOpen(true);
           }}
-          onOpenBrandModal={() => setOpenBrandModal(true)}
+          onOpenPersonaModal={() => setOpenPersonaModal(true)}
         />
       )}
       <div className={cn("flex min-h-screen flex-1 flex-col pb-[350px] transition-all duration-300", sidebarOpen && isAuthenticated && isDesktop ? "lg:ml-[320px]" : undefined)}>
@@ -3074,8 +3074,8 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
               onSelectionChange={handleSelectionChange}
               onEditorReady={handleEditorReady}
               loading={loading && activeDocument?.isPending}
-              brandSummary={brandSummary}
-              activeBrandId={activeBrandId}
+              personaSummary={personaSummary}
+              activePersonaId={activePersonaId}
               styleGuide={activeStyle ? { name: activeStyle.name, description: activeStyle.description } : null}
               horizontalPadding={documentHorizontalPadding}
               onTogglePin={isAuthenticated ? handleDocumentMenuPinToggle : undefined}
@@ -3124,11 +3124,11 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
                 setSheetOpen((prev) => !prev);
               }}
               inputRef={composeInputRef}
-              hasCustomOptions={hasCustomOptions(settings) || hasBrand || Boolean(activeStyle)}
+              hasCustomOptions={hasCustomOptions(settings) || hasPersona || Boolean(activeStyle)}
               activeStyle={activeStyle}
               onClearStyle={handleClearStyle}
-              activeBrand={activeBrandId && hasBrand ? { id: activeBrandId, name: (brandName?.trim() || allBrands.find(b => b.id === activeBrandId)?.name?.trim() || "Custom Brand") } : null}
-              onClearBrand={handleClearBrandForComposeBar}
+              activePersona={activePersonaId && hasPersona ? { id: activePersonaId, name: (personaName?.trim() || allPersonas.find(p => p.id === activePersonaId)?.name?.trim() || "Custom Persona") } : null}
+              onClearPersona={handleClearPersonaForComposeBar}
               hasSelection={!!selectedText}
               selectedText={selectedText}
               isGuest={isGuest}
@@ -3155,19 +3155,19 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
         open={sheetOpen}
         onClose={() => {
           setSheetOpen(false);
-          setOpenBrandModal(false);
+          setOpenPersonaModal(false);
         }}
         settings={settings}
         onChange={setSettings}
         anchorRect={sheetAnchor}
-        onBrandUpdate={handleBrandSummaryUpdate}
-        initialBrandDefined={hasBrand}
-        activeBrandId={activeBrandId}
+        onPersonaUpdate={handlePersonaSummaryUpdate}
+        initialPersonaDefined={hasPersona}
+        activePersonaId={activePersonaId}
         styles={styleDocuments}
         activeStyleId={activeStyle?.id}
         onApplyStyle={handleApplyStyle}
         onClearStyle={handleClearStyle}
-        openBrandModal={openBrandModal}
+        openPersonaModal={openPersonaModal}
       />
       <Toast message={toast} onClose={() => setToast(null)} />
       <StyleGenerationPopup
@@ -3672,7 +3672,7 @@ function GuestTypingNotice({ onClose }: { onClose: () => void }) {
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
           <p className="text-sm text-brand-text">
-            Register to save your work, bookmark writing styles and define brand voices
+            Register to save your work, bookmark writing styles and define persona voices
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -3695,12 +3695,12 @@ function GuestTypingNotice({ onClose }: { onClose: () => void }) {
   );
 }
 
-type BrandCard = {
+type PersonaCardData = {
   id: string;
   name: string;
   summary: string | null;
   hasSummary: boolean;
-  keyMessages: BrandKeyMessage[];
+  keyMessages: PersonaKeyMessage[];
 };
 
 type WorkspaceSidebarProps = {
@@ -3711,16 +3711,16 @@ type WorkspaceSidebarProps = {
   styles: SavedDoc[];
   folders: FolderSummary[];
   canOrganizeFolders: boolean;
-  brandName: string | null;
-  brandSummary: string | null;
-  hasBrand: boolean;
-  brandKeyMessaging: BrandKeyMessage[];
-  brandCards: BrandCard[];
+  personaName: string | null;
+  personaSummary: string | null;
+  hasPersona: boolean;
+  personaKeyMessaging: PersonaKeyMessage[];
+  personaCards: PersonaCardData[];
   onRemoveKeyMessaging: (id: string) => Promise<void>;
   onAddKeyMessaging?: (text: string) => Promise<{ success: boolean; error?: string }>;
-  onClearBrand?: () => Promise<{ success: boolean; error?: string }>;
-  onUseBrand?: (brandId?: string) => void;
-  activeBrandId?: string | null;
+  onClearPersona?: () => Promise<{ success: boolean; error?: string }>;
+  onUsePersona?: (personaId?: string) => void;
+  activePersonaId?: string | null;
   userName: string;
   topOffset: number;
   bottomOffset: number;
@@ -3739,7 +3739,7 @@ type WorkspaceSidebarProps = {
   onDocumentDroppedOnFolder?: (folderId: string, docId: string) => void;
   settingsOpen?: boolean;
   onOpenSettings?: (anchorRect: DOMRect) => void;
-  onOpenBrandModal?: () => void;
+  onOpenPersonaModal?: () => void;
 };
 
 function WorkspaceSidebar({
@@ -3750,16 +3750,16 @@ function WorkspaceSidebar({
   styles,
   folders,
   canOrganizeFolders,
-  brandName,
-  brandSummary,
-  hasBrand,
-  brandKeyMessaging,
-  brandCards,
+  personaName,
+  personaSummary,
+  hasPersona,
+  personaKeyMessaging,
+  personaCards,
   onRemoveKeyMessaging,
   onAddKeyMessaging,
-  onClearBrand,
-  onUseBrand,
-  activeBrandId,
+  onClearPersona,
+  onUsePersona,
+  activePersonaId,
   userName,
   topOffset,
   bottomOffset,
@@ -3778,7 +3778,7 @@ function WorkspaceSidebar({
   onDocumentDroppedOnFolder,
   settingsOpen = false,
   onOpenSettings,
-  onOpenBrandModal
+  onOpenPersonaModal
 }: WorkspaceSidebarProps) {
   const [hoveredTimestampId, setHoveredTimestampId] = useState<string | null>(null);
   const timestampTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -3787,9 +3787,9 @@ function WorkspaceSidebar({
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
 
   const tabs: { id: SidebarTab; label: string; icon: string }[] = [
-    { id: "docs", label: "Docs", icon: "draft" },
-    { id: "styles", label: "Styles", icon: "groups" },
-    { id: "brands", label: "Brands", icon: "flag" }
+    { id: "docs", label: "Docs", icon: "description" },
+    { id: "styles", label: "Styles", icon: "draw_abstract" },
+    { id: "personas", label: "Personas", icon: "groucho-mask" }
   ];
   const selectedIndex = Math.max(
     tabs.findIndex((tab) => tab.id === activeTab),
@@ -4227,72 +4227,79 @@ function WorkspaceSidebar({
     );
   }
 
-  function renderBrandsContent() {
-    if (!brandCards.length) {
+  function renderPersonasContent() {
+    if (!personaCards.length) {
       return (
         <div className="flex h-full flex-col justify-center pt-[4px] px-3">
           <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-brand-background/40 p-6 text-center text-sm text-brand-muted">
-            <p className="font-semibold text-white">No brands yet</p>
-            <p className="mt-2">
-              Define a brand to write in the brand&apos;s voice and bookmark key messages.
-            </p>
+            <div className="flex items-center justify-center gap-3 mb-4">
+              <img 
+                src="/groucho-mask.svg" 
+                alt="" 
+                className="h-5 w-auto brightness-0 invert"
+              />
+              <span className="material-symbols-outlined text-white text-xl">east</span>
+              <span className="material-symbols-outlined text-white text-xl">format_align_left</span>
+            </div>
+            <p className="font-semibold text-white">Create a persona in a few seconds for brands or characters so Forgetaboutit Writer can write instantly from their perspective.</p>
             <button
               type="button"
               onMouseDown={handleButtonMouseDown}
               onClick={(e) => {
-                if (onOpenSettings && onOpenBrandModal) {
+                if (onOpenSettings && onOpenPersonaModal) {
                   // Get a reference element for the anchor (use the button itself)
                   const button = e.currentTarget;
                   const rect = button.getBoundingClientRect();
-                  onOpenBrandModal();
+                  onOpenPersonaModal();
                   onOpenSettings(rect);
                 }
               }}
-              className="mt-4 mx-auto rounded-full border border-brand-stroke/70 bg-brand-ink p-2 text-brand-text transition hover:border-brand-blue hover:text-brand-blue flex-shrink-0"
-              aria-label="Define brand"
-              title="Define brand"
+              className="mt-4 mx-auto rounded-full border border-brand-stroke/70 bg-brand-ink px-4 py-2 text-brand-text transition hover:border-brand-blue hover:text-brand-blue flex-shrink-0 flex items-center gap-2"
+              aria-label="Create persona"
+              title="Create persona"
             >
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
+              <span className="text-sm font-medium">Create Persona</span>
             </button>
           </div>
         </div>
       );
     }
 
-    const activeBrand = activeBrandId ? brandCards.find((brand) => brand.id === activeBrandId) : null;
+    const activePersona = activePersonaId ? personaCards.find((persona) => persona.id === activePersonaId) : null;
 
     return (
       <div className="flex h-full flex-col">
-        {activeBrand && (
+        {activePersona && (
           <div className="h-[24px] pt-[6px] flex items-center justify-center px-3 mb-2 flex-shrink-0 bg-black/20 rounded">
             <button
               type="button"
               onMouseDown={handleButtonMouseDown}
-              onClick={() => onUseBrand?.(undefined)}
+              onClick={() => onUsePersona?.(undefined)}
               className="flex items-center gap-1 text-brand-muted hover:text-[#f00] transition font-semibold text-xs"
             >
               <div className="w-2.5 h-2.5 bg-current" />
-              Stop Writing As Brand
+              Stop Writing As Persona
             </button>
           </div>
         )}
         <div className="flex-1 min-h-0 overflow-y-auto pt-[4px] px-3 space-y-4">
-          {brandCards.map((brand) => (
-            <BrandCard
-              key={brand.id}
-              id={brand.id}
-              name={brand.name}
-              summary={brand.summary}
-              hasSummary={brand.hasSummary}
-              keyMessages={brand.keyMessages}
+          {personaCards.map((persona) => (
+            <PersonaCard
+              key={persona.id}
+              id={persona.id}
+              name={persona.name}
+              summary={persona.summary}
+              hasSummary={persona.hasSummary}
+              keyMessages={persona.keyMessages}
               allowKeyMessageActions={isAuthenticated && Boolean(onAddKeyMessaging)}
               onAddKeyMessage={onAddKeyMessaging}
               onRemoveKeyMessage={onRemoveKeyMessaging}
-              onClearBrand={onClearBrand}
-              onUseBrand={() => onUseBrand?.(brand.id)}
-              isActive={activeBrandId === brand.id}
+              onClearPersona={onClearPersona}
+              onUsePersona={() => onUsePersona?.(persona.id)}
+              isActive={activePersonaId === persona.id}
             />
           ))}
         </div>
@@ -4340,8 +4347,19 @@ function WorkspaceSidebar({
                     )
                   }
                 >
-                  <span className="material-symbols-outlined text-xl">{tab.icon}</span>
-                  <span>{tab.label}</span>
+                  {tab.icon === "groucho-mask" ? (
+                    <img 
+                      src="/groucho-mask.svg" 
+                      alt="" 
+                      className="h-5 w-auto brightness-0 invert"
+                    />
+                  ) : (
+                    <span className={cn(
+                      "text-xl",
+                      tab.id === "docs" || tab.id === "styles" ? "material-symbols-rounded" : "material-symbols-outlined"
+                    )}>{tab.icon}</span>
+                  )}
+                  <span className="pt-[2px] text-[10px]">{tab.label}</span>
                 </Tab>
               ))}
               {!isDesktop && (
@@ -4402,7 +4420,7 @@ function WorkspaceSidebar({
                   {renderStyleList(styles)}
                 </Tab.Panel>
                 <Tab.Panel className="h-full focus:outline-none">
-                  {renderBrandsContent()}
+                  {renderPersonasContent()}
                 </Tab.Panel>
               </Tab.Panels>
             </div>
@@ -4431,21 +4449,21 @@ function WorkspaceSidebar({
   );
 }
 
-type BrandCardProps = {
+type PersonaCardProps = {
   id: string;
   name: string;
   summary: string | null;
   hasSummary: boolean;
-  keyMessages: BrandKeyMessage[];
+  keyMessages: PersonaKeyMessage[];
   allowKeyMessageActions: boolean;
-  onAddKeyMessage?: (text: string, brandId?: string) => Promise<{ success: boolean; error?: string }>;
+  onAddKeyMessage?: (text: string, personaId?: string) => Promise<{ success: boolean; error?: string }>;
   onRemoveKeyMessage?: (id: string) => Promise<void>;
-  onClearBrand?: () => Promise<{ success: boolean; error?: string }>;
-  onUseBrand?: (brandId?: string) => void;
+  onClearPersona?: () => Promise<{ success: boolean; error?: string }>;
+  onUsePersona?: (personaId?: string) => void;
   isActive?: boolean;
 };
 
-function BrandCard({
+function PersonaCard({
   id,
   name,
   summary,
@@ -4454,16 +4472,16 @@ function BrandCard({
   allowKeyMessageActions,
   onAddKeyMessage,
   onRemoveKeyMessage,
-  onClearBrand,
-  onUseBrand,
+  onClearPersona,
+  onUsePersona,
   isActive = false
-}: BrandCardProps) {
+}: PersonaCardProps) {
   const [localActive, setLocalActive] = useState(isActive);
   const [isHovered, setIsHovered] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [brandName, setBrandName] = useState(name);
-  const [brandInfo, setBrandInfo] = useState(summary || "");
-  const [brandProcessing, setBrandProcessing] = useState(false);
+  const [personaName, setPersonaName] = useState(name);
+  const [personaInfo, setPersonaInfo] = useState(summary || "");
+  const [personaProcessing, setPersonaProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [removingMessageId, setRemovingMessageId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -4473,34 +4491,34 @@ function BrandCard({
   }, [isActive]);
 
   useEffect(() => {
-    setBrandName(name);
+    setPersonaName(name);
   }, [name]);
 
   useEffect(() => {
-    setBrandInfo(summary || "");
+    setPersonaInfo(summary || "");
   }, [summary]);
 
-  const handleSelectBrand = () => {
-    if (onUseBrand) {
+  const handleSelectPersona = () => {
+    if (onUsePersona) {
       setLocalActive(true);
       setIsHovered(false); // Clear hover state immediately to prevent overlay flicker
-      onUseBrand(id);
+      onUsePersona(id);
     }
   };
 
-  const handleEditBrand = async () => {
-    if (!brandInfo.trim()) {
-      setErrorMessage("Brand information is required");
+  const handleEditPersona = async () => {
+    if (!personaInfo.trim()) {
+      setErrorMessage("Persona information is required");
       return;
     }
 
-    setBrandProcessing(true);
+    setPersonaProcessing(true);
     setErrorMessage(null);
 
     try {
       const requestBody = {
-        brandName: brandName?.trim() || undefined,
-        brandInfo: brandInfo.trim()
+        brandName: personaName?.trim() || undefined,
+        brandInfo: personaInfo.trim()
       };
 
       const response = await fetch("/api/brand", {
@@ -4516,13 +4534,13 @@ function BrandCard({
         // Refresh the page or update parent state
         window.location.reload();
       } else {
-        setErrorMessage(data?.error || "Failed to update brand");
+        setErrorMessage(data?.error || "Failed to update persona");
       }
     } catch (error) {
-      console.error("Failed to update brand", error);
-      setErrorMessage("Failed to update brand. Please try again.");
+      console.error("Failed to update persona", error);
+      setErrorMessage("Failed to update persona. Please try again.");
     } finally {
-      setBrandProcessing(false);
+      setPersonaProcessing(false);
     }
   };
 
@@ -4592,15 +4610,15 @@ function BrandCard({
             </div>
           </div>
 
-          {/* Hover overlay with Write for Brand button */}
-          {isHovered && !localActive && !isActive && onUseBrand && (
+          {/* Hover overlay with Write for Persona button */}
+          {isHovered && !localActive && !isActive && onUsePersona && (
             <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/60 backdrop-blur-sm transition-opacity">
               <button
                 type="button"
-                onClick={handleSelectBrand}
+                onClick={handleSelectPersona}
                 className="rounded-full bg-brand-blue px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-blue/80 shadow-lg"
               >
-                Write for Brand
+                Write for Persona
               </button>
             </div>
           )}
@@ -4616,7 +4634,7 @@ function BrandCard({
                   ? "text-brand-blue hover:bg-brand-blue/20"
                   : "text-brand-muted hover:text-brand-text hover:bg-brand-background/80"
               )}
-              aria-label="Edit brand"
+              aria-label="Edit persona"
             >
               <span className="material-symbols-outlined text-sm">edit</span>
             </button>
@@ -4624,7 +4642,7 @@ function BrandCard({
         </div>
       </div>
 
-      {/* Edit Brand Modal */}
+      {/* Edit Persona Modal */}
       <Transition show={editModalOpen} as={Fragment}>
         <Dialog onClose={() => setEditModalOpen(false)} className="relative z-[1200]">
           <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
@@ -4640,7 +4658,7 @@ function BrandCard({
             >
               <Dialog.Panel className="w-full max-w-2xl rounded-3xl border border-brand-stroke/60 bg-brand-panel/95 p-6 text-brand-text shadow-[0_30px_80px_rgba(0,0,0,0.55)]">
                 <header className="mb-4 flex items-center justify-between">
-                  <Dialog.Title className="font-display text-2xl text-brand-text">Edit Brand</Dialog.Title>
+                  <Dialog.Title className="font-display text-2xl text-brand-text">Edit Persona</Dialog.Title>
                   <button
                     onClick={() => setEditModalOpen(false)}
                     className="rounded-full border border-brand-stroke/70 p-2 text-brand-text hover:text-brand-blue"
@@ -4651,24 +4669,24 @@ function BrandCard({
                 </header>
                 <div className="space-y-4">
                   <div>
-                    <label className="text-sm text-brand-muted">Brand Name</label>
+                    <label className="text-sm text-brand-muted">Persona Name</label>
                     <input
                       type="text"
-                      value={brandName}
-                      onChange={(e) => setBrandName(e.target.value.substring(0, 100))}
-                      placeholder="Enter brand name (optional)"
+                      value={personaName}
+                      onChange={(e) => setPersonaName(e.target.value.substring(0, 100))}
+                      placeholder="Enter persona name (optional)"
                       maxLength={100}
                       className="mt-2 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
                     />
                   </div>
                   <div>
                     <label className="text-sm text-brand-muted">
-                      Paste your brand information, style guides, vocabulary, tone, and any other details about your brand. The AI will create a concise 400-character summary.
+                      Paste your persona information, style guides, vocabulary, tone, and any other details about your persona. The AI will create a concise 400-character summary.
                     </label>
                     <textarea
-                      value={brandInfo}
-                      onChange={(e) => setBrandInfo(e.target.value)}
-                      placeholder="Paste brand information here..."
+                      value={personaInfo}
+                      onChange={(e) => setPersonaInfo(e.target.value)}
+                      placeholder="Paste persona information here..."
                       className="mt-2 w-full rounded-lg border border-brand-stroke/70 bg-brand-ink px-3 py-2 text-brand-text placeholder:text-brand-muted placeholder:opacity-30 focus:border-brand-blue focus:outline-none"
                       rows={12}
                     />
@@ -4738,11 +4756,11 @@ function BrandCard({
                     </button>
                     <button
                       type="button"
-                      onClick={handleEditBrand}
-                      disabled={!brandInfo.trim() || brandProcessing}
+                      onClick={handleEditPersona}
+                      disabled={!personaInfo.trim() || personaProcessing}
                       className="rounded-full bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-blue/80 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      {brandProcessing ? "Processing..." : "Save Brand"}
+                      {personaProcessing ? "Processing..." : "Save Persona"}
                     </button>
                   </div>
                 </div>

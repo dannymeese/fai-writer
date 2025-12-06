@@ -7,7 +7,6 @@ export type StyleMetadataInput = {
   content?: string | null;
   styleTitle?: string | null;
   styleSummary?: string | null;
-  fallbackTitle?: string | null;
 };
 
 export type StyleMetadataResult = {
@@ -24,11 +23,16 @@ function sanitizeStyleTitle(rawTitle: string | null | undefined): string | null 
     .trim();
   if (!clean) return null;
   const words = clean.split(/\s+/).filter(Boolean);
-  if (words.length > 4) {
-    clean = words.slice(0, 4).join(" ");
-  } else if (words.length === 1) {
-    clean = `${words[0]} Style`;
+  // For generated titles in "[adjective] [adjective] [noun]" format, preserve exactly 3 words
+  // If it's already 3 words, keep it as-is
+  if (words.length === 3) {
+    return words.join(" ");
   }
+  // If more than 3 words, take first 3
+  if (words.length > 3) {
+    return words.slice(0, 3).join(" ");
+  }
+  // If less than 3 words, don't modify (let LLM handle it)
   return clean;
 }
 
@@ -60,62 +64,48 @@ export async function generateStyleMetadata(
   const descriptor = (input.writingStyle ?? input.content ?? "")?.trim();
 
   if (openai && descriptor) {
-    if (!styleTitle) {
+    if (!styleTitle || !styleSummary) {
       try {
-        const titleResponse = await openai.responses.create({
+        const response = await openai.responses.create({
           model: "gpt-5.1",
-          temperature: 0.6,
-          max_output_tokens: 20,
+          temperature: 0.5,
+          max_output_tokens: 200,
+          response_format: { type: "json_object" },
           input: [
             {
               role: "system",
-              content: "Generate a concise 2-4 word title that captures the essence of this writing style. Return only the title, no explanations or punctuation."
+              content: `You are a writing style analyst. Analyze the given writing style and return a JSON object with exactly these fields:
+- "title": A title in the format "[adjective] [adjective] [noun]" that perfectly describes the writing STYLE. Examples: "Professional Concise Tone", "Casual Conversational Voice", "Formal Academic Prose", "Warm Friendly Approach", "Technical Precise Language". Use exactly 3 words: two adjectives followed by one noun that describes the style. No punctuation, no quotes, no "Style" suffix, just the three words.
+- "summary": A summary of the style in <=200 characters, plain text, no markdown or quotes. Mention tone, cadence, vocabulary, and pacing if possible.
+
+Return ONLY valid JSON, no other text.`
             },
             {
               role: "user",
-              content: `Writing style description:\n${descriptor}\n\nReturn only the title.`
+              content: `Analyze this writing style:\n\n${descriptor}\n\nReturn JSON with "title" and "summary" fields.`
             }
           ]
         });
-        tokensUsed += titleResponse.usage?.total_tokens ?? 0;
-        styleTitle = sanitizeStyleTitle(titleResponse.output_text ?? null);
-      } catch (error) {
-        console.error("[style-metadata] Failed to generate style title", error);
-      }
-    }
-
-    if (!styleSummary) {
-      try {
-        const summaryResponse = await openai.responses.create({
-          model: "gpt-5.1",
-          temperature: 0.35,
-          max_output_tokens: 120,
-          input: [
-            {
-              role: "system",
-              content:
-                "You describe writing styles for other LLMs to mimic. Summarize the style in <=200 characters, plain text, no markdown or quotes. Mention tone, cadence, vocabulary, and pacing if possible."
-            },
-            {
-              role: "user",
-              content: `Summarize this writing style so another model can mirror it:\n\n${descriptor}`
+        tokensUsed += response.usage?.total_tokens ?? 0;
+        
+        try {
+          const jsonText = response.output_text?.trim() ?? null;
+          if (jsonText) {
+            const parsed = JSON.parse(jsonText);
+            if (!styleTitle && parsed.title) {
+              styleTitle = sanitizeStyleTitle(parsed.title);
             }
-          ]
-        });
-        tokensUsed += summaryResponse.usage?.total_tokens ?? 0;
-        styleSummary = sanitizeStyleSummary(summaryResponse.output_text ?? null);
+            if (!styleSummary && parsed.summary) {
+              styleSummary = sanitizeStyleSummary(parsed.summary);
+            }
+          }
+        } catch (parseError) {
+          console.error("[style-metadata] Failed to parse JSON response", parseError, response.output_text);
+        }
       } catch (error) {
-        console.error("[style-metadata] Failed to generate style summary", error);
+        console.error("[style-metadata] Failed to generate style metadata", error);
       }
     }
-  }
-
-  if (!styleTitle && input.fallbackTitle) {
-    styleTitle = sanitizeStyleTitle(input.fallbackTitle);
-  }
-
-  if (!styleSummary && input.writingStyle) {
-    styleSummary = sanitizeStyleSummary(input.writingStyle);
   }
 
   return {

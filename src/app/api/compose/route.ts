@@ -207,19 +207,33 @@ export async function POST(request: Request) {
         model: "gpt-5.1",
         temperature: 0.4,
         max_output_tokens: 200,
+        response_format: { type: "json_object" },
         input: [
           {
             role: "system",
-            content:
-              "You are a writing analyst. Describe the writing style of the given text in 2-3 sentences. Focus on tone, voice, structure, vocabulary choices, and any distinctive characteristics."
+            content: `You are a writing analyst. Analyze the writing style of the given text and return a JSON object with exactly this field:
+- "description": A 2-3 sentence description of the writing style focusing on tone, voice, structure, vocabulary choices, and any distinctive characteristics.
+
+Return ONLY valid JSON with the "description" field, no other text.`
           },
           {
             role: "user",
-            content: `Analyze and describe the writing style of this text:\n\n${contentText}`
+            content: `Analyze the writing style of this text:\n\n${contentText}\n\nReturn JSON with "description" field.`
           }
         ]
       });
-      writingStyle = styleResponse.output_text?.trim() ?? null;
+      
+      try {
+        const jsonText = styleResponse.output_text?.trim() ?? null;
+        if (jsonText) {
+          const parsed = JSON.parse(jsonText);
+          writingStyle = parsed.description?.trim() ?? null;
+        }
+      } catch (parseError) {
+        console.error("OpenAI style generation JSON parse failed", parseError, styleResponse.output_text);
+        // Fallback to raw text if JSON parsing fails
+        writingStyle = styleResponse.output_text?.trim() ?? null;
+      }
       styleTokens = styleResponse.usage?.total_tokens ?? 0;
     } catch (err) {
       console.error("OpenAI style generation failed", err);

@@ -31,10 +31,10 @@ const plans: Array<{
     pricePeriod: "/ mo",
     frequency: "billed annually",
     priceDetail: "$9 / mo • billed annually",
-    description: "Best for dedicated teams that want unlimited guardrail prompts, advanced brand/style storage, and white-glove support.",
+    description: "Best for dedicated teams that want unlimited guardrail prompts, advanced persona/style storage, and white-glove support.",
     benefits: [
       "5-day free trial",
-      "Unlimited brand + style slots",
+      "Unlimited persona + style slots",
       "Priority support & roadmap input",
       "Token tracking + enterprise guardrails"
     ],

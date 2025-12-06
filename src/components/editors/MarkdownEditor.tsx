@@ -61,8 +61,8 @@ type MarkdownEditorProps = {
   editable?: boolean;
   className?: string;
   onReady?: (editor: ReturnType<typeof useEditor>) => void;
-  hasBrand?: boolean;
-  activeBrandId?: string | null;
+  hasPersona?: boolean;
+  activePersonaId?: string | null;
   horizontalPadding?: {
     left?: number;
     right?: number;
@@ -79,8 +79,8 @@ export default function MarkdownEditor({
   editable = true,
   className,
   onReady,
-  hasBrand = false,
-  activeBrandId,
+  hasPersona = false,
+  activePersonaId,
   horizontalPadding,
   onSaveStyle,
   onTyping
@@ -88,11 +88,11 @@ export default function MarkdownEditor({
   const [persistentSelection, setPersistentSelection] = useState<{ from: number; to: number } | null>(null);
   const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
   const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0, isSticky: false });
-  const [addingToBrand, setAddingToBrand] = useState(false);
+  const [addingToPersona, setAddingToPersona] = useState(false);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [plusMenuPosition, setPlusMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
-  const addToBrandButtonRef = useRef<HTMLButtonElement>(null);
+  const addToPersonaButtonRef = useRef<HTMLButtonElement>(null);
   const plusButtonRef = useRef<HTMLButtonElement>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const isInternalUpdateRef = useRef(false);
@@ -1981,9 +1981,9 @@ export default function MarkdownEditor({
     }
   }, [editor, updateToolbarPosition]);
 
-  // Handle adding selected text to brand key messaging
-  const handleAddToBrand = useCallback(async () => {
-    if (!editor || addingToBrand) return;
+  // Handle adding selected text to persona key messaging
+  const handleAddToPersona = useCallback(async () => {
+    if (!editor || addingToPersona) return;
     
     try {
       const selectedText = (editor as any).getSelectedText?.();
@@ -1991,13 +1991,13 @@ export default function MarkdownEditor({
         return;
       }
 
-      setAddingToBrand(true);
+      setAddingToPersona(true);
       
       const requestBody: { text: string; brandId?: string } = {
         text: selectedText.trim()
       };
-      if (activeBrandId) {
-        requestBody.brandId = activeBrandId;
+      if (activePersonaId) {
+        requestBody.brandId = activePersonaId;
       }
 
       const response = await fetch("/api/brand/key-messaging", {
@@ -2007,8 +2007,8 @@ export default function MarkdownEditor({
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Failed to add to brand" }));
-        console.error("Failed to add to brand:", {
+        const errorData = await response.json().catch(() => ({ error: "Failed to add to persona" }));
+        console.error("Failed to add to persona:", {
           error: errorData.error,
           details: errorData.details,
           code: errorData.code,
@@ -2019,16 +2019,16 @@ export default function MarkdownEditor({
       }
 
       // Success - could show a toast notification here
-      // Dispatch a custom event to notify parent components with brandId
+      // Dispatch a custom event to notify parent components with personaId
       window.dispatchEvent(new CustomEvent("brand-key-messaging-added", { 
-        detail: { brandId: activeBrandId } 
+        detail: { brandId: activePersonaId } 
       }));
     } catch (error) {
-      console.error("Error adding to brand:", error);
+      console.error("Error adding to persona:", error);
     } finally {
-      setAddingToBrand(false);
+      setAddingToPersona(false);
     }
-  }, [editor, addingToBrand, activeBrandId]);
+  }, [editor, addingToPersona, activePersonaId]);
 
   // Don't render editor until ready
   if (!editor) {
@@ -2256,22 +2256,22 @@ export default function MarkdownEditor({
             transform: 'translateY(-100%)'
           }}
         >
-          {hasBrand && (
+          {hasPersona && (
             <button
               type="button"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 setShowPlusMenu(false);
-                handleAddToBrand();
+                handleAddToPersona();
               }}
-              disabled={addingToBrand}
+              disabled={addingToPersona}
               className={cn(
                 "w-full px-4 py-2.5 text-left text-sm text-white transition hover:bg-white/10",
-                addingToBrand && "opacity-60 cursor-not-allowed"
+                addingToPersona && "opacity-60 cursor-not-allowed"
               )}
             >
-              {addingToBrand ? "Adding..." : "Add to Brand"}
+              {addingToPersona ? "Adding..." : "Add to Persona"}
             </button>
           )}
           {onSaveStyle && (
@@ -2285,7 +2285,7 @@ export default function MarkdownEditor({
               }}
               className={cn(
                 "w-full px-4 py-2.5 text-left text-sm text-white transition hover:bg-white/10",
-                hasBrand && "border-t border-brand-stroke/40"
+                hasPersona && "border-t border-brand-stroke/40"
               )}
             >
               Save Writing Style

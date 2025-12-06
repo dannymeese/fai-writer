@@ -23,13 +23,26 @@ export async function POST(request: Request) {
     }
 
     const hashed = await hash(password, 12);
-    await db.user.create({
+    const user = await db.user.create({
       data: {
         name,
         email,
         password: hashed
       }
     });
+
+    // Create default "Archive" folder for new user
+    try {
+      await db.folder.create({
+        data: {
+          name: "Archive",
+          ownerId: user.id
+        }
+      });
+    } catch (folderError) {
+      // Log but don't fail registration if folder creation fails
+      console.error("Failed to create Archive folder for new user:", folderError);
+    }
   } catch (error) {
     console.error("register error", error);
     return NextResponse.json(
