@@ -4321,7 +4321,7 @@ function WorkspaceSidebar({
       {open ? (
         <div className="flex h-full flex-col bg-[#000]">
           <Tab.Group className="flex flex-1 flex-col min-h-0" selectedIndex={selectedIndex} onChange={handleTabChange}>
-            <Tab.List className="flex bg-brand-background/40 text-xs font-semibold uppercase flex-shrink-0 w-full p-1.5 h-[60px] items-center">
+            <Tab.List className="flex bg-brand-background/40 text-xs font-semibold uppercase flex-shrink-0 w-[calc(100%-10px)] mx-auto -mt-[3px] pt-[10px] px-1.5 pb-[10px] mb-[3px] h-[60px] items-center">
               {tabs.map((tab) => (
                 <Tab
                   key={tab.id}
@@ -4333,7 +4333,7 @@ function WorkspaceSidebar({
                   }}
                   className={({ selected }) =>
                     cn(
-                      "flex flex-1 flex-col items-center justify-center gap-1 py-3 rounded-full transition focus:outline-none",
+                      "flex flex-1 flex-col items-center justify-center gap-0 py-3 rounded-t-none rounded-b-full transition focus:outline-none m-1.5",
                       selected
                         ? "bg-white/15 text-white shadow-[0_15px_35px_rgba(0,0,0,0.45)]"
                         : "text-brand-muted hover:text-white"
