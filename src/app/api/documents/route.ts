@@ -195,14 +195,8 @@ export async function POST(request: Request) {
     if (parsed.data.writingStyle !== undefined && parsed.data.writingStyle !== null) {
       createData.writingStyle = parsed.data.writingStyle;
     }
-    // Only include styleSummary if it exists (graceful degradation if column doesn't exist)
     if (resolvedStyleSummary !== undefined && resolvedStyleSummary !== null && resolvedStyleSummary.trim().length > 0) {
-      try {
-        createData.styleSummary = resolvedStyleSummary;
-      } catch (err) {
-        console.warn("[documents][POST] Could not set styleSummary, column may not exist", err);
-        // Continue without styleSummary
-      }
+      createData.styleSummary = resolvedStyleSummary;
     }
     if (styleTitleValue !== null) {
       createData.styleTitle = styleTitleValue;
@@ -240,14 +234,29 @@ export async function POST(request: Request) {
       isStylePayload
     });
 
-    const doc = await db.document.create({
-      data: createData
-    });
+    let doc;
+    try {
+      doc = await db.document.create({
+        data: createData
+      });
+    } catch (createError) {
+      console.error("[documents][POST] Document creation failed", {
+        error: createError,
+        createDataKeys: Object.keys(createData),
+        createData: {
+          ...createData,
+          content: createData.content?.substring(0, 100) + "...",
+          writingStyle: createData.writingStyle?.substring(0, 100) + "..."
+        }
+      });
+      throw createError;
+    }
 
     console.log("[documents][POST] Successfully saved document:", {
       id: doc.id,
       title: doc.title,
       hasStyleTitle: !!doc.styleTitle,
+      hasStyleSummary: !!doc.styleSummary,
       hasWritingStyle: !!doc.writingStyle
     });
 
