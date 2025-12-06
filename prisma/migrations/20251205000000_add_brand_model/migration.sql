@@ -17,3 +17,4 @@ ALTER TABLE `User` ADD COLUMN `activeBrandId` VARCHAR(191) NULL;
 -- Add foreign key constraint for activeBrandId
 ALTER TABLE `User` ADD CONSTRAINT `User_activeBrandId_fkey` FOREIGN KEY (`activeBrandId`) REFERENCES `Brand`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
+
