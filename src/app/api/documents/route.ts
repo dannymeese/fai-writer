@@ -109,6 +109,14 @@ export async function POST(request: Request) {
 
     if (isStylePayload) {
       try {
+        console.log("[documents][POST] Generating style metadata", {
+          hasWritingStyle: !!parsed.data.writingStyle,
+          writingStyleLength: parsed.data.writingStyle?.length,
+          contentLength: parsed.data.content?.length,
+          hasStyleTitle: !!parsed.data.styleTitle,
+          hasStyleSummary: !!parsed.data.styleSummary,
+          fallbackTitle: parsed.data.title
+        });
         const metadata = await generateStyleMetadata({
           writingStyle: parsed.data.writingStyle ?? null,
           content: parsed.data.content ?? "",
@@ -118,8 +126,14 @@ export async function POST(request: Request) {
         });
         generatedStyleTitle = metadata.styleTitle;
         generatedStyleSummary = metadata.styleSummary;
+        console.log("[documents][POST] Style metadata generated", {
+          styleTitle: generatedStyleTitle,
+          styleSummary: generatedStyleSummary?.substring(0, 50),
+          tokensUsed: metadata.tokensUsed
+        });
       } catch (error) {
         console.error("[documents][POST] style metadata generation failed", error);
+        // Continue without metadata - don't fail the save
       }
     }
 
@@ -212,9 +226,12 @@ export async function POST(request: Request) {
       hasTone: !!createData.tone,
       hasPrompt: !!createData.prompt,
       hasWritingStyle: !!createData.writingStyle,
+      hasStyleTitle: !!createData.styleTitle,
+      hasStyleSummary: !!createData.styleSummary,
       pinned: createData.pinned,
       userId: session.user.id,
-      allKeys: Object.keys(createData)
+      allKeys: Object.keys(createData),
+      isStylePayload
     });
 
     const doc = await db.document.create({

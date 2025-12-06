@@ -1280,12 +1280,27 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       return;
     }
 
-    const payload = await response.json().catch(() => null);
+    let payload: any = null;
+    let responseText = "";
+    try {
+      responseText = await response.text();
+      if (responseText) {
+        try {
+          payload = JSON.parse(responseText);
+        } catch (parseError) {
+          console.warn("Failed to parse response as JSON", parseError);
+        }
+      }
+    } catch (textError) {
+      console.error("Failed to read response text", textError);
+    }
+
     if (!response.ok) {
       console.error("save style failed", {
         status: response.status,
         statusText: response.statusText,
         payload,
+        responseText: responseText.substring(0, 500),
         requestBody: {
           title: styleName,
           contentLength: resolvedContent.length,
@@ -1293,9 +1308,20 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
           writingStyleLength: description.length
         }
       });
-      const errorMsg = formatErrorMessage(payload?.error, "Unable to save writing style.");
+      const errorMsg = formatErrorMessage(payload?.error || responseText || `HTTP ${response.status}`, "Unable to save writing style.");
       setToast(errorMsg);
       return;
+    }
+
+    // Parse response for success case
+    if (!payload && responseText) {
+      try {
+        payload = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("Failed to parse success response", parseError, responseText);
+        setToast("Style saved but failed to parse response.");
+        return;
+      }
     }
     const remoteDoc = payload ?? null;
     const hydratedStyleDoc: SavedDoc = {
