@@ -1106,7 +1106,7 @@ export default function DocumentEditor({
                   "font-semibold transition-colors",
                   (titleValue || document?.title) ? "text-white/50" : "text-white/25"
                 )} style={{ fontSize: '12px' }}>
-                  {titleValue || document?.title || "Enter title"}
+                  {titleValue || document?.title || "Untitled"}
                 </h1>
               </div>
             </div>
@@ -1180,7 +1180,7 @@ export default function DocumentEditor({
               onKeyDown={handleTitleKeyDown}
               className="w-full bg-transparent text-base leading-[32px] font-semibold text-white outline-none placeholder:text-white/25"
               style={{ fontSize: '16px' }}
-              placeholder="Enter title"
+              placeholder="Untitled"
             />
         ) : (
           <h1

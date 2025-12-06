@@ -3953,15 +3953,15 @@ function WorkspaceSidebar({
   function renderDocList(items: SavedDoc[], emptyLabel: string) {
     if (!items.length) {
       return (
-        <div className="flex h-full flex-col justify-center pt-[4px] px-3">
-          <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-brand-background/40 p-6 text-center text-sm text-brand-muted">
+        <div className="flex h-full flex-col justify-center pt-[4px] px-[4px] bg-[#131313]">
+          <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-[#0A0A0A] p-6 text-center text-sm text-brand-muted">
             <p className="font-semibold text-white">{emptyLabel}</p>
           </div>
         </div>
       );
     }
     return (
-      <ul className="space-y-1.5">
+      <ul className="space-y-[3px]">
         {items.map((doc) => {
           const isActive = activeDocumentId === doc.id;
           const hasTitle = doc.title && doc.title.trim().length > 0;
@@ -4169,8 +4169,8 @@ function WorkspaceSidebar({
   function renderStyleList(items: SavedDoc[]) {
     if (!items.length) {
       return (
-        <div className="flex h-full flex-col justify-center pt-[4px] px-3">
-          <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-brand-background/40 p-6 text-center text-sm text-brand-muted">
+        <div className="flex h-full flex-col justify-center pt-[4px] px-3 bg-[#131313]">
+          <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-[#0A0A0A] p-6 text-center text-sm text-brand-muted">
             <p className="font-semibold text-white">No styles yet</p>
             <p className="mt-2">
               Select text in any document, then click &quot;Save Writing Style&quot; from the plus menu to capture its tone and voice.
@@ -4197,8 +4197,8 @@ function WorkspaceSidebar({
             </button>
           </div>
         )}
-        <div className="flex-1 min-h-0 overflow-y-auto pt-[4px] px-3">
-          <ul className="space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto pt-[4px] px-3 bg-[#131313]">
+          <ul className="space-y-1.5">
             {items.map((style) => (
               <li key={style.id}>
                 <button
@@ -4230,16 +4230,14 @@ function WorkspaceSidebar({
   function renderPersonasContent() {
     if (!personaCards.length) {
       return (
-        <div className="flex h-full flex-col justify-center pt-[4px] px-3">
-          <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-brand-background/40 p-6 text-center text-sm text-brand-muted">
+        <div className="flex h-full flex-col justify-center pt-[4px] px-3 bg-[#131313]">
+          <div className="rounded-2xl border border-dashed border-brand-stroke/50 bg-[#0A0A0A] p-6 text-center text-sm text-brand-muted">
             <div className="flex items-center justify-center gap-3 mb-4">
-              <img 
-                src="/groucho-mask.svg" 
-                alt="" 
-                className="h-5 w-auto brightness-0 invert"
-              />
-              <span className="material-symbols-outlined text-white text-xl">east</span>
-              <span className="material-symbols-outlined text-white text-xl">format_align_left</span>
+              <svg className="h-5 w-auto" viewBox="0 0 99 76.56" xmlns="http://www.w3.org/2000/svg">
+                <path fill="#00f" d="M94.3,14.52C91.9,5.92,83.9-.38,74.4.02c-7.8.3-14.6,5.4-17.5,12.3-2.1-1.4-4.7-2.2-7.4-2.2s-5.2.8-7.4,2.2C39.1,5.12,32,.02,23.8.02,14.7.02,7.1,6.12,4.7,14.52c-.4,1.3-1.6,2.2-2.9,2.2H0v6.2h1.8c1.4,0,2.6.9,2.9,2.2,2.4,8.6,10.4,14.9,19.9,14.5,9.8-.4,18-8.2,18.9-18,.9-2.4,3.3-4.1,6-4.1s5,1.7,6,4c.9,10.1,9.4,18.1,19.7,18.1,9.1,0,16.7-6.1,19.1-14.5.4-1.3,1.6-2.2,2.9-2.2h1.8v-6.2h-1.8c-1.3,0-2.6-.9-2.9-2.2ZM23.8,33.62c-7.6,0-13.8-6.2-13.8-13.8s6.2-13.8,13.8-13.8,13.8,6.2,13.8,13.8-6.2,13.8-13.8,13.8ZM75.2,33.62c-7.6,0-13.8-6.2-13.8-13.8s6.2-13.8,13.8-13.8,13.8,6.2,13.8,13.8-6.2,13.8-13.8,13.8ZM98,56.42c-2.4,7.4-8.6,19.3-23.8,20.1-12.1.6-20.4-4.9-24.7-11-4.3,6.1-12.6,11.6-24.7,11-15.2-.7-21.4-12.6-23.8-20.1-.2-.6-1.1-3.7,1.6-2,.3.2.6.4.9.7h0c1.6,1,3.7,1.8,6.5,2,8.2.4,15.5-13.7,27-13.1,3,.1,7,.8,12.5,6.3,5.5-5.5,9.6-6.2,12.5-6.3,11.5-.6,18.7,13.6,27,13.1,2.8-.1,5-1,6.5-2h0c.3-.2.6-.4.9-.7,2.7-1.7,1.8,1.4,1.6,2Z"/>
+              </svg>
+              <span className="material-symbols-outlined text-brand-blue text-xl">east</span>
+              <span className="material-symbols-outlined text-brand-blue text-xl">format_align_left</span>
             </div>
             <p className="font-semibold text-white">Create a persona in a few seconds for brands or characters so Forgetaboutit Writer can write instantly from their perspective.</p>
             <button
@@ -4285,7 +4283,7 @@ function WorkspaceSidebar({
             </button>
           </div>
         )}
-        <div className="flex-1 min-h-0 overflow-y-auto pt-[4px] px-3 space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto pt-[4px] px-3 space-y-2 bg-[#131313]">
           {personaCards.map((persona) => (
             <PersonaCard
               key={persona.id}
@@ -4328,7 +4326,8 @@ function WorkspaceSidebar({
       {open ? (
         <div className="flex h-full flex-col bg-[#000]">
           <Tab.Group className="flex flex-1 flex-col min-h-0" selectedIndex={selectedIndex} onChange={handleTabChange}>
-            <Tab.List className="flex bg-brand-background/40 text-xs font-semibold uppercase flex-shrink-0 w-[calc(100%-10px)] mx-auto -mt-[3px] pt-[10px] px-1.5 pb-[10px] mb-[3px] h-[60px] items-center">
+            <div className="border-b border-brand-stroke/40">
+              <Tab.List className="flex bg-brand-background/40 text-xs font-semibold uppercase flex-shrink-0 w-[calc(100%-10px)] mx-auto -mt-[3px] pt-[10px] px-1.5 pb-[10px] mb-[3px] h-[60px] items-center">
               {tabs.map((tab) => (
                 <Tab
                   key={tab.id}
@@ -4340,31 +4339,33 @@ function WorkspaceSidebar({
                   }}
                   className={({ selected }) =>
                     cn(
-                      "group flex flex-1 flex-col items-center justify-center gap-0 py-3 rounded-t-none rounded-b-full transition focus:outline-none m-1.5",
+                      "group flex flex-1 flex-col items-center justify-center gap-0 pt-[10.5px] pb-[9px] rounded-t-none rounded-b-2xl transition focus:outline-none m-1.5",
                       selected
                         ? "bg-white/15 text-white shadow-[0_15px_35px_rgba(0,0,0,0.45)]"
                         : "text-brand-muted hover:text-white"
                     )
                   }
                 >
-                  {tab.icon === "groucho-mask" ? (
-                    <img 
-                      src="/groucho-mask.svg" 
-                      alt="" 
-                      className={cn(
-                        "h-5 w-auto brightness-0 invert transition",
-                        activeTab === tab.id ? "opacity-100" : "opacity-60 group-hover:opacity-100"
-                      )}
-                    />
-                  ) : (
-                    <span 
-                      className={cn(
-                        "text-xl",
-                        tab.id === "docs" || tab.id === "styles" ? "material-symbols-rounded" : "material-symbols-outlined"
-                      )}
-                      style={tab.id === "styles" ? { transform: "rotate(-90deg)" } : undefined}
-                    >{tab.icon}</span>
-                  )}
+                  <div className="h-5 flex items-center justify-center">
+                    {tab.icon === "groucho-mask" ? (
+                      <img 
+                        src="/groucho-mask.svg" 
+                        alt="" 
+                        className={cn(
+                          "h-[18px] w-auto brightness-0 invert transition",
+                          activeTab === tab.id ? "opacity-100" : "opacity-60 group-hover:opacity-100"
+                        )}
+                      />
+                    ) : (
+                      <span 
+                        className={cn(
+                          tab.id === "styles" ? "text-[21px]" : tab.id === "docs" ? "text-[22px]" : "text-xl",
+                          tab.id === "docs" || tab.id === "styles" ? "material-symbols-rounded" : "material-symbols-outlined"
+                        )}
+                        style={tab.id === "styles" ? { transform: "rotate(-90deg)", fontSize: "21px" } : tab.id === "docs" ? { fontSize: "22px" } : undefined}
+                      >{tab.icon}</span>
+                    )}
+                  </div>
                   <span className="pt-[2px] text-[10px]">{tab.label}</span>
                 </Tab>
               ))}
@@ -4379,6 +4380,7 @@ function WorkspaceSidebar({
                 </button>
               )}
             </Tab.List>
+            </div>
             <div className="flex-1 min-h-0 overflow-hidden">
               <Tab.Panels className="h-full">
                 <Tab.Panel className="h-full flex flex-col focus:outline-none">
@@ -4412,7 +4414,7 @@ function WorkspaceSidebar({
                       </div>
                     );
                   })()}
-                  <div className="flex-1 min-h-0 overflow-y-auto">
+                  <div className="flex-1 min-h-0 overflow-y-auto pt-[4px] px-[4px] bg-[#131313]">
                     {renderDocList(
                       filteredDocs,
                       effectiveFolderFilterId ? "No docs in this folder yet." : "No docs yet. Generate something to see it here."
