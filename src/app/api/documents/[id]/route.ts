@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { generateStyleMetadata } from "@/lib/style-metadata";
 import { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -60,8 +61,35 @@ export async function PATCH(
     if (body.benchmark !== undefined) updateData.benchmark = body.benchmark;
     if (body.avoidWords !== undefined) updateData.avoidWords = body.avoidWords;
     if (body.writingStyle !== undefined) updateData.writingStyle = body.writingStyle;
+    if (body.styleSummary !== undefined) updateData.styleSummary = body.styleSummary;
     if (body.styleTitle !== undefined) updateData.styleTitle = body.styleTitle;
     if (body.pinned !== undefined) updateData.pinned = body.pinned;
+
+    const shouldGenerateStyleMetadata =
+      body.styleTitle !== undefined || body.writingStyle !== undefined || body.styleSummary !== undefined;
+
+    if (shouldGenerateStyleMetadata) {
+      try {
+        const metadata = await generateStyleMetadata({
+          writingStyle: body.writingStyle ?? existingDoc.writingStyle ?? null,
+          content: body.content ?? existingDoc.content ?? null,
+          styleTitle: body.styleTitle ?? existingDoc.styleTitle ?? null,
+          styleSummary: body.styleSummary ?? existingDoc.styleSummary ?? null,
+          fallbackTitle: body.title ?? existingDoc.title
+        });
+        if (metadata.styleTitle) {
+          updateData.styleTitle = metadata.styleTitle;
+          if (updateData.title === undefined) {
+            updateData.title = metadata.styleTitle;
+          }
+        }
+        if (metadata.styleSummary !== null) {
+          updateData.styleSummary = metadata.styleSummary;
+        }
+      } catch (error) {
+        console.error("[documents][PATCH] style metadata generation failed", error);
+      }
+    }
 
     // If no fields to update, return the existing document
     if (Object.keys(updateData).length === 0) {

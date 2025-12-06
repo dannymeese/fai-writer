@@ -31,8 +31,18 @@ type SavedDoc = {
   settings: ComposerSettingsInput;
   writingStyle?: string | null;
   styleTitle?: string | null;
+  styleSummary?: string | null;
   pinned?: boolean;
   folders: DocumentFolderReference[];
+};
+
+type StyleDocInput = {
+  id: string;
+  title?: string;
+  writingStyle?: string | null;
+  content?: string;
+  styleSummary?: string | null;
+  [key: string]: unknown;
 };
 
 type SidebarTab = "docs" | "styles" | "brands";
@@ -105,6 +115,10 @@ function readLocalDocs(): SavedDoc[] {
           typeof safeEntry.writingStyle === "string"
             ? safeEntry.writingStyle
             : safeEntry.writingStyle ?? null,
+      styleSummary:
+        typeof safeEntry.styleSummary === "string"
+          ? safeEntry.styleSummary
+          : safeEntry.styleSummary ?? null,
         styleTitle:
           typeof safeEntry.styleTitle === "string"
             ? safeEntry.styleTitle
@@ -235,7 +249,10 @@ function generateStyleName(description: string | null, fallbackTitle: string): s
   return "Custom Style";
 }
 
-function fallbackStyleDescription(description: string | null, content: string): string {
+function fallbackStyleDescription(description: string | null, content: string, summary?: string | null): string {
+  if (summary?.trim()) {
+    return summary.trim();
+  }
   if (description?.trim()) {
     return description.trim();
   }
@@ -340,10 +357,14 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [autosaveTimeout, setAutosaveTimeout] = useState<NodeJS.Timeout | null>(null);
   const [titleAutosaveTimeout, setTitleAutosaveTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [showGuestTypingNotice, setShowGuestTypingNotice] = useState(false);
   const editorRef = useRef<any>(null); // Reference to the TipTap editor instance
   const outputsRef = useRef<WriterOutput[]>(outputs);
   const savedDocsRef = useRef<SavedDoc[]>([]);
+const lastSavedContentRef = useRef<Map<string, string>>(new Map());
   const composeInputRef = useRef<HTMLTextAreaElement>(null);
+  const typingStartTimeRef = useRef<number | null>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isAuthenticated = !isGuest;
 
   useEffect(() => {
@@ -411,6 +432,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
             avoidWords: doc.avoidWords ?? null
           }),
           writingStyle: doc.writingStyle ?? null,
+          styleSummary: doc.styleSummary ?? null,
           styleTitle: doc.styleTitle ?? null,
           pinned: typeof doc.pinned === "boolean" ? doc.pinned : existing?.pinned ?? false,
           folders: folderRefs
@@ -421,6 +443,14 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       const styles = mapped.filter((doc) => isStyleDocument(doc));
       console.log("[fetchSavedDocs] classified - docs:", regularDocs.length, "styles:", styles.length);
       console.log("[fetchSavedDocs] sample doc titles:", regularDocs.slice(0, 3).map(d => d.title));
+      // Track last saved content separately so autosave comparisons use server state
+      const savedContentMap = lastSavedContentRef.current;
+      savedContentMap.clear();
+      mapped.forEach((doc) => {
+        if (typeof doc.content === "string") {
+          savedContentMap.set(doc.id, doc.content);
+        }
+      });
       setSavedDocs(sortSavedDocs(mapped));
       console.log("[fetchSavedDocs] Updated savedDocs state with", mapped.length, "documents");
     } catch (error) {
@@ -474,6 +504,13 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     if (isAuthenticated) return;
     const local = readLocalDocs();
     if (local.length) {
+      const savedContentMap = lastSavedContentRef.current;
+      savedContentMap.clear();
+      local.forEach((doc) => {
+        if (typeof doc.content === "string") {
+          savedContentMap.set(doc.id, doc.content);
+        }
+      });
       setSavedDocs(sortSavedDocs(local));
     }
   }, [isAuthenticated]);
@@ -696,11 +733,17 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     }
   }, [hasBrand, activeBrandId]);
 
-  // Fetch brand key messaging items
-  const fetchBrandKeyMessaging = useCallback(async () => {
+  // Store key messages per brand
+  const [brandKeyMessagingMap, setBrandKeyMessagingMap] = useState<Map<string, BrandKeyMessage[]>>(new Map());
+
+  // Fetch brand key messaging items for a specific brand
+  const fetchBrandKeyMessaging = useCallback(async (brandId?: string) => {
     if (!isAuthenticated) return;
     try {
-      const response = await fetch("/api/brand/key-messaging");
+      const url = brandId 
+        ? `/api/brand/key-messaging?brandId=${encodeURIComponent(brandId)}`
+        : "/api/brand/key-messaging";
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         const normalized: BrandKeyMessage[] = Array.isArray(data.items)
@@ -710,30 +753,50 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               createdAt: item.createdAt
             }))
           : [];
-        setBrandKeyMessaging(normalized);
+        
+        if (brandId) {
+          // Store per brand
+          setBrandKeyMessagingMap(prev => {
+            const newMap = new Map(prev);
+            newMap.set(brandId, normalized);
+            return newMap;
+          });
+        } else {
+          // Legacy: store all messages (for backward compatibility)
+          setBrandKeyMessaging(normalized);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch brand key messaging items", error);
     }
   }, [isAuthenticated]);
 
-  // Fetch key messaging items on mount and when brands tab is opened
+  // Fetch key messaging items for all brands when brands tab is opened
   useEffect(() => {
-    if (isAuthenticated && sidebarTab === "brands") {
-      fetchBrandKeyMessaging();
+    if (isAuthenticated && sidebarTab === "brands" && allBrands.length > 0) {
+      // Fetch key messages for each brand
+      allBrands.forEach(brand => {
+        fetchBrandKeyMessaging(brand.id);
+      });
     }
-  }, [isAuthenticated, sidebarTab, fetchBrandKeyMessaging]);
+  }, [isAuthenticated, sidebarTab, allBrands, fetchBrandKeyMessaging]);
 
   // Listen for new items being added
   useEffect(() => {
-    const handleBrandKeyMessagingAdded = () => {
-      fetchBrandKeyMessaging();
+    const handleBrandKeyMessagingAdded = (event: Event) => {
+      const customEvent = event as CustomEvent<{ brandId?: string }>;
+      const brandId = customEvent.detail?.brandId || activeBrandId;
+      if (brandId) {
+        fetchBrandKeyMessaging(brandId);
+      } else {
+        fetchBrandKeyMessaging();
+      }
     };
     window.addEventListener("brand-key-messaging-added", handleBrandKeyMessagingAdded);
     return () => {
       window.removeEventListener("brand-key-messaging-added", handleBrandKeyMessagingAdded);
     };
-  }, [fetchBrandKeyMessaging]);
+  }, [fetchBrandKeyMessaging, activeBrandId]);
 
   // Handle removing a key messaging item
   // Note: The actual deletion is handled in BrandCard.handleRemoveMessage
@@ -780,7 +843,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }, [isAuthenticated]);
 
   const handleAddKeyMessaging = useCallback(
-    async (text: string): Promise<{ success: boolean; error?: string }> => {
+    async (text: string, brandId?: string): Promise<{ success: boolean; error?: string }> => {
       if (!isAuthenticated) {
         return { success: false, error: "Sign in to add key messages." };
       }
@@ -792,10 +855,15 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         const response = await fetch("/api/brand/key-messaging", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: payload })
+          body: JSON.stringify({ text: payload, brandId })
         });
         if (response.ok) {
-          await fetchBrandKeyMessaging();
+          // Refresh key messages for the specific brand
+          if (brandId) {
+            await fetchBrandKeyMessaging(brandId);
+          } else {
+            await fetchBrandKeyMessaging();
+          }
           return { success: true };
         }
         const errorBody = await response.json().catch(() => null);
@@ -1043,6 +1111,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         }),
         prompt: currentPrompt,
         writingStyle: data.writingStyle ?? null,
+        styleSummary: data.styleSummary ?? null,
         styleTitle: data.styleTitle ?? null,
         isPending: false
       });
@@ -1068,6 +1137,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           content: data.content,
           settings: newOutput.settings,
           writingStyle: newOutput.writingStyle ?? null,
+          styleSummary: newOutput.styleSummary ?? null,
           folders: []
         });
         fetchSavedDocs();
@@ -1148,8 +1218,9 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     if (!styleName.toLowerCase().endsWith(" style")) {
       styleName = styleName.endsWith("Style") ? styleName : `${styleName} Style`;
     }
+    const styleSummary = output.styleSummary ?? null;
     // Use the full AI-generated writingStyle description (the analyzed style), not a fallback
-    const description = output.writingStyle?.trim() ?? fallbackStyleDescription(null, resolvedContent);
+    const description = output.writingStyle?.trim() ?? fallbackStyleDescription(null, resolvedContent, styleSummary);
     
     if (!description || !description.trim()) {
       setToast("Unable to save style: no writing style description available.");
@@ -1172,6 +1243,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       content: resolvedContent,
       settings: normalizeSettings(output.settings),
       writingStyle: description,
+      styleSummary,
       styleTitle: styleName,
       pinned: false,
       folders: []
@@ -1196,6 +1268,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           benchmark: output.settings.benchmark ?? undefined,
           avoidWords: output.settings.avoidWords ?? undefined,
           writingStyle: description,
+          styleSummary,
           styleTitle: styleName
         })
       });
@@ -1298,8 +1371,12 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   }, [activeDocumentId, savedDocs]);
   const activeDocPinned = activeSavedDoc?.pinned ?? false;
 
-  function handleApplyStyle(styleDoc: SavedDoc) {
-    const description = fallbackStyleDescription(styleDoc.writingStyle ?? null, styleDoc.content);
+  function handleApplyStyle(styleDoc: StyleDocInput) {
+    const description = fallbackStyleDescription(
+      styleDoc.writingStyle ?? null,
+      styleDoc.content ?? "",
+      styleDoc.styleSummary ?? null
+    );
     setActiveStyle({
       id: styleDoc.id,
       name: styleDoc.title || "Saved Style",
@@ -1314,6 +1391,12 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
   function handleClearStyle() {
     setActiveStyle(null);
   }
+
+  const handleClearBrandForComposeBar = () => {
+    handleClearBrand().catch((error) => {
+      console.error("Failed to clear brand:", error);
+    });
+  };
 
   const resolveDocumentTitle = useCallback((doc: WriterOutput, contentValue: string) => {
     const isStyleEntry =
@@ -1501,6 +1584,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     if (settingsPayload.benchmark) payload.benchmark = settingsPayload.benchmark;
     if (settingsPayload.avoidWords) payload.avoidWords = settingsPayload.avoidWords;
     if (doc.writingStyle) payload.writingStyle = doc.writingStyle;
+    if (doc.styleSummary) payload.styleSummary = doc.styleSummary;
     if (doc.styleTitle) payload.styleTitle = doc.styleTitle;
     
     // Include pinned status from savedDocs if available
@@ -1528,6 +1612,12 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         return null;
       }
       
+      // Skip if we've already saved this exact content version
+      const lastSavedContent = lastSavedContentRef.current.get(doc.id);
+      if (lastSavedContent !== undefined && lastSavedContent === contentValue) {
+        return doc.id;
+      }
+      
       const resolvedTitle = resolveDocumentTitle(doc, contentValue);
       if (!isAuthenticated) {
         // Guests: save locally
@@ -1540,10 +1630,12 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           content: contentValue,
           settings: doc.settings,
           writingStyle: doc.writingStyle ?? null,
+        styleSummary: doc.styleSummary ?? null,
           styleTitle: doc.styleTitle ?? null,
           pinned: doc.pinned ?? false,
           folders: Array.isArray(doc.folders) ? doc.folders : []
         });
+        lastSavedContentRef.current.set(doc.id, contentValue);
         return doc.id;
       }
 
@@ -1571,6 +1663,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           });
 
           if (patchResponse.ok) {
+            // Record last saved content for future comparisons
+            lastSavedContentRef.current.set(doc.id, contentValue);
             // Only update lastEditedAt if content actually changed
             // Prisma automatically updates updatedAt on any PATCH, so we need to check if content changed
             try {
@@ -1729,6 +1823,11 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
           console.error("[persistDocumentToServer] Document creation failed: no ID in response", { created });
           setToast("Failed to save document: No document ID returned from server.");
           return null;
+        }
+        
+        lastSavedContentRef.current.set(created.id as string, contentValue);
+        if (created.id !== doc.id) {
+          lastSavedContentRef.current.delete(doc.id);
         }
         
         fetchSavedDocs();
@@ -2577,6 +2676,35 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
     editorRef.current = editor;
   }, []);
 
+  // Handle typing events for guest notice
+  const handleTyping = useCallback(() => {
+    if (!isGuest || showGuestTypingNotice) return;
+    
+    const now = Date.now();
+    
+    // If this is the first typing event, start tracking
+    if (typingStartTimeRef.current === null) {
+      typingStartTimeRef.current = now;
+      
+      // Set timeout to show notice after 10 seconds
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      typingTimeoutRef.current = setTimeout(() => {
+        setShowGuestTypingNotice(true);
+      }, 10000); // 10 seconds
+    }
+  }, [isGuest, showGuestTypingNotice]);
+
+  // Cleanup typing timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Handle selection-based rewriting
   const handleRewriteSelection = useCallback(async (selectedText: string, instruction: string) => {
     if (!activeDocumentId) return;
@@ -2651,8 +2779,8 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         name: brand.name?.trim() || "Custom Brand",
         summary: brand.info,
         hasSummary: Boolean(brand.info?.trim()),
-        // Only show key messages for active brand; fallback to brand.isActive for any legacy data
-        keyMessages: activeBrandId === brand.id || brand.isActive ? brandKeyMessaging : []
+        // Get key messages for this specific brand
+        keyMessages: brandKeyMessagingMap.get(brand.id) || []
       }));
     } else if (hasBrand || brandKeyMessaging.length) {
       // For guests or legacy, use single brand from state
@@ -2667,7 +2795,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
       ];
     }
     return [];
-  }, [isAuthenticated, allBrands, brandName, brandSummary, brandKeyMessaging, hasBrand, activeBrandId]);
+  }, [isAuthenticated, allBrands, brandName, brandSummary, brandKeyMessaging, brandKeyMessagingMap, hasBrand]);
 
   const documentHorizontalPadding = useMemo(() => {
     const basePadding = 180;
@@ -2759,6 +2887,9 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
         <div className="flex-1 px-4 py-8 sm:px-6">
           <div className="mx-auto w-full max-w-5xl">
             {guestLimitEnabled && isGuest && guestLimitReached && <RegisterGate />}
+            {isGuest && showGuestTypingNotice && (
+              <GuestTypingNotice onClose={() => setShowGuestTypingNotice(false)} />
+            )}
             <DocumentEditor
               document={activeDocument}
               onDocumentChange={handleDocumentChange}
@@ -2767,6 +2898,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               onEditorReady={handleEditorReady}
               loading={loading && activeDocument?.isPending}
               brandSummary={brandSummary}
+              activeBrandId={activeBrandId}
               styleGuide={activeStyle ? { name: activeStyle.name, description: activeStyle.description } : null}
               horizontalPadding={documentHorizontalPadding}
               onTogglePin={isAuthenticated ? handleDocumentMenuPinToggle : undefined}
@@ -2774,6 +2906,7 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               canOrganizeDocuments={isAuthenticated}
               documentPinned={activeDocPinned}
               onSaveStyle={handleSaveCurrentStyle}
+              onTyping={handleTyping}
             />
             {/* Forgetaboutit Icon - positioned below document canvas */}
             <div className="flex justify-center mt-20 pointer-events-none" style={{ opacity: 1 }}>
@@ -2816,8 +2949,11 @@ export default function WriterWorkspace({ user, initialOutputs, isGuest = false 
               hasCustomOptions={hasCustomOptions(settings) || hasBrand || Boolean(activeStyle)}
               activeStyle={activeStyle}
               onClearStyle={handleClearStyle}
+              activeBrand={activeBrandId && hasBrand ? { id: activeBrandId, name: (brandName?.trim() || allBrands.find(b => b.id === activeBrandId)?.name?.trim() || "Custom Brand") } : null}
+              onClearBrand={handleClearBrandForComposeBar}
               hasSelection={!!selectedText}
               selectedText={selectedText}
+              isGuest={isGuest}
             />
           </div>
         </div>
@@ -3157,7 +3293,7 @@ function RegisterGate() {
       </p>
       <div className="mt-4 flex flex-wrap justify-center gap-3">
         <Link
-          href="/register"
+          href="/membership"
           className="rounded-full bg-brand-blue px-5 py-2 text-sm font-semibold text-white hover:bg-brand-blueHover"
         >
           Create account
@@ -3168,6 +3304,35 @@ function RegisterGate() {
         >
           Sign in
         </Link>
+      </div>
+    </div>
+  );
+}
+
+function GuestTypingNotice({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="mb-6 rounded-3xl border border-brand-blue/50 bg-brand-panel/90 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.4)]">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          <p className="text-sm text-brand-text">
+            Register to save your work, bookmark writing styles and define brand voices
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/membership"
+            className="rounded-full bg-brand-blue px-5 py-2 text-sm font-semibold text-white hover:bg-brand-blue/80 transition"
+          >
+            Register
+          </Link>
+          <button
+            onClick={onClose}
+            className="rounded-full p-2 text-brand-muted hover:text-white transition"
+            aria-label="Close"
+          >
+            <span className="material-symbols-outlined text-xl leading-none">close</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -3844,7 +4009,7 @@ type BrandCardProps = {
   hasSummary: boolean;
   keyMessages: BrandKeyMessage[];
   allowKeyMessageActions: boolean;
-  onAddKeyMessage?: (text: string) => Promise<{ success: boolean; error?: string }>;
+  onAddKeyMessage?: (text: string, brandId?: string) => Promise<{ success: boolean; error?: string }>;
   onRemoveKeyMessage?: (id: string) => Promise<void>;
   onClearBrand?: () => Promise<{ success: boolean; error?: string }>;
   onUseBrand?: (brandId?: string) => void;

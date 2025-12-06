@@ -17,6 +17,9 @@ model User {
   marketTier        MarketTier          @default(MASS)
   brandName         String?             @db.VarChar(100)
   brandInfo         String?             @db.VarChar(400)
+  activeBrandId     String?             @db.VarChar(191)
+  activeBrand       Brand?              @relation("UserActiveBrand", fields: [activeBrandId], references: [id], onDelete: SetNull)
+  brands            Brand[]             @relation("BrandOwner")
   documents         Document[]
   accounts          Account[]
   sessions          Session[]
@@ -40,6 +43,7 @@ model Document {
   avoidWords      String?
   writingStyle    String?          @db.Text
   styleTitle      String?          @db.VarChar(100)
+  styleSummary    String?          @db.VarChar(200)
   pinned          Boolean          @default(false)
   owner           User             @relation(fields: [ownerId], references: [id])
   ownerId         String
@@ -97,10 +101,13 @@ model BrandKeyMessaging {
   text      String   @db.VarChar(500)
   owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   ownerId   String
+  brand     Brand?   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  brandId   String?  @db.VarChar(191)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([ownerId])
+  @@index([brandId])
 }
 
 enum MarketTier {
@@ -132,4 +139,18 @@ model DocumentFolder {
 
   @@id([documentId, folderId])
   @@index([folderId])
+}
+
+model Brand {
+  id           String             @id @default(cuid())
+  name         String?            @db.VarChar(100)
+  info         String             @db.VarChar(400)
+  owner        User               @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId      String
+  activeUsers  User[]             @relation("UserActiveBrand")
+  keyMessages  BrandKeyMessaging[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([ownerId])
 }

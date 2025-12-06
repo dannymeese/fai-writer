@@ -3,8 +3,9 @@ import { cookies } from "next/headers";
 import { auth } from "@/auth";
 import { composeRequestSchema } from "@/lib/validators";
 import { prisma } from "@/lib/prisma";
-import { smartTitleFromPrompt, stripMarkdownFromTitle } from "@/lib/utils";
+import { smartTitleFromPrompt } from "@/lib/utils";
 import { getOpenAIClient } from "@/lib/openai";
+import { generateStyleMetadata } from "@/lib/style-metadata";
 
 const TOKEN_LIMIT = Number(process.env.LLM_TOKEN_LIMIT ?? "500000");
 type CookieStore = Awaited<ReturnType<typeof cookies>>;
@@ -199,6 +200,7 @@ export async function POST(request: Request) {
 
     let writingStyle: string | null = null;
     let styleTitle: string | null = null;
+    let styleSummary: string | null = null;
     let styleTokens = 0;
     try {
       const styleResponse = await openai.responses.create({
@@ -219,48 +221,26 @@ export async function POST(request: Request) {
       });
       writingStyle = styleResponse.output_text?.trim() ?? null;
       styleTokens = styleResponse.usage?.total_tokens ?? 0;
-
-      // Generate a 2-4 word title for the style
-      if (writingStyle) {
-        try {
-          const titleResponse = await openai.responses.create({
-            model: "gpt-5.1",
-            temperature: 0.7,
-            max_output_tokens: 20,
-            input: [
-              {
-                role: "system",
-                content:
-                  "Generate a concise 2-4 word title that captures the essence of this writing style. Return only the title, no explanation."
-              },
-              {
-                role: "user",
-                content: `Writing style: ${writingStyle}\n\nGenerate a 2-4 word title:`
-              }
-            ]
-          });
-          styleTitle = titleResponse.output_text?.trim() ?? null;
-          // Clean up the title - remove quotes, periods, markdown formatting, etc.
-          if (styleTitle) {
-            styleTitle = stripMarkdownFromTitle(styleTitle);
-            styleTitle = styleTitle.replace(/^["']|["']$/g, "").replace(/\.$/, "").trim();
-            // Ensure it's 2-4 words
-            const words = styleTitle.split(/\s+/).filter(Boolean);
-            if (words.length > 4) {
-              styleTitle = words.slice(0, 4).join(" ");
-            } else if (words.length < 2 && words.length > 0) {
-              // If only one word, try to make it 2 words
-              styleTitle = words[0] + " Style";
-            }
-          }
-        } catch (err) {
-          console.error("OpenAI style title generation failed", err);
-          // Non-blocking: continue without style title
-        }
-      }
     } catch (err) {
       console.error("OpenAI style generation failed", err);
       // Non-blocking: continue without style metadata
+    }
+
+    try {
+      const generatedMetadata = await generateStyleMetadata(
+        {
+          writingStyle,
+          content: contentText,
+          styleTitle,
+          styleSummary
+        },
+        { openai }
+      );
+      styleTitle = generatedMetadata.styleTitle;
+      styleSummary = generatedMetadata.styleSummary;
+      styleTokens += generatedMetadata.tokensUsed;
+    } catch (err) {
+      console.error("Style metadata generation failed", err);
     }
 
     const title = smartTitleFromPrompt(prompt);
@@ -287,6 +267,7 @@ export async function POST(request: Request) {
             benchmark: settings.benchmark ?? undefined,
             avoidWords: settings.avoidWords ?? undefined,
             writingStyle: writingStyle ?? undefined,
+            styleSummary: styleSummary ?? undefined,
             styleTitle: styleTitle ?? undefined,
             ownerId: session.user.id
           } as any
@@ -315,6 +296,7 @@ export async function POST(request: Request) {
       title,
       content: contentText,
       writingStyle,
+      styleSummary,
       styleTitle,
       createdAt: timestamp,
       prompt,

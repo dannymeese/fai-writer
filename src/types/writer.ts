@@ -27,6 +27,7 @@ export type WriterOutput = {
   isPending?: boolean;
   writingStyle?: string | null;
   styleTitle?: string | null;
+  styleSummary?: string | null;
   pinned?: boolean;
   folders?: DocumentFolderReference[];
 };

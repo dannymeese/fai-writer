@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { documentSchema } from "@/lib/validators";
 import { deriveTitleFromContent, stripMarkdownFromTitle } from "@/lib/utils";
+import { generateStyleMetadata } from "@/lib/style-metadata";
 import { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -101,8 +102,37 @@ export async function POST(request: Request) {
 
   let createData: any = null;
   try {
-    const autoTitle = parsed.data.styleTitle
-      ? parsed.data.title
+    const isStylePayload =
+      Boolean(parsed.data.writingStyle) || Boolean(parsed.data.styleTitle) || Boolean(parsed.data.styleSummary);
+    let generatedStyleTitle: string | null = null;
+    let generatedStyleSummary: string | null = null;
+
+    if (isStylePayload) {
+      try {
+        const metadata = await generateStyleMetadata({
+          writingStyle: parsed.data.writingStyle ?? null,
+          content: parsed.data.content ?? "",
+          styleTitle: parsed.data.styleTitle ?? null,
+          styleSummary: parsed.data.styleSummary ?? null,
+          fallbackTitle: parsed.data.title
+        });
+        generatedStyleTitle = metadata.styleTitle;
+        generatedStyleSummary = metadata.styleSummary;
+      } catch (error) {
+        console.error("[documents][POST] style metadata generation failed", error);
+      }
+    }
+
+    const resolvedStyleTitle = generatedStyleTitle ?? parsed.data.styleTitle ?? null;
+    const resolvedStyleSummary = generatedStyleSummary ?? parsed.data.styleSummary ?? null;
+
+    const rawStyleTitleValue =
+      resolvedStyleTitle !== null && resolvedStyleTitle !== undefined
+        ? stripMarkdownFromTitle(resolvedStyleTitle).trim().slice(0, 100)
+        : null;
+    const styleTitleValue = rawStyleTitleValue && rawStyleTitleValue.trim().length > 0 ? rawStyleTitleValue : null;
+    const autoTitle = styleTitleValue
+      ? styleTitleValue
       : deriveTitleFromContent(parsed.data.content, parsed.data.title);
 
     // Ensure title is never empty (shouldn't happen, but safety check)
@@ -140,8 +170,15 @@ export async function POST(request: Request) {
     if (parsed.data.gradeLevel !== undefined && parsed.data.gradeLevel !== null) createData.gradeLevel = parsed.data.gradeLevel;
     if (parsed.data.benchmark !== undefined && parsed.data.benchmark !== null) createData.benchmark = parsed.data.benchmark;
     if (parsed.data.avoidWords !== undefined && parsed.data.avoidWords !== null) createData.avoidWords = parsed.data.avoidWords;
-    if (parsed.data.writingStyle !== undefined && parsed.data.writingStyle !== null) createData.writingStyle = parsed.data.writingStyle;
-    if (parsed.data.styleTitle !== undefined && parsed.data.styleTitle !== null) createData.styleTitle = parsed.data.styleTitle;
+    if (parsed.data.writingStyle !== undefined && parsed.data.writingStyle !== null) {
+      createData.writingStyle = parsed.data.writingStyle;
+    }
+    if (resolvedStyleSummary !== undefined && resolvedStyleSummary !== null) {
+      createData.styleSummary = resolvedStyleSummary;
+    }
+    if (styleTitleValue !== null) {
+      createData.styleTitle = styleTitleValue;
+    }
     if (parsed.data.pinned !== undefined) createData.pinned = parsed.data.pinned;
 
     // Verify user exists before creating document

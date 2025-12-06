@@ -60,6 +60,7 @@ export const documentSchema = z.object({
   avoidWords: z.string().max(200).nullable().optional(),
   writingStyle: z.string().nullable().optional(),
   styleTitle: z.string().max(100).nullable().optional(),
+  styleSummary: z.string().max(200).nullable().optional(),
   pinned: z.boolean().optional(),
   folders: z
     .array(z.string().min(1, "Folder id is required."))
