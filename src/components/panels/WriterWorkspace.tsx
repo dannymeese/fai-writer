@@ -1256,23 +1256,39 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       pinned: false,
       folders: []
     };
+    const requestBody = {
+      title: styleName,
+      content: resolvedContent,
+      tone: output.settings.marketTier ?? undefined,
+      prompt: output.prompt,
+      // Only save non-length related settings
+      gradeLevel: output.settings.gradeLevel ?? undefined,
+      benchmark: output.settings.benchmark ?? undefined,
+      avoidWords: output.settings.avoidWords ?? undefined,
+      // Let the server generate title/summary from the writingStyle/content
+      writingStyle: description
+    };
+
+    console.log("[handleSaveStyle] Sending request", {
+      url: "/api/documents",
+      method: "POST",
+      bodySize: JSON.stringify(requestBody).length,
+      hasWritingStyle: !!requestBody.writingStyle,
+      writingStyleLength: requestBody.writingStyle?.length
+    });
+
     let response: Response;
     try {
       response = await fetch("/api/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: styleName,
-          content: resolvedContent,
-          tone: output.settings.marketTier ?? undefined,
-          prompt: output.prompt,
-          // Only save non-length related settings
-          gradeLevel: output.settings.gradeLevel ?? undefined,
-          benchmark: output.settings.benchmark ?? undefined,
-          avoidWords: output.settings.avoidWords ?? undefined,
-          // Let the server generate title/summary from the writingStyle/content
-          writingStyle: description
-        })
+        body: JSON.stringify(requestBody)
+      });
+      console.log("[handleSaveStyle] Response received", {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries())
       });
     } catch (error) {
       console.error("save style network failure", error);
@@ -1296,19 +1312,22 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
     }
 
     if (!response.ok) {
-      console.error("save style failed", {
+      const errorDetails = {
         status: response.status,
         statusText: response.statusText,
         payload,
         responseText: responseText.substring(0, 500),
+        responseTextLength: responseText.length,
         requestBody: {
           title: styleName,
           contentLength: resolvedContent.length,
           hasWritingStyle: !!description,
           writingStyleLength: description.length
         }
-      });
-      const errorMsg = formatErrorMessage(payload?.error || responseText || `HTTP ${response.status}`, "Unable to save writing style.");
+      };
+      console.error("save style failed", errorDetails);
+      console.error("Full error details:", JSON.stringify(errorDetails, null, 2));
+      const errorMsg = formatErrorMessage(payload?.error || responseText || `HTTP ${response.status}: ${response.statusText}`, "Unable to save writing style.");
       setToast(errorMsg);
       return;
     }

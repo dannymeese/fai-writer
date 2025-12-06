@@ -195,8 +195,14 @@ export async function POST(request: Request) {
     if (parsed.data.writingStyle !== undefined && parsed.data.writingStyle !== null) {
       createData.writingStyle = parsed.data.writingStyle;
     }
-    if (resolvedStyleSummary !== undefined && resolvedStyleSummary !== null) {
-      createData.styleSummary = resolvedStyleSummary;
+    // Only include styleSummary if it exists (graceful degradation if column doesn't exist)
+    if (resolvedStyleSummary !== undefined && resolvedStyleSummary !== null && resolvedStyleSummary.trim().length > 0) {
+      try {
+        createData.styleSummary = resolvedStyleSummary;
+      } catch (err) {
+        console.warn("[documents][POST] Could not set styleSummary, column may not exist", err);
+        // Continue without styleSummary
+      }
     }
     if (styleTitleValue !== null) {
       createData.styleTitle = styleTitleValue;
