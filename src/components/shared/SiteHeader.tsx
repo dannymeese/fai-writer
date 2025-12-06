@@ -167,11 +167,11 @@ export default function SiteHeader({ onPanelToggle, showPanelButton = false }: S
           </button>
         ) : (
           <div className="absolute right-5 top-1/2 -translate-y-1/2 flex items-center gap-3">
-            <Link href="/sign-in" className="text-sm font-semibold text-white transition hover:text-brand-blue">
+            <Link href="/sign-in" className="text-[0.583rem] font-semibold text-white transition hover:text-brand-blue">
               Sign In
             </Link>
             <Link
-              href="/register"
+              href="/membership"
               className="rounded-full bg-brand-blue px-5 py-2 text-sm font-semibold text-white transition hover:bg-brand-blue/80"
             >
               Register

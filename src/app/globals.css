@@ -42,6 +42,23 @@ textarea::placeholder {
   color: rgba(255, 255, 255, 0.33);
 }
 
+/* Hide icons until fonts are loaded */
+.material-symbols-outlined,
+.material-symbols-sharp,
+.material-symbols-rounded {
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+/* Show icons once fonts are loaded */
+.fonts-loaded .material-symbols-outlined,
+.fonts-loaded .material-symbols-sharp,
+.fonts-loaded .material-symbols-rounded {
+  visibility: visible;
+  opacity: 1;
+}
+
 .material-symbols-outlined {
   font-family: "Material Symbols Outlined", sans-serif;
   font-weight: normal;
@@ -320,5 +337,19 @@ textarea::placeholder {
   animation: shimmer 1.5s infinite;
   border-radius: 9999px;
   height: 1.25rem;
+}
+
+/* Move Next.js development indicator to bottom right */
+#__next-build-watcher,
+[data-nextjs-toast],
+[data-nextjs-dialog] {
+  left: auto !important;
+  right: 0 !important;
+}
+
+/* Target Next.js dev indicator - common selectors */
+body > div[style*="position: fixed"][style*="bottom: 0"][style*="left: 0"]:not([data-site-header]):not([data-document-sticky-title]) {
+  left: auto !important;
+  right: 0 !important;
 }
 

@@ -4,6 +4,7 @@ import { XMarkIcon } from "@heroicons/react/24/outline";
 import { WrenchIcon } from "@heroicons/react/24/solid";
 import { cn, getPromptHistory, PromptHistoryEntry } from "@/lib/utils";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 
 // TypeScript definitions for Web Speech API
 interface SpeechRecognition extends EventTarget {
@@ -73,8 +74,14 @@ type ComposeBarProps = {
     name: string;
   } | null;
   onClearStyle?: () => void;
+  activeBrand?: {
+    id: string;
+    name: string;
+  } | null;
+  onClearBrand?: () => void;
   hasSelection?: boolean;
   selectedText?: string | null;
+  isGuest?: boolean;
 };
 
 export default function ComposeBar({
@@ -89,8 +96,11 @@ export default function ComposeBar({
   hasCustomOptions = false,
   activeStyle = null,
   onClearStyle,
+  activeBrand = null,
+  onClearBrand,
   hasSelection = false,
-  selectedText = null
+  selectedText = null,
+  isGuest = false
 }: ComposeBarProps) {
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
@@ -128,6 +138,7 @@ export default function ComposeBar({
   const [typingChar, setTypingChar] = useState("1");
   const [isListening, setIsListening] = useState(false);
   const [recognitionError, setRecognitionError] = useState<string | null>(null);
+  const [showGuestVoiceNotice, setShowGuestVoiceNotice] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
@@ -361,6 +372,12 @@ export default function ComposeBar({
   };
 
   const toggleSpeechRecognition = () => {
+    // If guest, show blue notice instead of starting recognition
+    if (isGuest) {
+      setShowGuestVoiceNotice(true);
+      return;
+    }
+
     if (!recognitionRef.current) {
       const supportInfo = getBrowserSupportInfo();
       const errorMessage = supportInfo.message || 'Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.';
@@ -415,13 +432,39 @@ export default function ComposeBar({
 
   const content = (
     <div className="flex w-full flex-col gap-2 mt-[3px]">
-      {activeStyle && (
-        <div className="inline-flex items-center gap-3 self-start rounded-full border border-white/40 bg-white/5 px-3 py-1 text-xs font-semibold uppercase text-white">
-          <span>{activeStyle.name}</span>
-          {onClearStyle && (
-            <button type="button" onClick={onClearStyle} aria-label="Remove selected style" className="text-white/80 hover:text-white">
-              <XMarkIcon className="h-4 w-4" />
-            </button>
+      {(activeStyle || activeBrand) && (
+        <div className="flex items-center gap-2 justify-center flex-wrap">
+          {activeBrand && (
+            <div className="inline-flex items-center gap-1.5 h-[18px] rounded-full border border-white/40 bg-white/5 px-2.5 text-xs font-semibold uppercase text-white">
+              <span className="text-[8px] font-bold text-white/50 cursor-default">BRAND</span>
+              <span>{activeBrand.name}</span>
+              {onClearBrand && (
+                <button 
+                  type="button" 
+                  onClick={onClearBrand} 
+                  aria-label="Remove selected brand" 
+                  className="text-white/80 hover:text-white transition-colors -mx-1 px-0.5"
+                >
+                  <XMarkIcon className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          )}
+          {activeStyle && (
+            <div className="inline-flex items-center gap-1.5 h-[18px] rounded-full border border-white/40 bg-white/5 px-2.5 text-xs font-semibold uppercase text-white">
+              <span className="text-[8px] font-bold text-white/50 cursor-default">STYLE</span>
+              <span>{activeStyle.name}</span>
+              {onClearStyle && (
+                <button 
+                  type="button" 
+                  onClick={onClearStyle} 
+                  aria-label="Remove selected style" 
+                  className="text-white/80 hover:text-white transition-colors -mx-1 px-0.5"
+                >
+                  <XMarkIcon className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -454,6 +497,22 @@ export default function ComposeBar({
         <p className="text-center text-xl font-semibold text-white">
           What should I write?
         </p>
+      )}
+      {showGuestVoiceNotice && (
+        <div className="mx-auto mt-2 max-w-md rounded-lg border border-brand-blue/50 bg-brand-blue/10 px-4 py-3 text-center">
+          <div className="flex items-center justify-center gap-3">
+            <p className="text-sm text-white">
+              Register to use voice
+            </p>
+            <Link
+              href="/membership"
+              className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-semibold text-white hover:bg-brand-blue/80 transition"
+              onClick={() => setShowGuestVoiceNotice(false)}
+            >
+              Register
+            </Link>
+          </div>
+        </div>
       )}
       {recognitionError && (
         <div className="mx-auto mt-2 max-w-md rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-2 text-center text-sm text-red-400">

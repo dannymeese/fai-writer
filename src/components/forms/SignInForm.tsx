@@ -75,7 +75,7 @@ export default function SignInForm() {
       </button>
       <p className="text-center text-sm text-brand-muted">
         No account?{" "}
-        <Link className="text-brand-blue underline" href="/register">
+        <Link className="text-brand-blue underline" href="/membership">
           Register
         </Link>
       </p>

@@ -131,16 +131,24 @@ export async function POST(request: Request) {
         ? stripMarkdownFromTitle(resolvedStyleTitle).trim().slice(0, 100)
         : null;
     const styleTitleValue = rawStyleTitleValue && rawStyleTitleValue.trim().length > 0 ? rawStyleTitleValue : null;
+    // For styles, prefer the generated title, then the sent title, then derive from content
     const autoTitle = styleTitleValue
       ? styleTitleValue
+      : parsed.data.title && parsed.data.title.trim()
+      ? parsed.data.title.trim()
       : deriveTitleFromContent(parsed.data.content, parsed.data.title);
 
     // Ensure title is never empty (shouldn't happen, but safety check)
     if (!autoTitle || autoTitle.trim().length === 0) {
       console.error("[documents][POST] Generated empty title", {
         content: parsed.data.content?.substring(0, 100),
+        contentLength: parsed.data.content?.length,
         originalTitle: parsed.data.title,
-        styleTitle: parsed.data.styleTitle
+        styleTitle: parsed.data.styleTitle,
+        isStylePayload,
+        generatedStyleTitle,
+        styleTitleValue,
+        resolvedStyleTitle
       });
       return NextResponse.json(
         { error: "Unable to generate document title." },

@@ -62,11 +62,13 @@ type MarkdownEditorProps = {
   className?: string;
   onReady?: (editor: ReturnType<typeof useEditor>) => void;
   hasBrand?: boolean;
+  activeBrandId?: string | null;
   horizontalPadding?: {
     left?: number;
     right?: number;
   };
   onSaveStyle?: () => void;
+  onTyping?: () => void;
 };
 
 export default function MarkdownEditor({
@@ -78,8 +80,10 @@ export default function MarkdownEditor({
   className,
   onReady,
   hasBrand = false,
+  activeBrandId,
   horizontalPadding,
-  onSaveStyle
+  onSaveStyle,
+  onTyping
 }: MarkdownEditorProps) {
   const [persistentSelection, setPersistentSelection] = useState<{ from: number; to: number } | null>(null);
   const [showFormattingToolbar, setShowFormattingToolbar] = useState(false);
@@ -238,6 +242,11 @@ export default function MarkdownEditor({
       isInternalUpdateRef.current = true;
       lastTypingTimeRef.current = Date.now();
       
+      // Notify parent about typing
+      if (onTyping) {
+        onTyping();
+      }
+      
       // Clear any pending update timeout
       if (pendingUpdateTimeoutRef.current) {
         clearTimeout(pendingUpdateTimeoutRef.current);
@@ -349,6 +358,14 @@ export default function MarkdownEditor({
         // TipTap handles CMD/CTRL+A, C, V, X by default
         // Return false to let TipTap/browser handle the event
         return false;
+      },
+      handleDOMEvents: {
+        // Explicitly allow context menu (right-click) to work
+        contextmenu: (view, event) => {
+          // Return false to allow the default context menu behavior
+          // This ensures the browser's native context menu appears
+          return false;
+        },
       },
     }
   });
@@ -1976,28 +1993,42 @@ export default function MarkdownEditor({
 
       setAddingToBrand(true);
       
+      const requestBody: { text: string; brandId?: string } = {
+        text: selectedText.trim()
+      };
+      if (activeBrandId) {
+        requestBody.brandId = activeBrandId;
+      }
+
       const response = await fetch("/api/brand/key-messaging", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: selectedText.trim() })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: "Failed to add to brand" }));
-        console.error("Failed to add to brand:", errorData.error);
+        console.error("Failed to add to brand:", {
+          error: errorData.error,
+          details: errorData.details,
+          code: errorData.code,
+          fullError: errorData
+        });
         // Could show a toast notification here
         return;
       }
 
       // Success - could show a toast notification here
-      // Dispatch a custom event to notify parent components
-      window.dispatchEvent(new CustomEvent("brand-key-messaging-added"));
+      // Dispatch a custom event to notify parent components with brandId
+      window.dispatchEvent(new CustomEvent("brand-key-messaging-added", { 
+        detail: { brandId: activeBrandId } 
+      }));
     } catch (error) {
       console.error("Error adding to brand:", error);
     } finally {
       setAddingToBrand(false);
     }
-  }, [editor, addingToBrand]);
+  }, [editor, addingToBrand, activeBrandId]);
 
   // Don't render editor until ready
   if (!editor) {

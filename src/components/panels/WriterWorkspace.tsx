@@ -1211,13 +1211,12 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
   }
 
   async function handleSaveStyle(output: WriterOutput) {
-    const resolvedContent = resolveOutputContent(output);
-    // Use the AI-generated styleTitle if available, otherwise generate one from the writingStyle
-    let styleName = output.styleTitle ?? generateStyleName(output.writingStyle ?? null, output.title);
-    // Ensure the style name ends with " Style" for proper classification
-    if (!styleName.toLowerCase().endsWith(" style")) {
-      styleName = styleName.endsWith("Style") ? styleName : `${styleName} Style`;
+    if (!isAuthenticated) {
+      setToast("Register to save styles.");
+      return;
     }
+
+    const resolvedContent = resolveOutputContent(output);
     const styleSummary = output.styleSummary ?? null;
     // Use the full AI-generated writingStyle description (the analyzed style), not a fallback
     const description = output.writingStyle?.trim() ?? fallbackStyleDescription(null, resolvedContent, styleSummary);
@@ -1226,6 +1225,15 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       setToast("Unable to save style: no writing style description available.");
       return;
     }
+
+    // Generate a temporary title - server will generate the final one via LLM
+    // But we need a valid title for the request
+    const tempTitle = output.styleTitle ?? generateStyleName(output.writingStyle ?? null, output.title) ?? "Custom Style";
+    const styleName = tempTitle.toLowerCase().endsWith(" style") 
+      ? tempTitle 
+      : tempTitle.endsWith("Style") 
+        ? tempTitle 
+        : `${tempTitle} Style`;
     
     console.log("[handleSaveStyle] Saving style:", {
       styleName,
@@ -1248,11 +1256,6 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       pinned: false,
       folders: []
     };
-    if (guestLimitEnabled && isGuest) {
-      applyLocalDoc(localStyleDoc);
-      setToast("Saved locally. Create an account to sync styles everywhere.");
-      return;
-    }
     let response: Response;
     try {
       response = await fetch("/api/documents", {
@@ -1273,23 +1276,25 @@ const lastSavedContentRef = useRef<Map<string, string>>(new Map());
       });
     } catch (error) {
       console.error("save style network failure", error);
-      applyLocalDoc(localStyleDoc);
-      setToast("Saved locally. We'll sync this style once you're back online.");
+      setToast("Unable to save style. Check your connection and try again.");
       return;
     }
 
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      console.warn("save style failed", response.status, payload);
+      console.error("save style failed", {
+        status: response.status,
+        statusText: response.statusText,
+        payload,
+        requestBody: {
+          title: styleName,
+          contentLength: resolvedContent.length,
+          hasWritingStyle: !!description,
+          writingStyleLength: description.length
+        }
+      });
       const errorMsg = formatErrorMessage(payload?.error, "Unable to save writing style.");
-      // Don't save locally if there's a validation error - show the error instead
-      if (response.status === 400 || response.status === 409) {
-        setToast(errorMsg);
-        return;
-      }
-      // Only save locally for network/server errors
-      applyLocalDoc(localStyleDoc);
-      setToast("Saved locally. We'll sync this style once you're connected.");
+      setToast(errorMsg);
       return;
     }
     const remoteDoc = payload ?? null;

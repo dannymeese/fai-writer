@@ -19,6 +19,7 @@ type DocumentEditorProps = {
   loading?: boolean;
   className?: string;
   brandSummary?: string | null;
+  activeBrandId?: string | null;
   styleGuide?: {
     name: string;
     description: string;
@@ -33,6 +34,7 @@ type DocumentEditorProps = {
   canOrganizeDocuments?: boolean;
   documentPinned?: boolean;
   onSaveStyle?: () => void;
+  onTyping?: () => void;
 };
 
 function derivePlaceholderMeta(content: string): Array<{ id: string; label: string }> {
@@ -118,6 +120,7 @@ export default function DocumentEditor({
   loading = false,
   className,
   brandSummary,
+  activeBrandId,
   styleGuide,
   onDownload,
   horizontalPadding,
@@ -125,7 +128,8 @@ export default function DocumentEditor({
   onRequestAddToFolder,
   canOrganizeDocuments = false,
   documentPinned = false,
-  onSaveStyle
+  onSaveStyle,
+  onTyping
 }: DocumentEditorProps) {
   const [selectedText, setSelectedText] = useState<string | null>(null);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -1161,8 +1165,10 @@ export default function DocumentEditor({
                 placeholder="Start writing or select text to rewrite..."
                 className="min-h-[500px]"
                 hasBrand={!!brandSummary}
+                activeBrandId={activeBrandId}
                 horizontalPadding={horizontalPadding}
                 onSaveStyle={onSaveStyle}
+                onTyping={onTyping}
               />
             )}
           </div>
@@ -1177,14 +1183,26 @@ export default function DocumentEditor({
 function CopyConfirmationTooltip({ buttonRef }: { buttonRef: React.RefObject<HTMLButtonElement> }) {
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
 
-  useEffect(() => {
+  const updatePosition = () => {
     if (buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
       setPosition({
         left: rect.left + rect.width / 2,
-        top: rect.top - 8
+        top: rect.top + rect.height + 3
       });
     }
+  };
+
+  useEffect(() => {
+    updatePosition();
+
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
   }, [buttonRef]);
 
   if (!position) return null;
@@ -1199,7 +1217,7 @@ function CopyConfirmationTooltip({ buttonRef }: { buttonRef: React.RefObject<HTM
         zIndex: 9999,
         left: `${position.left}px`,
         top: `${position.top}px`,
-        transform: 'translate(-50%, -100%)'
+        transform: 'translateX(-50%)'
       }}
     >
       Copied to Clipboard
@@ -1322,7 +1340,7 @@ function TitleActionButtons({
             <span className="material-symbols-outlined leading-none">content_copy</span>
           )}
         </button>
-        {copyStatus === "copied" && typeof window !== "undefined" && createPortal(
+        {copyStatus === "copied" && !compact && typeof window !== "undefined" && createPortal(
           <CopyConfirmationTooltip buttonRef={copyButtonRef} />,
           document.body
         )}

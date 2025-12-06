@@ -29,8 +29,8 @@ const plans: Array<{
     headline: "Save 50% when you prepay for the year",
     priceAmount: "$9",
     pricePeriod: "/ mo",
-    frequency: "billed annually ($108/yr)",
-    priceDetail: "$9 / mo • billed annually ($108/yr)",
+    frequency: "billed annually",
+    priceDetail: "$9 / mo • billed annually",
     description: "Best for dedicated teams that want unlimited guardrail prompts, advanced brand/style storage, and white-glove support.",
     benefits: [
       "5-day free trial",
@@ -130,11 +130,8 @@ export default function MembershipPage() {
       <main className="min-h-screen bg-brand-background px-4 py-16 text-brand-text">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-10">
           <div className="text-center">
-            <p className="text-xs uppercase tracking-[0.3em] text-brand-muted">Membership</p>
-            <h1 className="mt-3 text-4xl font-semibold text-white">Choose your studio plan</h1>
-            <p className="mt-4 text-base text-brand-muted">
-              Annual members get a 5-day free trial and save 50% compared to paying month-to-month.
-            </p>
+            <p className="text-xs uppercase text-brand-muted">Limited Time Pricing</p>
+            <h1 className="mt-3 text-4xl font-semibold text-white">Choose Your Plan</h1>
             {!session?.user && (
               <p className="mt-2 text-sm text-brand-muted">
                 Already joined?{" "}
@@ -144,22 +141,6 @@ export default function MembershipPage() {
               </p>
             )}
           </div>
-          {!session?.user && (
-            <div className="mx-auto w-full max-w-md rounded-3xl border border-brand-stroke/60 bg-brand-panel/60 p-4">
-              <label className="text-xs font-semibold uppercase text-brand-muted" htmlFor="checkout-email">
-                Email for checkout
-              </label>
-              <input
-                id="checkout-email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-                className="mt-2 w-full rounded-2xl border border-brand-stroke/60 bg-transparent px-3 py-2 text-sm text-white focus:border-brand-blue focus:outline-none"
-              />
-              <p className="mt-1 text-xs text-brand-muted">We'll pass this to Stripe so you can finish signup.</p>
-            </div>
-          )}
           {error && (
             <div className="rounded-3xl border border-red-500/60 bg-red-500/10 px-4 py-3 text-sm text-red-100">{error}</div>
           )}
